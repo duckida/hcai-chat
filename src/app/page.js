@@ -26,7 +26,7 @@ export default function Home() {
   const [titleGenerationModel, setTitleGenerationModel] =
     useState("gpt-4o-mini");
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
-  const [artifactsEnabled, setArtifactsEnabled] = useState(true);
+  const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);

@@ -34,7 +34,7 @@ export const streamChatCompletion = async (
   onError,
   onComplete,
   includeThinking = false,
-  artifactsEnabled = true,
+  artifactsEnabled = false,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
