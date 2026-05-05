@@ -190,10 +190,7 @@ export default function MessageList({
     streamingContent || streamingThinking ? [...messages] : messages;
 
   return (
-    <ScrollArea
-      ref={scrollRef}
-      className="flex-1 h-full selection:bg-slate-200"
-    >
+    <ScrollArea ref={scrollRef} className="flex-1 h-full selection:bg-slate-200 pb-[96px]">
       <div className="py-4">
         {activeMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-6">
