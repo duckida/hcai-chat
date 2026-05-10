@@ -179,18 +179,24 @@ export default function MessageList({
   useEffect(() => {
     if (
       scrollRef.current &&
-      (messages.length > 0 || streamingContent || streamingThinking)
+      (messages.length > 0 ||
+        streamingContent ||
+        streamingThinking ||
+        isLoading)
     ) {
       scrollRef.current.scrollToBottom();
     }
-  }, [messages, streamingContent, streamingThinking]);
+  }, [messages, streamingContent, streamingThinking, isLoading]);
 
   // Filter messages to exclude streaming content when not loading
   const activeMessages =
     streamingContent || streamingThinking ? [...messages] : messages;
 
   return (
-    <ScrollArea ref={scrollRef} className="flex-1 h-full selection:bg-slate-200 pb-[96px]">
+    <ScrollArea
+      ref={scrollRef}
+      className="flex-1 h-full selection:bg-slate-200 pb-[96px]"
+    >
       <div className="py-4">
         {activeMessages.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-6">
@@ -243,6 +249,23 @@ export default function MessageList({
                 </div>
               </div>
             )}
+
+            {/* Loading/Thinking indicator when isLoading but no streaming content yet */}
+            {isLoading &&
+              !streamingContent &&
+              !streamingThinking &&
+              thinkingEnabled && (
+                <div className="w-full">
+                  <div className="max-w-[700px] mx-auto px-6 py-8 flex gap-5 md:gap-7">
+                    <div className="h-9 w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
+                      <Sparkles className="h-4.5 w-4.5" />
+                    </div>
+                    <div className="flex-1 space-y-4 overflow-hidden pt-1">
+                      <ThinkingBlock thinking="" isStreaming={true} />
+                    </div>
+                  </div>
+                </div>
+              )}
           </>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
+import { getTools } from "@/lib/tools";
 
 export async function POST(req) {
   try {
@@ -10,6 +11,7 @@ export async function POST(req) {
       artifacts,
       stream: requestStream,
       useWebSearch,
+      tools: clientTools, // Optional custom tools from client
     } = await req.json();
 
     // Process messages with optional artifact instructions
@@ -21,7 +23,7 @@ export async function POST(req) {
         processedMessages = [
           {
             ...messages[0],
-            content: messages[0].content + "\n\n" + ARTIFACT_INSTRUCTIONS,
+            content: `${messages[0].content}\n\n${ARTIFACT_INSTRUCTIONS}`,
           },
           ...messages.slice(1),
         ];
@@ -51,6 +53,20 @@ export async function POST(req) {
       body.think = true;
     }
 
+    // Add tool definitions if using tool calling (not useWebSearch)
+    // Use client-provided tools or fall back to built-in tools
+    if (!useWebSearch) {
+      const availableTools =
+        clientTools && Array.isArray(clientTools) && clientTools.length > 0
+          ? clientTools
+          : getTools();
+
+      if (availableTools.length > 0) {
+        body.tools = availableTools;
+        body.tool_choice = "auto"; // Let the model decide when to use tools
+      }
+    }
+
     const response = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -65,14 +81,16 @@ export async function POST(req) {
       let error;
       const contentType = response.headers.get("content-type");
       try {
-        if (contentType && contentType.includes("application/json")) {
+        if (contentType?.includes("application/json")) {
           error = await response.json();
         } else {
           const textError = await response.text();
           error = { error: textError || `HTTP error ${response.status}` };
         }
-      } catch (parseError) {
-        error = { error: `HTTP error ${response.status}: ${response.statusText}` };
+      } catch {
+        error = {
+          error: `HTTP error ${response.status}: ${response.statusText}`,
+        };
       }
       return Response.json(error, { status: response.status });
     }

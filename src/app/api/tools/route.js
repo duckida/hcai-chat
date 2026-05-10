@@ -1,7 +1,7 @@
 // Tool execution endpoint
 // Handles function/tool calls from the AI
 
-import { exaAnswer } from "@/lib/api-client";
+import { executeTool, getTools } from "@/lib/tools";
 
 export async function POST(req) {
   try {
@@ -9,34 +9,41 @@ export async function POST(req) {
 
     if (!tool || !parameters) {
       return Response.json(
-        { error: "Tool and parameters required" },
+        { error: "Tool name and parameters required" },
         { status: 400 },
       );
     }
 
-    let result;
+    // Execute the tool using the central tool executor
+    const result = await executeTool(tool, parameters);
 
-    switch (tool) {
-      case "web_search":
-        // Use Exa to search the web
-        result = await exaAnswer(parameters.query, {
-          numResults: 5,
-          useAutoprompt: true,
-        });
+    // Return standardized response format
+    return Response.json({
+      tool,
+      result: result.answer || result.content || "",
+      sources: result.citations || result.sources || [],
+      metadata: {
+        query: result.query,
+        numResults: result.numResults,
+        success: result.success,
+      },
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        error: error.message,
+        tool: tool || null,
+      },
+      { status: 500 },
+    );
+  }
+}
 
-        // Format the response for the AI
-        return Response.json({
-          tool: "web_search",
-          result: result.answer || result.content,
-          sources: result.citations || result.sources || [],
-        });
-
-      default:
-        return Response.json(
-          { error: `Unknown tool: ${tool}` },
-          { status: 400 },
-        );
-    }
+// GET endpoint to list available tools
+export async function GET() {
+  try {
+    const tools = getTools();
+    return Response.json({ tools });
   } catch (error) {
     return Response.json({ error: error.message }, { status: 500 });
   }

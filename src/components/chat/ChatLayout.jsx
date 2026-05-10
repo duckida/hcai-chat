@@ -58,6 +58,7 @@ export default function ChatLayout({
   onApiKeyClick,
   rightPanel,
   children,
+  artifactFullscreen = false,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [groupedModels, setGroupedModels] = useState({});
@@ -319,101 +320,105 @@ export default function ChatLayout({
           </div>
 
           <div className="flex-1 flex items-center justify-center gap-2">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onThinkingChange(!thinkingEnabled)}
-                    className={`h-8 w-8 transition-colors ${thinkingEnabled ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-slate-900"}`}
-                  >
-                    <Brain className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs">
-                    Toggle thinking {thinkingEnabled ? "off" : "on"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {!artifactFullscreen && (
+              <>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onThinkingChange(!thinkingEnabled)}
+                        className={`h-8 w-8 transition-colors ${thinkingEnabled ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-slate-900"}`}
+                      >
+                        <Brain className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Toggle thinking {thinkingEnabled ? "off" : "on"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onArtifactsChange(!artifactsEnabled)}
-                    className={`h-8 w-8 transition-colors ${artifactsEnabled ? "text-purple-600 bg-purple-50" : "text-slate-400 hover:text-slate-900"}`}
-                  >
-                    <Puzzle className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs">
-                    Toggle artifacts {artifactsEnabled ? "off" : "on"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onArtifactsChange(!artifactsEnabled)}
+                        className={`h-8 w-8 transition-colors ${artifactsEnabled ? "text-purple-600 bg-purple-50" : "text-slate-400 hover:text-slate-900"}`}
+                      >
+                        <Puzzle className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Toggle artifacts {artifactsEnabled ? "off" : "on"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => onWebSearchChange(!webSearchEnabled)}
-                    className={`h-8 w-8 transition-colors ${webSearchEnabled ? "text-green-600 bg-green-50" : "text-slate-400 hover:text-slate-900"}`}
-                  >
-                    <Globe className="w-4 h-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p className="text-xs">
-                    Toggle web search {webSearchEnabled ? "off" : "on"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => onWebSearchChange(!webSearchEnabled)}
+                        className={`h-8 w-8 transition-colors ${webSearchEnabled ? "text-green-600 bg-green-50" : "text-slate-400 hover:text-slate-900"}`}
+                      >
+                        <Globe className="w-4 h-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">
+                        Toggle web search {webSearchEnabled ? "off" : "on"}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
 
-            <Select value={selectedModel} onValueChange={onModelChange}>
-              <SelectTrigger className="w-auto min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[14px] text-slate-800 bg-transparent gap-2 h-9 px-3 rounded-xl">
-                <SelectValue placeholder="Select Model" />
-              </SelectTrigger>
-              <SelectContent
-                position="popper"
-                sideOffset={5}
-                className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
-              >
-                <ScrollArea className="h-[400px]">
-                  {Object.entries(groupedModels).length > 0 ? (
-                    Object.entries(groupedModels).map(([provider, models]) => (
-                      <SelectGroup key={provider}>
-                        <SelectLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8 py-2 bg-slate-50/50">
-                          {provider}
-                        </SelectLabel>
-                        {models.map((m) => (
-                          <SelectItem
-                            key={m.id}
-                            value={m.id}
-                            className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
-                          >
-                            {m.name}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))
-                  ) : (
-                    <div className="p-4 text-xs text-center text-slate-400 font-medium">
-                      Loading models...
-                    </div>
-                  )}
-                </ScrollArea>
-              </SelectContent>
-            </Select>
+                <Select value={selectedModel} onValueChange={onModelChange}>
+                  <SelectTrigger className="w-auto min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[14px] text-slate-800 bg-transparent gap-2 h-9 px-3 rounded-xl">
+                    <SelectValue placeholder="Select Model" />
+                  </SelectTrigger>
+                  <SelectContent
+                    position="popper"
+                    sideOffset={5}
+                    className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+                  >
+                    <ScrollArea className="h-[400px]">
+                      {Object.entries(groupedModels).length > 0 ? (
+                        Object.entries(groupedModels).map(([provider, models]) => (
+                          <SelectGroup key={provider}>
+                            <SelectLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8 py-2 bg-slate-50/50">
+                              {provider}
+                            </SelectLabel>
+                            {models.map((m) => (
+                              <SelectItem
+                                key={m.id}
+                                value={m.id}
+                                className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                              >
+                                {m.name}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        ))
+                      ) : (
+                        <div className="p-4 text-xs text-center text-slate-400 font-medium">
+                          Loading models...
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </div>
 
           <div className="md:w-8" />
@@ -421,10 +426,15 @@ export default function ChatLayout({
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
           {children}
+          {artifactFullscreen && (
+            <div className="absolute inset-0">
+              {rightPanel}
+            </div>
+          )}
         </main>
       </div>
 
-      {rightPanel}
+      {!artifactFullscreen && rightPanel}
     </div>
   );
 }

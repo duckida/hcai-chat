@@ -70,4 +70,5 @@ Rules:
 - Ensure all CSS and JavaScript are inline (no external dependencies).
 - Do NOT wrap simple code snippets or non-HTML code in html blocks.
 - Keep explanations brief — the artifact itself is the deliverable.
+- Make the artifact responsive — it should work well on both mobile and desktop. Use relative units, flexible layouts, and media queries as needed.
 `.trim();

@@ -11,6 +11,9 @@ import {
   PanelRightClose,
   PanelRightOpen,
   GripVertical,
+  Expand,
+  Minimize,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,6 +27,8 @@ export default function ArtifactPanel({
   isOpen = false,
   onToggle,
   streamingArtifact = null,
+  fullscreen = false,
+  onFullscreenToggle,
 }) {
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
@@ -32,6 +37,10 @@ export default function ArtifactPanel({
   const iframeRef = useRef(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
+
+  const handleFullscreenToggle = () => {
+    if (onFullscreenToggle) onFullscreenToggle();
+  };
 
   // Combine artifacts with streaming artifact
   const allArtifacts = streamingArtifact
@@ -111,7 +120,10 @@ export default function ArtifactPanel({
   }
 
   return (
-    <div className="flex h-full bg-white" style={{ width: panelWidth }}>
+    <div
+      className="flex h-full bg-white"
+      style={{ width: fullscreen ? "100%" : panelWidth }}
+    >
       {/* Resize handle */}
       <div
         className={`w-1 h-full cursor-col-resize flex items-center justify-center hover:bg-purple-200 transition-colors ${isResizing ? "bg-purple-500" : ""}`}
@@ -186,12 +198,33 @@ export default function ArtifactPanel({
                 <Copy className="w-3.5 h-3.5" />
               )}
             </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleFullscreenToggle}
+              className="h-7 w-7 text-slate-400 hover:text-slate-700"
+              title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+            >
+              {fullscreen ? (
+                <Minimize className="w-3.5 h-3.5" />
+              ) : (
+                <Expand className="w-3.5 h-3.5" />
+              )}
+            </Button>
           </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-hidden relative">
-          {!activeArtifact ? (
+          {streamingArtifact ? (
+            <div className="flex flex-col items-center justify-center h-full text-slate-500">
+              <div className="w-8 h-8 border-3 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-3"></div>
+              <span className="text-sm font-medium">
+                Generating artifact...
+              </span>
+            </div>
+          ) : !activeArtifact ? (
             <div className="flex items-center justify-center h-full text-slate-400 text-sm">
               No artifact to display
             </div>

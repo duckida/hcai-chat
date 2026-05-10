@@ -49,7 +49,9 @@ export async function POST(req) {
           error = { error: textError || `HTTP error ${response.status}` };
         }
       } catch (parseError) {
-        error = { error: `HTTP error ${response.status}: ${response.statusText}` };
+        error = {
+          error: `HTTP error ${response.status}: ${response.statusText}`,
+        };
       }
       return Response.json(error, { status: response.status });
     }

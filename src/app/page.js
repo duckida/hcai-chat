@@ -11,8 +11,9 @@ import {
   streamChatCompletion,
   getStoredApiKey,
   generateTitle,
+  executeToolCall,
 } from "@/lib/api-client";
-import { streamExaAnswer } from "@/lib/api-client-exa";
+import { getTools } from "@/lib/tools";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 
 export default function Home() {
@@ -31,6 +32,7 @@ export default function Home() {
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
   const isSubmittingRef = useRef(false);
@@ -407,12 +409,15 @@ export default function Home() {
         webSearchEnabled={webSearchEnabled}
         onWebSearchChange={setWebSearchEnabled}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
+        artifactFullscreen={artifactFullscreen}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}
             streamingArtifact={streamingArtifact}
             isOpen={artifactPanelOpen}
             onToggle={() => setArtifactPanelOpen((prev) => !prev)}
+            fullscreen={artifactFullscreen}
+            onFullscreenToggle={() => setArtifactFullscreen((prev) => !prev)}
           />
         }
       >

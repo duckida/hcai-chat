@@ -4,10 +4,10 @@ const API_KEY_STORAGE_KEY = "hack_club_ai_key";
 export const getErrorMessage = (errorData, defaultMessage) => {
   if (!errorData) return defaultMessage;
   if (errorData.error) {
-    if (typeof errorData.error === 'object' && errorData.error.message) {
+    if (typeof errorData.error === "object" && errorData.error.message) {
       return errorData.error.message;
     }
-    if (typeof errorData.error === 'string') {
+    if (typeof errorData.error === "string") {
       return errorData.error;
     }
   }
@@ -260,6 +260,144 @@ export const exaAnswer = async (query, options = {}) => {
   return response;
 };
 
+/**
+ * Stream chat completion with optional tool support
+ * This unified function handles both regular chat and tool calling
+ */
+export const streamChatWithTools = async (
+  messages,
+  model = "gpt-4o-mini",
+  onChunk,
+  onError,
+  onComplete,
+  includeThinking = false,
+  artifactsEnabled = false,
+  tools = null, // Array of tool definitions for function calling
+  toolChoice = "auto",
+  onToolCall = null, // Callback when model decides to call a tool
+) => {
+  const apiKey = getStoredApiKey();
+  if (!apiKey) {
+    onError(new Error("API key not found"));
+    return;
+  }
+
+  try {
+    const body = {
+      model,
+      messages,
+      apiKey,
+      stream: true,
+    };
+
+    if (includeThinking) {
+      body.think = true;
+    }
+
+    // Add artifacts parameter if enabled
+    if (artifactsEnabled) {
+      body.artifacts = true;
+    }
+
+    // Add tool calling parameters if tools provided
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = toolChoice;
+    }
+
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(
+        getErrorMessage(errorData, `API Error: ${response.status}`),
+      );
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedContent = "";
+    let accumulatedThinking = "";
+    let currentToolCalls = new Map(); // To accumulate multi-chunk tool calls
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        onComplete?.();
+        break;
+      }
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          const data = line.slice(6);
+          if (data === "[DONE]") continue;
+          try {
+            const parsed = JSON.parse(data);
+            const delta = parsed.choices?.[0]?.delta || {};
+
+            // Handle regular content
+            if (delta.content) {
+              accumulatedContent += delta.content;
+              onChunk(delta.content, "content");
+            }
+
+            // Handle thinking
+            if (delta.thinking) {
+              accumulatedThinking += delta.thinking;
+              onChunk(delta.thinking, "thinking");
+            }
+
+            // Handle tool calls (function calling)
+            if (delta.tool_calls) {
+              for (const toolCall of delta.tool_calls) {
+                const index = toolCall.index;
+                const id = toolCall.id || currentToolCalls.get(index)?.id;
+                const functionCall = toolCall.function;
+
+                if (!currentToolCalls.has(index)) {
+                  currentToolCalls.set(index, {
+                    id,
+                    name: "",
+                    arguments: "",
+                  });
+                }
+
+                const existing = currentToolCalls.get(index);
+                if (functionCall?.name) {
+                  existing.name += functionCall.name;
+                }
+                if (functionCall?.arguments) {
+                  existing.arguments += functionCall.arguments;
+                }
+
+                // Notify about tool call (may be partial)
+                if (onToolCall) {
+                  onToolCall({
+                    index,
+                    id: existing.id,
+                    name: existing.name,
+                    arguments: existing.arguments,
+                    complete: !!functionCall.id, // Heuristic for completion
+                  });
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    }
+  } catch (error) {
+    onError(error);
+  }
+};
+
 export const streamExaAnswer = async (
   query,
   onChunk,
@@ -332,4 +470,37 @@ export const streamExaAnswer = async (
   } catch (error) {
     onError(error);
   }
+};
+
+/**
+ * Execute a tool call from the AI assistant
+ * @param {string} toolName - Name of the tool to execute
+ * @param {object} parameters - Tool parameters
+ * @returns {Promise<object>} Tool execution result
+ */
+export const executeToolCall = async (toolName, parameters) => {
+  const apiKey = getStoredApiKey();
+  if (!apiKey) {
+    throw new Error("API key not found");
+  }
+
+  // For now, we proxy tool calls through /api/tools endpoint
+  // which uses the centralized tool execution system
+  const response = await fetch("/api/tools", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tool: toolName,
+      parameters,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      errorData.error || `Tool execution failed: ${response.status}`,
+    );
+  }
+
+  return response.json();
 };
