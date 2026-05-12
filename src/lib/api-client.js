@@ -35,6 +35,9 @@ export const streamChatCompletion = async (
   onComplete,
   includeThinking = false,
   artifactsEnabled = false,
+  tools = null,
+  toolChoice = "auto",
+  onToolCall = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -49,6 +52,12 @@ export const streamChatCompletion = async (
     }
     // Add artifacts parameter to control what type of content is returned
     body.artifacts = artifactsEnabled;
+
+    // Add tool calling parameters if provided
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      body.tools = tools;
+      body.tool_choice = toolChoice;
+    }
 
     const response = await fetch("/api/chat", {
       method: "POST",
@@ -82,10 +91,22 @@ export const streamChatCompletion = async (
           if (data === "[DONE]") continue;
           try {
             const parsed = JSON.parse(data);
-            const content = parsed.choices?.[0]?.delta?.content || "";
-            const thinking = parsed.choices?.[0]?.delta?.thinking || "";
+            const delta = parsed.choices?.[0]?.delta || {};
+            const content = delta.content || "";
+            const thinking = delta.thinking || "";
             if (content) onChunk(content, "content");
             if (thinking) onChunk(thinking, "thinking");
+            if (delta.tool_calls && onToolCall) {
+              for (const toolCall of delta.tool_calls) {
+                onToolCall({
+                  index: toolCall.index,
+                  id: toolCall.id,
+                  name: toolCall.function?.name || "",
+                  arguments: toolCall.function?.arguments || "",
+                  complete: !!toolCall.id, // ID presence indicates completion
+                });
+              }
+            }
           } catch (e) {}
         }
       }
@@ -478,10 +499,11 @@ export const streamExaAnswer = async (
  * @param {object} parameters - Tool parameters
  * @returns {Promise<object>} Tool execution result
  */
-export const executeToolCall = async (toolName, parameters) => {
-  const apiKey = getStoredApiKey();
-  if (!apiKey) {
-    throw new Error("API key not found");
+export const executeToolCall = async (toolName, parameters, apiKey = null) => {
+  // Use provided API key or fall back to stored key
+  const key = apiKey || getStoredApiKey();
+  if (!key) {
+    throw new Error("API key not found. Please set your API key in settings.");
   }
 
   // For now, we proxy tool calls through /api/tools endpoint
@@ -492,15 +514,42 @@ export const executeToolCall = async (toolName, parameters) => {
     body: JSON.stringify({
       tool: toolName,
       parameters,
+      apiKey: key, // Pass API key to server
     }),
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(
-      errorData.error || `Tool execution failed: ${response.status}`,
-    );
+    // Try to parse error JSON, but handle non-JSON responses gracefully
+    const contentType = response.headers.get("content-type");
+    let errorMessage = `Tool execution failed: ${response.status}`;
+    try {
+      if (contentType?.includes("application/json")) {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } else {
+        const text = await response.text();
+        if (text) errorMessage = text;
+      }
+    } catch (e) {
+      // Keep default error message
+    }
+    throw new Error(errorMessage);
   }
 
-  return response.json();
+  // Check if response is JSON before parsing
+  const contentType = response.headers.get("content-type");
+  if (!contentType?.includes("application/json")) {
+    throw new Error(`Invalid response type: ${contentType}`);
+  }
+
+  const text = await response.text();
+  if (!text.trim()) {
+    throw new Error("Empty response from tool execution");
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Failed to parse tool response: ${e.message}`);
+  }
 };

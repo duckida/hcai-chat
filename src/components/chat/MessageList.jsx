@@ -3,167 +3,228 @@
 import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import {
-  User,
-  Sparkles,
-  Brain,
-  ChevronDown,
-  ChevronUp,
-  Globe,
-} from "lucide-react";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { User, Sparkles, Brain, ChevronDown, ChevronUp, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
+import { Image } from "react-konva";
 
-const ThinkingBlock = ({ thinking, isStreaming = false }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+// Custom components for ReactMarkdown to render all markdown elements properly
+const MarkdownComponents = {
+  // Headings
+  h1: ({ children }) => (
+    <h1 className="text-3xl font-bold mt-6 mb-4 text-slate-900 leading-tight">
+      {children}
+    </h1>
+  ),
+  h2: ({ children }) => (
+    <h2 className="text-2xl font-bold mt-5 mb-3 text-slate-800 leading-tight">
+      {children}
+    </h2>
+  ),
+  h3: ({ children }) => (
+    <h3 className="text-xl font-bold mt-4 mb-2 text-slate-700 leading-tight">
+      {children}
+    </h3>
+  ),
+  h4: ({ children }) => (
+    <h4 className="text-lg font-bold mt-3 mb-2 text-slate-700 leading-tight">
+      {children}
+    </h4>
+  ),
+  // Paragraphs - critical for line breaks
+  p: ({ children }) => (
+    <p className="mb-3 leading-relaxed whitespace-pre-wrap">{children}</p>
+  ),
+  // Unordered lists
+  ul: ({ children }) => (
+    <ul className="space-y-1 my-3 list-disc list-inside pl-4">{children}</ul>
+  ),
+  // Ordered lists
+  ol: ({ children }) => (
+    <ol className="space-y-1 my-3 list-decimal list-inside pl-4">{children}</ol>
+  ),
+  // List items with proper spacing
+  li: ({ children }) => (
+    <li className="leading-relaxed">{children}</li>
+  ),
+  // Blockquotes
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-4 border-slate-300 pl-4 my-4 italic text-slate-600">
+      {children}
+    </blockquote>
+  ),
+  // Inline code
+  code: ({ children, className }) => {
+    if (className?.includes("language-")) return null; // Let SyntaxHighlighter handle code blocks
+    return (
+      <code className="bg-slate-100 text-sm text-red-600 px-1.5 py-0.5 rounded font-mono">
+        {children}
+      </code>
+    );
+  },
+  // Code blocks with syntax highlighting via SyntaxHighlighter
+  pre: ({ children, node }) => {
+    const language = node?.children?.[0]?.props?.className?.replace(
+      "language-",
+      ""
+    ) || "text";
 
-  if (!thinking && !isStreaming) return null;
-
-  return (
-    <div className="mb-4">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => setIsExpanded(!isExpanded)}
-        className="text-xs text-slate-500 hover:text-slate-700 gap-1.5 h-7 px-2.5 rounded-lg"
-      >
-        <Brain className="w-3.5 h-3.5" />
-        <span className="font-medium">Thinking</span>
-        {isStreaming && !thinking && (
-          <span className="flex gap-1 ml-1">
-            <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"></span>
-            <span
-              className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"
-              style={{ animationDelay: "0.1s" }}
-            ></span>
-            <span
-              className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"
-              style={{ animationDelay: "0.2s" }}
-            ></span>
-          </span>
-        )}
-        {isExpanded ? (
-          <ChevronUp className="w-3 h-3" />
-        ) : (
-          <ChevronDown className="w-3 h-3" />
-        )}
-      </Button>
-      {isExpanded && (
-        <div className="mt-2 ml-1 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 leading-relaxed">
-          {thinking ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-              {thinking}
-            </ReactMarkdown>
-          ) : (
-            <span className="text-slate-400 italic">Thinking...</span>
-          )}
-        </div>
-      )}
+    return (
+      <div className="my-4 rounded-lg overflow-hidden border border-slate-200">
+        <SyntaxHighlighter
+          language={language}
+          style={vscDarkPlus}
+          customStyle={{
+            margin: 0,
+            borderRadius: 0,
+            fontSize: "13px",
+            lineHeight: 1.5,
+          }}
+          showLineNumbers
+          wrapLines
+        >
+          {children}
+        </SyntaxHighlighter>
+      </div>
+    );
+  },
+  // Tables with proper styling
+  table: ({ children }) => (
+    <div className="my-4 overflow-x-auto">
+      <table className="min-w-full table-auto border-collapse border border-slate-300">
+        {children}
+      </table>
     </div>
-  );
-};
+  ),
+  thead: ({ children }) => (
+    <thead className="bg-slate-100">{children}</thead>
+  ),
+  tbody: ({ children }) => <tbody>{children}</tbody>,
+  tr: ({ children }) => (
+    <tr className="border-b border-slate-200">{children}</tr>
+  ),
+  th: ({ children }) => (
+    <th className="px-4 py-2 text-left text-sm font-semibold text-slate-700 border-r border-slate-200">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="px-4 py-2 text-sm text-slate-600 border-r border-slate-200">
+      {children}
+    </td>
+  ),
+  // Horizontal rules
+  hr: () => <hr className="my-4 border-slate-200" />,
+  // Bold text
+  strong: ({ children }) => (
+    <strong className="font-semibold text-slate-900">{children}</strong>
+  ),
+  // Emphasis/italic
+  em: ({ children }) => <em className="italic text-slate-700">{children}</em>,
+  // Links
+  a: ({ children, href }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 hover:text-blue-800 underline decoration-blue-300 hover:decoration-blue-500 transition-colors"
+    >
+      {children}
+    </a>
+  ),
+  // Images
+}
 
-const WebSearchIndicator = ({ isSearching = false }) => {
+// Web search indicator component
+function WebSearchIndicator({ isSearching }) {
   if (!isSearching) return null;
 
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
-      <Globe className="w-4 h-4 animate-pulse" />
-      <span>Searching the web...</span>
-      <span className="flex gap-1">
-        <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
-        <span
-          className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-          style={{ animationDelay: "0.1s" }}
-        ></span>
-        <span
-          className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
-          style={{ animationDelay: "0.2s" }}
-        ></span>
-      </span>
+    <div className="flex items-center gap-2 text-sm text-slate-500 mb-3">
+      <div className="flex items-center gap-1">
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+        </span>
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" style={{ animationDelay: '0.2s' }}></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" style={{ animationDelay: '0.2s' }}></span>
+        </span>
+        <span className="relative flex h-2 w-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" style={{ animationDelay: '0.4s' }}></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" style={{ animationDelay: '0.4s' }}></span>
+        </span>
+      </div>
+      <span className="text-slate-600">Searching the web</span>
     </div>
   );
-};
+}
 
-const SourcesBlock = ({ sources }) => {
-  if (!sources || sources.length === 0) return null;
-
+// Message component for rendering individual messages
+function Message({ message, isStreaming }) {
+  const { role, content, thinking, sources } = message;
+  const isUser = role === "user";
+  const isAssistant = role === "assistant";
+  
   return (
-    <div className="mt-4 pt-4 border-t border-slate-200">
-      <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
-        <Globe className="w-3.5 h-3.5" />
-        Sources
+    <div
+      className={`w-full flex gap-5 md:gap-7 px-6 py-8 ${
+        isUser ? "bg-white" : "bg-slate-50/50"
+      }`}
+    >
+      {/* Avatar */}
+      <div
+        className={`h-9 w-9 rounded-xl shrink-0 flex items-center justify-center shadow-lg ${
+          isUser
+            ? "bg-slate-700 text-white"
+            : "bg-[#0f172a] text-white"
+        }`}
+      >
+        {isUser ? (
+          <User className="h-4.5 w-4.5" />
+        ) : (
+          <Sparkles className="h-4.5 w-4.5" />
+        )}
       </div>
-      <div className="space-y-1.5">
-        {sources.map((source, index) => (
-          <div
-            key={index}
-            className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg flex items-start gap-2"
-          >
-            <span className="text-slate-400 shrink-0">{index + 1}.</span>
-            <div className="flex-1 min-w-0">
-              {typeof source === "string" ? (
-                <span>{source}</span>
-              ) : (
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:underline break-all"
-                >
-                  {source.title || source.url || `Source ${index + 1}`}
-                </a>
-              )}
+
+      {/* Content */}
+      <div className="flex-1 min-w-0">
+        {thinking && (
+          <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="flex items-center gap-2 text-blue-700 text-sm font-medium mb-1">
+              <Brain className="h-3.5 w-3.5" />
+              Thinking
+            </div>
+            <div className="text-sm text-blue-800 whitespace-pre-wrap">
+              {thinking}
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+        )}
 
-const Message = ({ message, isStreaming = false }) => {
-  const isAssistant = message.role === "assistant";
-  const { cleanedText: content } = extractHtmlArtifacts(message.content);
-  const hasSources = message.sources && message.sources.length > 0;
-
-  return (
-    <div className="w-full">
-      <div className="max-w-[700px] mx-auto px-6 py-8 flex gap-5 md:gap-7">
-        <div
-          className={`h-9 w-9 rounded-xl shrink-0 flex items-center justify-center ${isAssistant ? "bg-[#0f172a] text-white shadow-lg" : "bg-[#f1f5f9] text-slate-400 border border-slate-200"}`}
-        >
-          {isAssistant ? (
-            <Sparkles className="h-4.5 w-4.5" />
-          ) : (
-            <User className="h-4.5 w-4.5" />
-          )}
-        </div>
-        <div className="flex-1 space-y-4 overflow-hidden pt-1">
-          {isAssistant && <ThinkingBlock thinking={message.thinking} />}
-
-          {/* Web search indicator */}
-          {isAssistant && message.webSearch && !isStreaming && (
-            <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
-              <Globe className="w-4 h-4 text-green-600" />
-              <span className="text-green-600 font-medium">Web Search</span>
-            </div>
-          )}
-
-          <div className="prose prose-slate max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+        {content && (
+          <div className="prose prose-slate max-w-none prose-sm md:prose-base">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={MarkdownComponents}
+            >
+              {content}
+            </ReactMarkdown>
           </div>
+        )}
 
-          {/* Sources block */}
-          {isAssistant && hasSources && (
-            <SourcesBlock sources={message.sources} />
-          )}
-        </div>
+        {/* Sources */}
+        {sources && sources.length > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-200">
+            <SourcesBlock sources={sources} />
+          </div>
+        )}
       </div>
     </div>
   );
-};
+}
 
 export default function MessageList({
   messages,
@@ -241,7 +302,7 @@ export default function MessageList({
                       />
                     )}
                     <div className="prose prose-slate max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
                         {streamingContent || "Thinking..."}
                       </ReactMarkdown>
                     </div>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { Toaster, toast } from "sonner";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
 import ChatInput from "@/components/chat/ChatInput";
@@ -220,82 +220,176 @@ export default function Home() {
 
       let fullResponse = "";
       let fullThinking = "";
+      let sources = []; // Store citations from web_search tool
       isStreamingComplete.current = false;
       try {
         if (needsWebSearch) {
-          // Use Exa for web search
-          await streamExaAnswer(
-            content,
-            (chunk) => {
-              fullResponse += chunk;
-              setStreamingContent(fullResponse);
-            },
-            (error) => {
-              toast.error(error.message);
-              setIsLoading(false);
-              setStreamingContent("");
-              setStreamingThinking("");
-            },
-            async (result) => {
-              // Guard against double invocation (e.g. React StrictMode)
-              if (isStreamingComplete.current) return;
-              isStreamingComplete.current = true;
+          // Use tool calling for web search
+          const tools = getTools();
+          let currentMessages = updatedMessages;
+          let iteration = 0;
+          const MAX_ITERATIONS = 2; // One tool call + final response max
 
-              // Extract sources from Exa response
-              const sources = result?.sources || result?.citations || [];
-              // Don't append sources to content - they'll be rendered by the SourcesBlock component
-              const sourcesText = "";
+          while (iteration < MAX_ITERATIONS) {
+            iteration++;
+            let iterationContent = "";
+            let iterationThinking = "";
+            const toolCallsMap = new Map(); // Accumulate tool calls by index
 
-              const assistantMessage = {
-                role: "assistant",
-                content: fullResponse,
-                webSearch: true,
-                sources: sources,
-              };
-              const finalMessages = [...updatedMessages, assistantMessage];
+            await streamChatCompletion(
+              currentMessages,
+              selectedModel,
+              (chunk, type) => {
+                if (type === "thinking") {
+                  iterationThinking += chunk;
+                  setStreamingThinking(iterationThinking);
+                } else {
+                  iterationContent += chunk;
+                  setStreamingContent(iterationContent);
+                }
+              },
+              (error) => {
+                toast.error(error.message);
+                setIsLoading(false);
+                setStreamingContent("");
+                setStreamingThinking("");
+              },
+              async () => {
+                // This iteration's response is complete
+                const assistantMsg = {
+                  role: "assistant",
+                  content: iterationContent,
+                  thinking: iterationThinking || undefined,
+                };
 
-              // Clear streaming FIRST so the streaming block disappears
-              // before the persisted message appears. This prevents both
-              // from being visible simultaneously (duplicate message).
-              setStreamingContent("");
-              setStreamingThinking("");
-              setMessages(finalMessages);
+                // Add to conversation
+                currentMessages = [...currentMessages, assistantMsg];
 
-              // Set loading to false immediately to prevent lingering loading indicator
-              setIsLoading(false);
+                // Process accumulated tool calls
+                const toolCalls = Array.from(toolCallsMap.values());
 
-              // Generate title after first AI response (when we have both user message and AI response)
-              let titleUpdate = {};
-              // Get the current conversation to check its title using the ref
-              const currentConversation = conversationsRef.current.find(
-                (c) => c.id === currentId,
-              );
-              // Only generate title if this is a new chat (title is still "New Chat")
-              // and we have the first AI response (2 messages: user + assistant)
-              if (
-                currentConversation?.title === "New Chat" &&
-                finalMessages.length === 2
-              ) {
-                const newTitle = await generateTitle(
-                  content,
-                  titleGenerationModel,
-                );
-                titleUpdate = { title: newTitle };
-              }
+                if (toolCalls.length > 0 && iteration < MAX_ITERATIONS) {
+                  for (const toolCall of toolCalls) {
+                    try {
+                      // arguments should now be complete JSON string
+                      let params = {};
+                      if (typeof toolCall.arguments === "string") {
+                        try {
+                          params = JSON.parse(toolCall.arguments);
+                        } catch (e) {
+                          console.error("Failed to parse tool arguments:", e);
+                          params = { query: toolCall.arguments };
+                        }
+                      } else if (typeof toolCall.arguments === "object") {
+                        params = toolCall.arguments;
+                      }
 
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages, ...titleUpdate }
-                    : conv,
-                ),
-              );
-            },
-            {
-              numResults: 5,
-              useAutoprompt: true,
-            },
-          );
+                      const result = await executeToolCall(
+                        toolCall.name,
+                        params,
+                        getStoredApiKey(),
+                      );
+
+                      // Store sources if this is a web search
+                      if (toolCall.name === "web_search") {
+                        sources = result.sources || result.citations || [];
+                      }
+
+                      // Add tool result as message
+                      currentMessages.push({
+                        role: "tool",
+                        content: JSON.stringify({
+                          tool: toolCall.name,
+                          result: result.result || result.content || "",
+                          sources: result.sources || [],
+                        }),
+                        tool_call_id: toolCall.id,
+                        name: toolCall.name,
+                      });
+                    } catch (error) {
+                      toast.error(`Tool error: ${error.message}`);
+                      currentMessages.push({
+                        role: "tool",
+                        content: JSON.stringify({
+                          tool: toolCall.name,
+                          error: error.message,
+                        }),
+                        tool_call_id: toolCall.id,
+                        name: toolCall.name,
+                      });
+                    }
+                  }
+                  // Loop continues for next iteration
+                } else {
+                  // No tool calls, we're done
+                  isStreamingComplete.current = true;
+                  setStreamingContent("");
+                  setStreamingThinking("");
+
+                  // If we have sources from web_search, attach them to the last assistant message
+                  if (sources && sources.length > 0) {
+                    const lastAssistantIndex = currentMessages.findLastIndex(
+                      (m) => m.role === "assistant",
+                    );
+                    if (lastAssistantIndex !== -1) {
+                      currentMessages[lastAssistantIndex] = {
+                        ...currentMessages[lastAssistantIndex],
+                        sources,
+                      };
+                    }
+                  }
+
+                  setMessages(currentMessages);
+                  setIsLoading(false);
+
+                  // Generate title if needed
+                  const currentConversation = conversationsRef.current.find(
+                    (c) => c.id === currentId,
+                  );
+                  if (
+                    currentConversation?.title === "New Chat" &&
+                    currentMessages.length === 2
+                  ) {
+                    const newTitle = await generateTitle(
+                      content,
+                      titleGenerationModel,
+                    );
+                    setConversations((prev) =>
+                      prev.map((conv) =>
+                        conv.id === currentId
+                          ? { ...conv, title: newTitle }
+                          : conv,
+                      ),
+                    );
+                  }
+                }
+              },
+              thinkingEnabled,
+              artifactsEnabled,
+              tools,
+              "auto",
+              (toolCall) => {
+                // Accumulate tool calls by index
+                const index = toolCall.index;
+                if (!toolCallsMap.has(index)) {
+                  toolCallsMap.set(index, {
+                    id: toolCall.id || "",
+                    name: toolCall.name || "",
+                    arguments: toolCall.arguments || "",
+                  });
+                } else {
+                  const existing = toolCallsMap.get(index);
+                  if (toolCall.id) existing.id = toolCall.id;
+                  if (toolCall.name) existing.name += toolCall.name;
+                  if (toolCall.arguments)
+                    existing.arguments += toolCall.arguments;
+                }
+              },
+            );
+
+            // If we finished without tool calls, break
+            if (toolCallsMap.size === 0) break;
+          }
         } else {
           // Use regular chat completion
           await streamChatCompletion(

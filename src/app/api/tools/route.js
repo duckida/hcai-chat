@@ -4,8 +4,10 @@
 import { executeTool, getTools } from "@/lib/tools";
 
 export async function POST(req) {
+  let tool = null;
   try {
-    const { tool, parameters } = await req.json();
+    const { tool: toolName, parameters, apiKey } = await req.json();
+    tool = toolName; // Store for error reporting
 
     if (!tool || !parameters) {
       return Response.json(
@@ -14,8 +16,16 @@ export async function POST(req) {
       );
     }
 
+    if (!apiKey) {
+      return Response.json(
+        { error: "API key required for tool execution" },
+        { status: 401 },
+      );
+    }
+
     // Execute the tool using the central tool executor
-    const result = await executeTool(tool, parameters);
+    // Pass the API key from the client
+    const result = await executeTool(tool, parameters, apiKey);
 
     // Return standardized response format
     return Response.json({

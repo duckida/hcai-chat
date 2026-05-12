@@ -49,36 +49,73 @@ export const TOOLS = [
  * @param {number} numResults - Number of results to return (default: 5)
  * @returns {Promise<object>} Search results with answer and citations
  */
-export async function executeWebSearch(query, numResults = 5) {
-  const apiKey = getStoredApiKey();
-  if (!apiKey) {
+export async function executeWebSearch(query, numResults = 5, apiKey = null) {
+  // Use provided API key or fall back to stored key
+  const key = apiKey || getStoredApiKey();
+  if (!key) {
     throw new Error("API key not found. Please set your API key in settings.");
   }
 
+  // Validate query
+  if (!query || typeof query !== 'string') {
+    throw new Error("Invalid search query");
+  }
+
   try {
-    const response = await fetch("/api/exa", {
+    const body = {
+      endpoint: "answer",
+      apiKey: key,
+      data: {
+        query: query,
+        numResults: Math.min(numResults, 10),
+        useAutoprompt: true,
+      },
+      stream: false,
+    };
+
+    // Log body shape for debugging (remove in production)
+    if (!body.apiKey) {
+      console.error("Missing apiKey in request body", body);
+    }
+
+    const response = await fetch(`${typeof window !== 'undefined' ? '' : ''}/api/exa`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        endpoint: "answer",
-        apiKey,
-        data: {
-          query,
-          numResults: Math.min(numResults, 10),
-          useAutoprompt: true,
-        },
-        stream: false,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || `Exa API error: ${response.status}`);
+      // Handle non-JSON error responses gracefully
+      const contentType = response.headers.get("content-type");
+      let errorMessage = `Exa API error: ${response.status}`;
+      try {
+        if (contentType?.includes("application/json")) {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } else {
+          const text = await response.text();
+          if (text) errorMessage = text;
+        }
+      } catch (e) {
+        // Keep default error message
+      }
+      throw new Error(errorMessage);
     }
 
-    const result = await response.json();
+    // Validate content type
+    const contentType = response.headers.get("content-type");
+    if (!contentType?.includes("application/json")) {
+      throw new Error(`Invalid response type from Exa: ${contentType}`);
+    }
+
+    const text = await response.text();
+    if (!text.trim()) {
+      throw new Error("Empty response from Exa API");
+    }
+
+    const result = JSON.parse(text);
 
     return {
       query,
@@ -99,7 +136,7 @@ export async function executeWebSearch(query, numResults = 5) {
  * @param {object} params - Parameters passed to the tool
  * @returns {Promise<object>} Execution result or error object
  */
-export async function executeTool(toolName, params) {
+export async function executeTool(toolName, params, apiKey = null) {
   // Validate tool exists
   const tool = TOOLS.find((t) => t.function.name === toolName);
   if (!tool) {
@@ -111,7 +148,7 @@ export async function executeTool(toolName, params) {
   try {
     switch (toolName) {
       case "web_search":
-        return await executeWebSearch(params.query, params.numResults);
+        return await executeWebSearch(params.query, params.numResults, apiKey);
 
       default:
         throw new Error(

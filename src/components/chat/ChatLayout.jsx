@@ -393,22 +393,24 @@ export default function ChatLayout({
                   >
                     <ScrollArea className="h-[400px]">
                       {Object.entries(groupedModels).length > 0 ? (
-                        Object.entries(groupedModels).map(([provider, models]) => (
-                          <SelectGroup key={provider}>
-                            <SelectLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8 py-2 bg-slate-50/50">
-                              {provider}
-                            </SelectLabel>
-                            {models.map((m) => (
-                              <SelectItem
-                                key={m.id}
-                                value={m.id}
-                                className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
-                              >
-                                {m.name}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        ))
+                        Object.entries(groupedModels).map(
+                          ([provider, models]) => (
+                            <SelectGroup key={provider}>
+                              <SelectLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8 py-2 bg-slate-50/50">
+                                {provider}
+                              </SelectLabel>
+                              {models.map((m) => (
+                                <SelectItem
+                                  key={m.id}
+                                  value={m.id}
+                                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                                >
+                                  {m.name}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          ),
+                        )
                       ) : (
                         <div className="p-4 text-xs text-center text-slate-400 font-medium">
                           Loading models...
@@ -427,9 +429,7 @@ export default function ChatLayout({
         <main className="flex-1 overflow-hidden relative flex flex-col">
           {children}
           {artifactFullscreen && (
-            <div className="absolute inset-0">
-              {rightPanel}
-            </div>
+            <div className="absolute inset-0">{rightPanel}</div>
           )}
         </main>
       </div>
