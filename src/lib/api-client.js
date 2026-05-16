@@ -38,6 +38,7 @@ export const streamChatCompletion = async (
   tools = null,
   toolChoice = "auto",
   onToolCall = null,
+  onSearchResult = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -50,10 +51,8 @@ export const streamChatCompletion = async (
     if (includeThinking) {
       body.think = true;
     }
-    // Add artifacts parameter to control what type of content is returned
     body.artifacts = artifactsEnabled;
 
-    // Add tool calling parameters if provided
     if (tools && Array.isArray(tools) && tools.length > 0) {
       body.tools = tools;
       body.tool_choice = toolChoice;
@@ -74,41 +73,62 @@ export const streamChatCompletion = async (
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = "";
+
+    const processLine = (line) => {
+      if (!line.startsWith("data: ")) return;
+
+      const data = line.slice(6);
+      if (data === "[DONE]") return;
+
+      try {
+        const parsed = JSON.parse(data);
+
+        // Search result metadata from server-side tool execution
+        if (parsed.type === "search_result" && onSearchResult) {
+          onSearchResult(parsed.sources || [], parsed.content || "");
+          return;
+        }
+
+        const delta = parsed.choices?.[0]?.delta || {};
+        const content = delta.content || "";
+        const thinking = delta.thinking || "";
+
+        if (content) onChunk(content, "content");
+        if (thinking) onChunk(thinking, "thinking");
+
+        if (delta.tool_calls && onToolCall) {
+          for (const toolCall of delta.tool_calls) {
+            onToolCall({
+              index: toolCall.index,
+              id: toolCall.id,
+              name: toolCall.function?.name || "",
+              arguments: toolCall.function?.arguments || "",
+              complete: !!toolCall.id,
+            });
+          }
+        }
+      } catch (_error) {
+        // Ignore malformed or partial lines until more stream data arrives.
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        onComplete?.();
+        buffer += decoder.decode();
+        const remaining = buffer.trim();
+        if (remaining) processLine(remaining);
+        await onComplete?.();
         break;
       }
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta || {};
-            const content = delta.content || "";
-            const thinking = delta.thinking || "";
-            if (content) onChunk(content, "content");
-            if (thinking) onChunk(thinking, "thinking");
-            if (delta.tool_calls && onToolCall) {
-              for (const toolCall of delta.tool_calls) {
-                onToolCall({
-                  index: toolCall.index,
-                  id: toolCall.id,
-                  name: toolCall.function?.name || "",
-                  arguments: toolCall.function?.arguments || "",
-                  complete: !!toolCall.id, // ID presence indicates completion
-                });
-              }
-            }
-          } catch (e) {}
-        }
+        processLine(line.trim());
       }
     }
   } catch (error) {
@@ -143,7 +163,7 @@ export const generateTitle = async (message, model = "gpt-4o-mini") => {
       // Since we set stream: false, the API now returns JSON
       const data = await response.json();
       // Extract the title from the response
-      const title = data.choices?.[0]?.message?.content || "";
+      const title = data.text || data.choices?.[0]?.message?.content || "";
       if (title) {
         return title.trim().replace(/^["']|["']$/g, "");
       }
@@ -341,79 +361,56 @@ export const streamChatWithTools = async (
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let accumulatedContent = "";
-    let accumulatedThinking = "";
-    let currentToolCalls = new Map(); // To accumulate multi-chunk tool calls
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
-      if (done) {
-        onComplete?.();
-        break;
-      }
+      if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
 
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            const delta = parsed.choices?.[0]?.delta || {};
+        const trimmedLine = line.trim();
+        if (!trimmedLine) continue;
 
-            // Handle regular content
-            if (delta.content) {
-              accumulatedContent += delta.content;
-              onChunk(delta.content, "content");
+        const type = trimmedLine[0];
+        const jsonString = trimmedLine.slice(2);
+
+        try {
+          const data = JSON.parse(jsonString);
+          if (type === "0") {
+            onChunk(data, "content");
+          } else if (type === "6") {
+            onChunk(data, "thinking");
+          } else if (type === "8") {
+            if (onToolCall) {
+              onToolCall({
+                index: data.toolCall.index,
+                id: data.toolCall.toolCallId,
+                name: data.toolCall.toolName,
+                arguments: data.toolCall.args,
+                complete: false,
+              });
             }
-
-            // Handle thinking
-            if (delta.thinking) {
-              accumulatedThinking += delta.thinking;
-              onChunk(delta.thinking, "thinking");
+          } else if (type === "9") {
+            if (onToolCall) {
+              onToolCall({
+                index: data.toolCall.index,
+                id: data.toolCall.toolCallId,
+                name: "",
+                arguments: "",
+                complete: true,
+              });
             }
-
-            // Handle tool calls (function calling)
-            if (delta.tool_calls) {
-              for (const toolCall of delta.tool_calls) {
-                const index = toolCall.index;
-                const id = toolCall.id || currentToolCalls.get(index)?.id;
-                const functionCall = toolCall.function;
-
-                if (!currentToolCalls.has(index)) {
-                  currentToolCalls.set(index, {
-                    id,
-                    name: "",
-                    arguments: "",
-                  });
-                }
-
-                const existing = currentToolCalls.get(index);
-                if (functionCall?.name) {
-                  existing.name += functionCall.name;
-                }
-                if (functionCall?.arguments) {
-                  existing.arguments += functionCall.arguments;
-                }
-
-                // Notify about tool call (may be partial)
-                if (onToolCall) {
-                  onToolCall({
-                    index,
-                    id: existing.id,
-                    name: existing.name,
-                    arguments: existing.arguments,
-                    complete: !!functionCall.id, // Heuristic for completion
-                  });
-                }
-              }
-            }
-          } catch (e) {}
+          }
+        } catch (e) {
+          console.error("Error parsing stream line:", trimmedLine, e);
         }
       }
     }
+    onComplete?.();
   } catch (error) {
     onError(error);
   }

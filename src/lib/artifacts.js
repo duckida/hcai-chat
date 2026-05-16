@@ -56,7 +56,7 @@ export function extractHtmlArtifacts(text) {
 export const ARTIFACT_INSTRUCTIONS = `
 ## Artifact Mode
 
-When the user asks you to create HTML content (webpages, components, games, dashboards, visual demos, etc.), output the complete, self-contained HTML document inside a fenced code block with the language \`html\`. For example:
+When the user asks you to create, design, or generate any content (webpages, components, games, dashboards, visual demos, tools, data visualizations, charts, UI mockups, etc.) — including when they provide an image, screenshot, or design mockup as reference — output the complete, self-contained HTML document inside a fenced code block with the language \`html\`. For example:
 
 \`\`\`html
 <!DOCTYPE html>
@@ -66,7 +66,7 @@ When the user asks you to create HTML content (webpages, components, games, dash
 \`\`\`
 
 Rules:
-- Only use this for complete, standalone HTML artifacts requested by the user.
+- Use this for any complete, standalone HTML artifact requested by the user, whether prompted by text, an uploaded image, or a screenshot.
 - Ensure all CSS and JavaScript are inline (no external dependencies).
 - Do NOT wrap simple code snippets or non-HTML code in html blocks.
 - Keep explanations brief — the artifact itself is the deliverable.

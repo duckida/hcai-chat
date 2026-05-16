@@ -1,27 +1,170 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, FileText, Paperclip, X } from "lucide-react";
+import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+
+function resizeImage(dataUrl, maxDim = 2048) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= maxDim && height <= maxDim) {
+        resolve(dataUrl);
+        return;
+      }
+      const ratio = Math.min(maxDim / width, maxDim / height);
+      width = Math.round(width * ratio);
+      height = Math.round(height * ratio);
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.src = dataUrl;
+  });
+}
+
+const SUPPORTED_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "text/markdown",
+];
+
+const FilePreview = ({ file, onRemove }) => {
+  const isImage = file.type.startsWith("image/");
+
+  return (
+    <div className="relative group inline-flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+      {isImage ? (
+        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
+          <img
+            src={file.dataUrl}
+            alt={file.name}
+            className="w-full h-full object-cover"
+          />
+        </div>
+      ) : (
+        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+          <FileText className="w-5 h-5 text-blue-600" />
+        </div>
+      )}
+      <div className="min-w-0 max-w-[160px]">
+        <p className="text-xs font-medium text-slate-700 truncate">
+          {file.name}
+        </p>
+        <p className="text-[10px] text-slate-400">
+          {file.size < 1024 * 1024
+            ? `${Math.round(file.size / 1024)} KB`
+            : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={() => onRemove(file.id)}
+        className="absolute -top-2 -right-2 w-5 h-5 bg-slate-700 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-900"
+      >
+        <X className="w-3 h-3" />
+      </button>
+    </div>
+  );
+};
 
 export default function ChatInput({ onSend, isLoading }) {
   const [input, setInput] = useState("");
+  const [files, setFiles] = useState([]);
   const textareaRef = useRef(null);
+  const fileInputRef = useRef(null);
 
-  const handleSend = () => {
-    if (input.trim() && !isLoading) {
-      onSend(input);
-      setInput("");
-      if (textareaRef.current) {
-        textareaRef.current.style.height = "52px";
-      }
+  const handleSend = useCallback(() => {
+    if ((!input.trim() && files.length === 0) || isLoading) return;
+    onSend(input, files);
+    setInput("");
+    setFiles([]);
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "52px";
     }
+  }, [input, files, isLoading, onSend]);
+
+  const processFile = async (file) => {
+    if (file.type.startsWith("image/")) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async (ev) => {
+          const dataUrl = await resizeImage(ev.target.result);
+          resolve({
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            dataUrl,
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        resolve({
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          text: ev.target.result,
+        });
+      };
+      reader.readAsText(file);
+    });
   };
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handlePaste = async (e) => {
+    const items = Array.from(e.clipboardData.items);
+    const imageItems = items.filter((item) => item.type.startsWith("image/"));
+
+    if (imageItems.length > 0) {
+      e.preventDefault();
+      const toProcess = [];
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          if (!file.name) {
+            const ext = file.type.split("/")[1] || "png";
+            toProcess.push(
+              new File([file], `pasted-image.${ext}`, { type: file.type }),
+            );
+          } else {
+            toProcess.push(file);
+          }
+        }
+      }
+      const processed = await Promise.all(toProcess.map(processFile));
+      setFiles((prev) => [...prev, ...processed]);
+      return;
+    }
+
+    const fileItems = Array.from(e.clipboardData.files).filter((f) =>
+      SUPPORTED_TYPES.includes(f.type),
+    );
+    if (fileItems.length > 0) {
+      e.preventDefault();
+      const processed = await Promise.all(fileItems.map(processFile));
+      setFiles((prev) => [...prev, ...processed]);
     }
   };
 
@@ -33,26 +176,63 @@ export default function ChatInput({ onSend, isLoading }) {
     el.style.height = `${newHeight}px`;
   };
 
+  const handleFileSelect = async (e) => {
+    const selectedFiles = Array.from(e.target.files);
+    const validFiles = selectedFiles.filter((f) =>
+      SUPPORTED_TYPES.includes(f.type),
+    );
+    const filesData = await Promise.all(validFiles.map(processFile));
+    setFiles((prev) => [...prev, ...filesData]);
+    e.target.value = "";
+  };
+
+  const removeFile = (id) => {
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  };
+
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-white/70 backdrop-blur-xl pb-8 pt-8 px-4 z-30">
-      <div className="max-w-[700px] mx-auto relative flex items-end">
-        <div className="relative w-full flex items-center bg-[#f4f4f4] rounded-[28px] border border-transparent focus-within:bg-white focus-within:border-[#ececec] focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all overflow-hidden p-[5px]">
+    <div className="shrink-0 bg-white/70 backdrop-blur-xl pb-8 pt-8 px-4 z-30">
+      <div className="max-w-[700px] mx-auto relative">
+        {files.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-3">
+            {files.map((file) => (
+              <FilePreview key={file.id} file={file} onRemove={removeFile} />
+            ))}
+          </div>
+        )}
+        <div className="relative flex items-end bg-[#f4f4f4] rounded-[28px] border border-transparent focus-within:bg-white focus-within:border-[#ececec] focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all overflow-hidden p-[5px]">
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="shrink-0 ml-2 mb-1 self-end h-9 w-9 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-all"
+          >
+            <Paperclip className="w-5 h-5" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={SUPPORTED_TYPES.join(",")}
+            onChange={handleFileSelect}
+            className="hidden"
+          />
           <textarea
             ref={textareaRef}
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Message Hack Club AI"
-            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[15px] px-[20px] min-h-[52px] h-[52px] text-[15px] text-[#212121] placeholder:text-slate-400 leading-[1.4] overflow-y-auto block font-medium"
+            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[15px] px-[12px] min-h-[52px] h-[52px] text-[15px] text-[#212121] placeholder:text-slate-400 leading-[1.4] overflow-y-auto block font-medium"
             rows={1}
           />
           <div className="flex items-center pr-2 pb-1.5 self-end">
             <Button
               size="icon"
-              disabled={!input.trim() || isLoading}
+              disabled={(!input.trim() && files.length === 0) || isLoading}
               onClick={handleSend}
               className={`h-8.5 w-8.5 rounded-full transition-all ${
-                input.trim() && !isLoading
+                (input.trim() || files.length > 0) && !isLoading
                   ? "bg-[#0f172a] text-white hover:bg-black shadow-md"
                   : "bg-[#e5e5e5] text-[#a0a0a0] cursor-not-allowed"
               }`}

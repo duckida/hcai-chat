@@ -5,13 +5,13 @@
  * Each tool is registered with:
  * 1. input schema (JSON Schema object)
  * 2. execution function
- * 3. output format (OpenAI function calling convention)
+ * 3. output format (standard tool calling convention)
  */
 
 import { getStoredApiKey } from "./api-client";
 
 /**
- * Tool definitions following OpenAI function calling format
+ * Tool definitions following standard tool calling format
  */
 export const TOOLS = [
   {
@@ -78,12 +78,18 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
       console.error("Missing apiKey in request body", body);
     }
 
-    const response = await fetch(`${typeof window !== 'undefined' ? '' : ''}/api/exa`, {
+    // Call Exa directly to avoid proxy issues
+    const response = await fetch("https://ai.hackclub.com/proxy/v1/exa/answer", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${key}`,
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        query,
+        numResults: Math.min(numResults, 10),
+        useAutoprompt: true,
+      }),
     });
 
     if (!response.ok) {
@@ -163,7 +169,7 @@ export async function executeTool(toolName, params, apiKey = null) {
 
 /**
  * Get all available tools with their schemas
- * @returns {Array} Array of tool objects ready for OpenAI function calling
+ * @returns {Array} Array of tool objects ready for tool calling
  */
 export function getTools() {
   return TOOLS;

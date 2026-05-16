@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { Streamdown } from "streamdown";
+import { code } from "@streamdown/code";
+import { math } from "@streamdown/math";
+import { mermaid } from "@streamdown/mermaid";
+import { cjk } from "@streamdown/cjk";
 import {
   Code,
   Eye,
@@ -14,9 +17,28 @@ import {
   Expand,
   Minimize,
   X,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+const CustomLink = ({ href, children }) => {
+  const isExternal = href.startsWith("http");
+  return (
+    <a
+      href={href}
+      target={isExternal ? "_blank" : undefined}
+      rel={isExternal ? "noopener noreferrer" : undefined}
+      className="text-blue-600 hover:text-blue-800 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-600 transition-colors inline-flex items-center gap-1"
+    >
+      {children}
+      {isExternal && <ExternalLink className="w-3 h-3 shrink-0" />}
+    </a>
+  );
+};
+
+const streamdownPlugins = { code, math, mermaid, cjk };
+const streamdownComponents = { a: CustomLink };
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 600;
@@ -217,14 +239,7 @@ export default function ArtifactPanel({
 
         {/* Content */}
         <div className="flex-1 overflow-hidden relative">
-          {streamingArtifact ? (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <div className="w-8 h-8 border-3 border-purple-200 border-t-purple-600 rounded-full animate-spin mb-3"></div>
-              <span className="text-sm font-medium">
-                Generating artifact...
-              </span>
-            </div>
-          ) : !activeArtifact ? (
+          {!activeArtifact ? (
             <div className="flex items-center justify-center h-full text-slate-400 text-sm">
               No artifact to display
             </div>
@@ -246,21 +261,17 @@ export default function ArtifactPanel({
             />
           ) : (
             <ScrollArea className="h-full">
-              <SyntaxHighlighter
-                language="html"
-                style={oneDark}
-                wrapLongLines={true}
-                customStyle={{
-                  margin: 0,
-                  padding: "1.25rem",
-                  fontSize: "0.85rem",
-                  lineHeight: "1.6",
-                  borderRadius: 0,
-                  minHeight: "100%",
-                }}
-              >
-                {activeArtifact}
-              </SyntaxHighlighter>
+              <div className="p-4">
+                <Streamdown 
+                  mode={streamingArtifact ? "stream" : "static"} 
+                  caret={streamingArtifact ? "block" : false}
+                  isAnimating={!!streamingArtifact}
+                  plugins={streamdownPlugins} 
+                  components={streamdownComponents}
+                >
+                  {`\`\`\`html\n${activeArtifact}\n\`\`\``}
+                </Streamdown>
+              </div>
             </ScrollArea>
           )}
         </div>

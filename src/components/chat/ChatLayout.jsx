@@ -348,15 +348,24 @@ export default function ChatLayout({
                       <Button
                         variant="ghost"
                         size="icon"
+                        disabled={webSearchEnabled}
                         onClick={() => onArtifactsChange(!artifactsEnabled)}
-                        className={`h-8 w-8 transition-colors ${artifactsEnabled ? "text-purple-600 bg-purple-50" : "text-slate-400 hover:text-slate-900"}`}
+                        className={`h-8 w-8 transition-colors ${
+                          artifactsEnabled
+                            ? "text-purple-600 bg-purple-50"
+                            : webSearchEnabled
+                              ? "text-slate-300 cursor-not-allowed"
+                              : "text-slate-400 hover:text-slate-900"
+                        }`}
                       >
                         <Puzzle className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
                       <p className="text-xs">
-                        Toggle artifacts {artifactsEnabled ? "off" : "on"}
+                        {webSearchEnabled
+                          ? "Disable web search to use artifacts"
+                          : `Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
                       </p>
                     </TooltipContent>
                   </Tooltip>
@@ -368,15 +377,24 @@ export default function ChatLayout({
                       <Button
                         variant="ghost"
                         size="icon"
+                        disabled={artifactsEnabled}
                         onClick={() => onWebSearchChange(!webSearchEnabled)}
-                        className={`h-8 w-8 transition-colors ${webSearchEnabled ? "text-green-600 bg-green-50" : "text-slate-400 hover:text-slate-900"}`}
+                        className={`h-8 w-8 transition-colors ${
+                          webSearchEnabled
+                            ? "text-green-600 bg-green-50"
+                            : artifactsEnabled
+                              ? "text-slate-300 cursor-not-allowed"
+                              : "text-slate-400 hover:text-slate-900"
+                        }`}
                       >
                         <Globe className="w-4 h-4" />
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>
                       <p className="text-xs">
-                        Toggle web search {webSearchEnabled ? "off" : "on"}
+                        {artifactsEnabled
+                          ? "Disable artifacts to use web search"
+                          : `Toggle web search ${webSearchEnabled ? "off" : "on"}`}
                       </p>
                     </TooltipContent>
                   </Tooltip>

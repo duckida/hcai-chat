@@ -1,20 +1,19 @@
 "use client";
 
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import ApiKeyModal from "@/components/chat/ApiKeyModal";
+import ArtifactPanel from "@/components/chat/ArtifactPanel";
+import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
-import ChatInput from "@/components/chat/ChatInput";
-import ArtifactPanel from "@/components/chat/ArtifactPanel";
-import ApiKeyModal from "@/components/chat/ApiKeyModal";
 import {
-  streamChatCompletion,
-  getStoredApiKey,
   generateTitle,
-  executeToolCall,
+  getStoredApiKey,
+  streamChatCompletion,
 } from "@/lib/api-client";
-import { getTools } from "@/lib/tools";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
+import { getTools } from "@/lib/tools";
 
 export default function Home() {
   const [conversations, setConversations] = useState([]);
@@ -61,12 +60,37 @@ export default function Home() {
     return extractHtmlArtifacts(streamingContent);
   }, [streamingContent]);
 
+  // Save artifactPanelOpen to active conversation
+  const saveArtifactPanelOpen = useCallback(
+    (open) => {
+      if (activeConversation) {
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === activeConversation
+              ? { ...conv, artifactPanelOpen: open }
+              : conv,
+          ),
+        );
+      }
+    },
+    [activeConversation],
+  );
+
+  const handleToggleArtifactPanel = useCallback(() => {
+    setArtifactPanelOpen((prev) => {
+      const next = !prev;
+      saveArtifactPanelOpen(next);
+      return next;
+    });
+  }, [saveArtifactPanelOpen]);
+
   // Auto-open panel when a streaming artifact appears
   useEffect(() => {
     if (streamingArtifact && artifactsEnabled) {
       setArtifactPanelOpen(true);
+      saveArtifactPanelOpen(true);
     }
-  }, [streamingArtifact, artifactsEnabled]);
+  }, [streamingArtifact, artifactsEnabled, saveArtifactPanelOpen]);
 
   useEffect(() => {
     const stored = localStorage.getItem("conversations");
@@ -76,6 +100,7 @@ export default function Home() {
       if (parsed.length > 0 && isFirstMount.current) {
         setActiveConversation(parsed[0].id);
         setMessages(parsed[0].messages);
+        setArtifactPanelOpen(parsed[0].artifactPanelOpen ?? false);
       }
     }
 
@@ -134,12 +159,14 @@ export default function Home() {
       title: "New Chat",
       createdAt: new Date().toISOString(),
       messages: [],
+      artifactPanelOpen: false,
     };
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newId);
     setMessages([]);
     setStreamingContent("");
     setStreamingThinking("");
+    setArtifactPanelOpen(false);
   }, []);
 
   const handleSelectConversation = useCallback(
@@ -147,6 +174,7 @@ export default function Home() {
       setActiveConversation(id);
       const conversation = conversations.find((c) => c.id === id);
       setMessages(conversation?.messages || []);
+      setArtifactPanelOpen(conversation?.artifactPanelOpen ?? false);
       setStreamingContent("");
       setStreamingThinking("");
     },
@@ -181,8 +209,8 @@ export default function Home() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (content) => {
-      if (!content.trim()) return;
+    async (content, files = []) => {
+      if (!content.trim() && files.length === 0) return;
 
       // Determine if we should use web search based on toggle
       const needsWebSearch = webSearchEnabled;
@@ -195,13 +223,44 @@ export default function Home() {
           title: "New Chat",
           createdAt: new Date().toISOString(),
           messages: [],
+          artifactPanelOpen: false,
         };
         setConversations((prev) => [newConversation, ...prev]);
         setActiveConversation(newId);
+        setArtifactPanelOpen(false);
         currentId = newId;
       }
 
-      const userMessage = { role: "user", content };
+      let userMessage;
+      if (files.length > 0) {
+        const contentParts = [];
+        if (content.trim()) {
+          contentParts.push({ type: "text", text: content });
+        }
+        for (const file of files) {
+          if (file.type.startsWith("image/")) {
+            contentParts.push({ type: "image", image: file.dataUrl });
+          } else if (file.text) {
+            contentParts.push({
+              type: "text",
+              text: `--- File: ${file.name} ---\n${file.text}\n---`,
+            });
+          }
+        }
+        userMessage = {
+          role: "user",
+          content: contentParts,
+          _files: files.map((f) => ({
+            id: f.id,
+            name: f.name,
+            type: f.type,
+            size: f.size,
+            dataUrl: f.type.startsWith("image/") ? f.dataUrl : null,
+          })),
+        };
+      } else {
+        userMessage = { role: "user", content };
+      }
       const updatedMessages = [...messages, userMessage];
       setMessages(updatedMessages);
       setStreamingContent("");
@@ -224,172 +283,78 @@ export default function Home() {
       isStreamingComplete.current = false;
       try {
         if (needsWebSearch) {
-          // Use tool calling for web search
+          // Server-side tool calling with maxSteps: model thinks → searches
+          // → thinks about results → generates artifact, all in one stream.
           const tools = getTools();
-          let currentMessages = updatedMessages;
-          let iteration = 0;
-          const MAX_ITERATIONS = 2; // One tool call + final response max
 
-          while (iteration < MAX_ITERATIONS) {
-            iteration++;
-            let iterationContent = "";
-            let iterationThinking = "";
-            const toolCallsMap = new Map(); // Accumulate tool calls by index
+          await streamChatCompletion(
+            updatedMessages,
+            selectedModel,
+            (chunk, type) => {
+              if (type === "thinking") {
+                fullThinking += chunk;
+                setStreamingThinking(fullThinking);
+              } else {
+                fullResponse += chunk;
+                setStreamingContent(fullResponse);
+              }
+            },
+            (error) => {
+              toast.error(error.message);
+              setIsLoading(false);
+              setStreamingContent("");
+              setStreamingThinking("");
+            },
+            async () => {
+              if (isStreamingComplete.current) return;
+              isStreamingComplete.current = true;
 
-            await streamChatCompletion(
-              currentMessages,
-              selectedModel,
-              (chunk, type) => {
-                if (type === "thinking") {
-                  iterationThinking += chunk;
-                  setStreamingThinking(iterationThinking);
-                } else {
-                  iterationContent += chunk;
-                  setStreamingContent(iterationContent);
-                }
-              },
-              (error) => {
-                toast.error(error.message);
-                setIsLoading(false);
-                setStreamingContent("");
-                setStreamingThinking("");
-              },
-              async () => {
-                // This iteration's response is complete
-                const assistantMsg = {
-                  role: "assistant",
-                  content: iterationContent,
-                  thinking: iterationThinking || undefined,
-                };
+              const assistantMessage = {
+                role: "assistant",
+                content: fullResponse,
+                thinking: fullThinking || undefined,
+                sources: sources.length > 0 ? sources : undefined,
+                webSearch: true,
+              };
+              const finalMessages = [...updatedMessages, assistantMessage];
 
-                // Add to conversation
-                currentMessages = [...currentMessages, assistantMsg];
+              setStreamingContent("");
+              setStreamingThinking("");
+              setMessages(finalMessages);
+              setIsLoading(false);
 
-                // Process accumulated tool calls
-                const toolCalls = Array.from(toolCallsMap.values());
+              let titleUpdate = {};
+              const currentConversation = conversationsRef.current.find(
+                (c) => c.id === currentId,
+              );
+              if (
+                currentConversation?.title === "New Chat" &&
+                finalMessages.length === 2
+              ) {
+                const newTitle = await generateTitle(
+                  content,
+                  titleGenerationModel,
+                );
+                titleUpdate = { title: newTitle };
+              }
 
-                if (toolCalls.length > 0 && iteration < MAX_ITERATIONS) {
-                  for (const toolCall of toolCalls) {
-                    try {
-                      // arguments should now be complete JSON string
-                      let params = {};
-                      if (typeof toolCall.arguments === "string") {
-                        try {
-                          params = JSON.parse(toolCall.arguments);
-                        } catch (e) {
-                          console.error("Failed to parse tool arguments:", e);
-                          params = { query: toolCall.arguments };
-                        }
-                      } else if (typeof toolCall.arguments === "object") {
-                        params = toolCall.arguments;
-                      }
-
-                      const result = await executeToolCall(
-                        toolCall.name,
-                        params,
-                        getStoredApiKey(),
-                      );
-
-                      // Store sources if this is a web search
-                      if (toolCall.name === "web_search") {
-                        sources = result.sources || result.citations || [];
-                      }
-
-                      // Add tool result as message
-                      currentMessages.push({
-                        role: "tool",
-                        content: JSON.stringify({
-                          tool: toolCall.name,
-                          result: result.result || result.content || "",
-                          sources: result.sources || [],
-                        }),
-                        tool_call_id: toolCall.id,
-                        name: toolCall.name,
-                      });
-                    } catch (error) {
-                      toast.error(`Tool error: ${error.message}`);
-                      currentMessages.push({
-                        role: "tool",
-                        content: JSON.stringify({
-                          tool: toolCall.name,
-                          error: error.message,
-                        }),
-                        tool_call_id: toolCall.id,
-                        name: toolCall.name,
-                      });
-                    }
-                  }
-                  // Loop continues for next iteration
-                } else {
-                  // No tool calls, we're done
-                  isStreamingComplete.current = true;
-                  setStreamingContent("");
-                  setStreamingThinking("");
-
-                  // If we have sources from web_search, attach them to the last assistant message
-                  if (sources && sources.length > 0) {
-                    const lastAssistantIndex = currentMessages.findLastIndex(
-                      (m) => m.role === "assistant",
-                    );
-                    if (lastAssistantIndex !== -1) {
-                      currentMessages[lastAssistantIndex] = {
-                        ...currentMessages[lastAssistantIndex],
-                        sources,
-                      };
-                    }
-                  }
-
-                  setMessages(currentMessages);
-                  setIsLoading(false);
-
-                  // Generate title if needed
-                  const currentConversation = conversationsRef.current.find(
-                    (c) => c.id === currentId,
-                  );
-                  if (
-                    currentConversation?.title === "New Chat" &&
-                    currentMessages.length === 2
-                  ) {
-                    const newTitle = await generateTitle(
-                      content,
-                      titleGenerationModel,
-                    );
-                    setConversations((prev) =>
-                      prev.map((conv) =>
-                        conv.id === currentId
-                          ? { ...conv, title: newTitle }
-                          : conv,
-                      ),
-                    );
-                  }
-                }
-              },
-              thinkingEnabled,
-              artifactsEnabled,
-              tools,
-              "auto",
-              (toolCall) => {
-                // Accumulate tool calls by index
-                const index = toolCall.index;
-                if (!toolCallsMap.has(index)) {
-                  toolCallsMap.set(index, {
-                    id: toolCall.id || "",
-                    name: toolCall.name || "",
-                    arguments: toolCall.arguments || "",
-                  });
-                } else {
-                  const existing = toolCallsMap.get(index);
-                  if (toolCall.id) existing.id = toolCall.id;
-                  if (toolCall.name) existing.name += toolCall.name;
-                  if (toolCall.arguments)
-                    existing.arguments += toolCall.arguments;
-                }
-              },
-            );
-
-            // If we finished without tool calls, break
-            if (toolCallsMap.size === 0) break;
-          }
+              setConversations((prev) =>
+                prev.map((conv) =>
+                  conv.id === currentId
+                    ? { ...conv, messages: finalMessages, ...titleUpdate }
+                    : conv,
+                ),
+              );
+            },
+            thinkingEnabled,
+            artifactsEnabled,
+            tools,
+            "auto",
+            null,
+            (searchSources) => {
+              sources = searchSources;
+            },
+          );
         } else {
           // Use regular chat completion
           await streamChatCompletion(
@@ -509,7 +474,7 @@ export default function Home() {
             artifacts={messageArtifacts}
             streamingArtifact={streamingArtifact}
             isOpen={artifactPanelOpen}
-            onToggle={() => setArtifactPanelOpen((prev) => !prev)}
+            onToggle={handleToggleArtifactPanel}
             fullscreen={artifactFullscreen}
             onFullscreenToggle={() => setArtifactFullscreen((prev) => !prev)}
           />
