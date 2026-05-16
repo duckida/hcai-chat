@@ -19,6 +19,9 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${inter.variable} ${inter.className} h-full antialiased`}
     >
+      <head>
+        <script async src="https://scripts.simpleanalyticscdn.com/latest.js" />
+      </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <AppWrapper>{children}</AppWrapper>
       </body>
