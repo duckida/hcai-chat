@@ -30,17 +30,35 @@ export function buildToolStepMessages({
     const toolResult = collectedToolResults.find(
       (result) => result.toolCallId === toolCall.toolCallId,
     );
-    if (toolResult) {
+    if (!toolResult) continue;
+
+    const resultValue = toolResult.result ?? null;
+    if (toolResult.isError) {
+      const errorValue =
+        typeof resultValue === "string"
+          ? resultValue
+          : JSON.stringify(resultValue);
       toolResultContent.push({
         type: "tool-result",
         toolCallId: toolResult.toolCallId,
         toolName: toolResult.toolName,
         output: {
-          type: "json",
-          value: toolResult.result ?? null,
+          type: "error-text",
+          value: errorValue,
         },
       });
+      continue;
     }
+
+    toolResultContent.push({
+      type: "tool-result",
+      toolCallId: toolResult.toolCallId,
+      toolName: toolResult.toolName,
+      output: {
+        type: "json",
+        value: resultValue,
+      },
+    });
   }
 
   if (toolResultContent.length > 0) {

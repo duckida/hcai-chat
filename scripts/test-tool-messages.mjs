@@ -13,7 +13,7 @@ function testBuildToolStepMessages() {
   const messages = buildToolStepMessages({
     collectedText: "",
     collectedToolCalls: [{ toolCallId, toolName, input }],
-    collectedToolResults: [{ toolCallId, toolName, result }],
+    collectedToolResults: [{ toolCallId, toolName, result, isError: false }],
   });
 
   assert.equal(messages.length, 2, "Should create assistant and tool messages");
@@ -72,8 +72,29 @@ function testBuildToolStepMessagesNoContent() {
   assert.equal(messages.length, 0, "Should return empty array");
 }
 
+function testBuildToolStepMessagesWithError() {
+  const toolCallId = "tool-call-3";
+  const toolName = "web_search";
+  const input = { query: "hello" };
+  const error = { error: "Search failed" };
+
+  const messages = buildToolStepMessages({
+    collectedText: "",
+    collectedToolCalls: [{ toolCallId, toolName, input }],
+    collectedToolResults: [
+      { toolCallId, toolName, result: error, isError: true },
+    ],
+  });
+
+  assert.equal(messages.length, 2);
+  const toolContent = messages[1].content;
+  assert.equal(toolContent[0].output.type, "error-text");
+  assert.equal(toolContent[0].output.value, JSON.stringify(error));
+}
+
 testBuildToolStepMessages();
 testBuildToolStepMessagesWithText();
 testBuildToolStepMessagesNoContent();
+testBuildToolStepMessagesWithError();
 
 console.log("tool-messages tests passed");

@@ -2,6 +2,7 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
 import { buildToolStepMessages } from "@/lib/tool-messages.mjs";
+import { getToolOutput } from "@/lib/tool-stream.mjs";
 
 function toSdkTools(clientTools, apiKey) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
@@ -178,14 +179,17 @@ async function emitStreamParts(
         break;
       }
 
-      case "tool-result": {
+      case "tool-result":
+      case "tool-error": {
+        const output = getToolOutput(part);
         collectedToolResults.push({
           toolCallId: part.toolCallId,
           toolName: part.toolName,
-          result: part.result,
+          result: output,
+          isError: part.type === "tool-error",
         });
-        if (part.toolName === "web_search" && part.result) {
-          const res = part.result;
+        if (part.toolName === "web_search" && output) {
+          const res = output;
           send({
             type: "search_result",
             sources: res.citations || [],
@@ -297,7 +301,9 @@ export async function POST(req) {
               collectedToolCalls,
               collectedToolResults,
             });
-            currentMessages.push(...toolStepMessages);
+            for (const message of toolStepMessages) {
+              currentMessages.push(message);
+            }
           }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
