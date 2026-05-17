@@ -61,6 +61,7 @@ export default function ChatLayout({
   artifactFullscreen = false,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
   const [groupedModels, setGroupedModels] = useState({});
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -165,10 +166,14 @@ export default function ChatLayout({
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full bg-[#f9f9f9] border-r border-[#ececec]">
-      <div className="p-3 mb-2 flex items-center justify-between">
+      <div className="p-3 mb-2">
         <Button
-          onClick={onNewChat}
-          className="flex-1 justify-start gap-2 bg-white hover:bg-[#f3f3f3] text-slate-900 border-none shadow-sm h-10 px-3 rounded-lg transition-all font-medium"
+          onClick={() => {
+            onNewChat();
+            setSidebarOpen(false);
+            setMobileSheetOpen(false);
+          }}
+          className="w-full justify-start gap-2 bg-white hover:bg-[#f3f3f3] text-slate-900 border-none shadow-sm h-10 px-3 rounded-lg transition-all font-medium"
           variant="outline"
         >
           <Plus className="w-4 h-4" />
@@ -291,8 +296,8 @@ export default function ChatLayout({
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 relative">
-        <header className="h-14 border-b border-[#ececec] flex items-center justify-between px-4 bg-white/80 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-2">
+        <header className="h-12 sm:h-14 border-b border-[#ececec] flex items-center justify-between px-3 sm:px-4 bg-white/80 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center gap-1 sm:gap-2">
             <Button
               variant="ghost"
               size="icon"
@@ -306,103 +311,109 @@ export default function ChatLayout({
               )}
             </Button>
             <div className="md:hidden">
-              <Sheet>
+              <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9">
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
                     <Menu className="w-5 h-5 text-slate-500" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="left" className="p-0 w-[260px] border-none">
+                <SheetContent
+                  side="left"
+                  className="p-0 w-[260px] border-none"
+                  showCloseButton={false}
+                >
                   <SidebarContent />
                 </SheetContent>
               </Sheet>
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center gap-2">
+          <div className="flex-1 flex items-center justify-center gap-0.5 sm:gap-2">
             {!artifactFullscreen && (
               <>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onThinkingChange(!thinkingEnabled)}
-                        className={`h-8 w-8 transition-colors ${thinkingEnabled ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-slate-900"}`}
-                      >
-                        <Brain className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">
-                        Toggle thinking {thinkingEnabled ? "off" : "on"}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <div className="flex items-center gap-0.5 sm:gap-1">
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onThinkingChange(!thinkingEnabled)}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${thinkingEnabled ? "text-blue-600 bg-blue-50" : "text-slate-400 hover:text-slate-900"}`}
+                        >
+                          <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">
+                          Toggle thinking {thinkingEnabled ? "off" : "on"}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
 
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={webSearchEnabled}
-                        onClick={() => onArtifactsChange(!artifactsEnabled)}
-                        className={`h-8 w-8 transition-colors ${
-                          artifactsEnabled
-                            ? "text-purple-600 bg-purple-50"
-                            : webSearchEnabled
-                              ? "text-slate-300 cursor-not-allowed"
-                              : "text-slate-400 hover:text-slate-900"
-                        }`}
-                      >
-                        <Puzzle className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">
-                        {webSearchEnabled
-                          ? "Disable web search to use artifacts"
-                          : `Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={webSearchEnabled}
+                          onClick={() => onArtifactsChange(!artifactsEnabled)}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+                            artifactsEnabled
+                              ? "text-purple-600 bg-purple-50"
+                              : webSearchEnabled
+                                ? "text-slate-300 cursor-not-allowed"
+                                : "text-slate-400 hover:text-slate-900"
+                          }`}
+                        >
+                          <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">
+                          {webSearchEnabled
+                            ? "Disable web search to use artifacts"
+                            : `Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
 
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        disabled={artifactsEnabled}
-                        onClick={() => onWebSearchChange(!webSearchEnabled)}
-                        className={`h-8 w-8 transition-colors ${
-                          webSearchEnabled
-                            ? "text-green-600 bg-green-50"
-                            : artifactsEnabled
-                              ? "text-slate-300 cursor-not-allowed"
-                              : "text-slate-400 hover:text-slate-900"
-                        }`}
-                      >
-                        <Globe className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">
-                        {artifactsEnabled
-                          ? "Disable artifacts to use web search"
-                          : `Toggle web search ${webSearchEnabled ? "off" : "on"}`}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          disabled={artifactsEnabled}
+                          onClick={() => onWebSearchChange(!webSearchEnabled)}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+                            webSearchEnabled
+                              ? "text-green-600 bg-green-50"
+                              : artifactsEnabled
+                                ? "text-slate-300 cursor-not-allowed"
+                                : "text-slate-400 hover:text-slate-900"
+                          }`}
+                        >
+                          <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">
+                          {artifactsEnabled
+                            ? "Disable artifacts to use web search"
+                            : `Toggle web search ${webSearchEnabled ? "off" : "on"}`}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
 
                 <Select value={selectedModel} onValueChange={onModelChange}>
-                  <SelectTrigger className="w-auto min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[14px] text-slate-800 bg-transparent gap-2 h-9 px-3 rounded-xl">
-                    <SelectValue placeholder="Select Model" />
+                  <SelectTrigger className="w-auto min-w-[100px] sm:min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[12px] sm:text-[14px] text-slate-800 bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1.5 sm:px-3 rounded-xl">
+                    <SelectValue placeholder="Model" />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
@@ -441,7 +452,7 @@ export default function ChatLayout({
             )}
           </div>
 
-          <div className="md:w-8" />
+          <div className="w-8 hidden sm:block" />
         </header>
 
         <main className="flex-1 overflow-hidden relative flex flex-col">

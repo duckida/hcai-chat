@@ -84,14 +84,6 @@ export default function Home() {
     });
   }, [saveArtifactPanelOpen]);
 
-  // Auto-open panel when a streaming artifact appears
-  useEffect(() => {
-    if (streamingArtifact && artifactsEnabled) {
-      setArtifactPanelOpen(true);
-      saveArtifactPanelOpen(true);
-    }
-  }, [streamingArtifact, artifactsEnabled, saveArtifactPanelOpen]);
-
   useEffect(() => {
     const stored = localStorage.getItem("conversations");
     if (stored) {

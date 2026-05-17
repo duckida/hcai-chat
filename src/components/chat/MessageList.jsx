@@ -240,9 +240,9 @@ const Message = ({ message, isStreaming = false }) => {
 
   return (
     <div className="w-full">
-      <div className="max-w-[700px] mx-auto px-6 py-8 flex gap-5 md:gap-7">
+      <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
         <div
-          className={`h-9 w-9 rounded-xl shrink-0 flex items-center justify-center ${
+          className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center ${
             isAssistant
               ? "bg-[#0f172a] text-white shadow-lg"
               : "bg-[#f1f5f9] text-slate-400 border border-slate-200"
@@ -339,14 +339,14 @@ export default function MessageList({
     >
       <div className="py-4">
         {!hasContent ? (
-          <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-6">
-            <div className="w-16 h-16 rounded-[2rem] bg-slate-900 text-white flex items-center justify-center shadow-2xl mb-8 transform hover:scale-110 transition-transform duration-500">
-              <Sparkles className="h-8 w-8" />
+          <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-slate-900 text-white flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
+              <Sparkles className="h-7 w-7 sm:h-8 sm:w-8" />
             </div>
-            <h1 className="text-2xl font-[800] tracking-[-0.03em] text-slate-900 mb-2 uppercase">
+            <h1 className="text-xl sm:text-2xl font-[800] tracking-[-0.03em] text-slate-900 mb-2 uppercase">
               Hack Club AI
             </h1>
-            <p className="text-[13px] font-medium text-slate-500 max-w-[280px] leading-relaxed">
+            <p className="text-[12px] sm:text-[13px] font-medium text-slate-500 max-w-[260px] sm:max-w-[280px] leading-relaxed">
               Modern open source intelligence. Start a conversation to get
               started.
             </p>
@@ -390,9 +390,9 @@ export default function MessageList({
 
             {(streamingContent || streamingThinking) && (
               <div className="w-full">
-                <div className="max-w-[700px] mx-auto px-6 py-8 flex gap-5 md:gap-7">
-                  <div className="h-9 w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
-                    <Sparkles className="h-4.5 w-4.5" />
+                <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
+                  <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
+                    <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                   </div>
                   <div className="flex-1 space-y-4 overflow-hidden pt-1">
                     {webSearchEnabled && (
@@ -433,9 +433,9 @@ export default function MessageList({
               !streamingThinking &&
               thinkingEnabled && (
                 <div className="w-full">
-                  <div className="max-w-[700px] mx-auto px-6 py-8 flex gap-5 md:gap-7">
-                    <div className="h-9 w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
-                      <Sparkles className="h-4.5 w-4.5" />
+                  <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
+                    <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
+                      <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="flex-1 space-y-4 overflow-hidden pt-1">
                       <ThinkingBlock thinking="" isStreaming={true} />

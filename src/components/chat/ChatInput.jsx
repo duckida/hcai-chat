@@ -90,7 +90,7 @@ export default function ChatInput({ onSend, isLoading }) {
     setInput("");
     setFiles([]);
     if (textareaRef.current) {
-      textareaRef.current.style.height = "52px";
+      textareaRef.current.style.height = "44px";
     }
   }, [input, files, isLoading, onSend]);
 
@@ -171,8 +171,8 @@ export default function ChatInput({ onSend, isLoading }) {
   const handleChange = (e) => {
     const el = e.target;
     setInput(el.value);
-    el.style.height = "52px";
-    const newHeight = Math.min(el.scrollHeight, 220);
+    el.style.height = "44px";
+    const newHeight = Math.min(el.scrollHeight, 200);
     el.style.height = `${newHeight}px`;
   };
 
@@ -191,7 +191,7 @@ export default function ChatInput({ onSend, isLoading }) {
   };
 
   return (
-    <div className="shrink-0 bg-white/70 backdrop-blur-xl pb-8 pt-8 px-4 z-30">
+    <div className="shrink-0 bg-white/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30">
       <div className="max-w-[700px] mx-auto relative">
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
@@ -223,7 +223,7 @@ export default function ChatInput({ onSend, isLoading }) {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Message Hack Club AI"
-            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[15px] px-[12px] min-h-[52px] h-[52px] text-[15px] text-[#212121] placeholder:text-slate-400 leading-[1.4] overflow-y-auto block font-medium"
+            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-[#212121] placeholder:text-slate-400 leading-[1.4] overflow-y-auto block font-medium"
             rows={1}
           />
           <div className="flex items-center pr-2 pb-1.5 self-end">
