@@ -167,12 +167,12 @@ export default function ArtifactPanel({
 
   return (
     <div
-      className="flex flex-col h-full bg-white max-md:fixed max-md:inset-0 max-md:z-50"
+      className="flex flex-row h-full bg-white max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50"
       style={{ width: fullscreen ? "100%" : panelWidth }}
     >
       {/* Resize handle - desktop only */}
       <div
-        className={`hidden md:flex w-1 h-full cursor-col-resize items-center justify-center hover:bg-purple-200 transition-colors ${isResizing ? "bg-purple-500" : ""}`}
+        className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-purple-200 transition-colors ${isResizing ? "bg-purple-500" : ""}`}
         onMouseDown={startResize}
       >
         <div
@@ -181,7 +181,7 @@ export default function ArtifactPanel({
       </div>
 
       {/* Panel content */}
-      <div className="flex flex-col flex-1 min-w-0 border-l md:border-[#ececec]">
+      <div className="flex flex-col flex-1 min-w-0 border-l border-[#ececec]">
         {/* Header */}
         <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[#ececec] bg-[#fdfdfd] shrink-0">
           <div className="flex items-center gap-1 sm:gap-2">
