@@ -68,10 +68,12 @@ async function emitStreamParts(
 ) {
   const collectedToolCalls = [];
   const collectedToolResults = [];
+  let collectedText = "";
 
   for await (const part of result.fullStream) {
     switch (part.type) {
       case "text-delta": {
+        collectedText += part.text;
         send({
           choices: [{ delta: { content: part.text } }],
         });
@@ -197,7 +199,7 @@ async function emitStreamParts(
     }
   }
 
-  return { result, collectedToolCalls, collectedToolResults };
+  return { result, collectedToolCalls, collectedToolResults, collectedText };
 }
 
 export async function POST(req) {
@@ -271,7 +273,7 @@ export async function POST(req) {
           const MAX_STEPS = 5;
 
           for (let step = 0; step < MAX_STEPS; step++) {
-            const { collectedToolCalls, collectedToolResults } =
+            const { collectedToolCalls, collectedToolResults, collectedText } =
               await emitStreamParts(
                 await streamText({
                   model: hackclub(model),
@@ -288,6 +290,21 @@ export async function POST(req) {
             if (collectedToolCalls.length === 0) {
               break;
             }
+
+            const assistantToolCalls = collectedToolCalls.map((tc) => ({
+              id: tc.toolCallId,
+              type: "function",
+              function: {
+                name: tc.toolName,
+                arguments: JSON.stringify(tc.input),
+              },
+            }));
+
+            currentMessages.push({
+              role: "assistant",
+              content: collectedText,
+              tool_calls: assistantToolCalls,
+            });
 
             for (const toolCall of collectedToolCalls) {
               const toolResult = collectedToolResults.find(
