@@ -42,7 +42,7 @@ export default function CustomLink({ href, children }) {
             <DialogHeader>
               <DialogTitle>External Link Warning</DialogTitle>
               <DialogDescription>
-                You are about to leave this application and visit an external 
+                You are about to leave this application and visit an external
                 website. Please ensure you trust the destination.
               </DialogDescription>
             </DialogHeader>
@@ -50,14 +50,13 @@ export default function CustomLink({ href, children }) {
               {href}
             </div>
             <DialogFooter className="gap-2 sm:gap-0">
-              <Button
-                variant="ghost"
-                onClick={() => setIsOpen(false)}
-              >
+              <Button variant="ghost" onClick={() => setIsOpen(false)}>
                 Cancel
               </Button>
               <Button
-                onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+                onClick={() =>
+                  window.open(href, "_blank", "noopener,noreferrer")
+                }
               >
                 Continue
               </Button>

@@ -57,7 +57,7 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
   }
 
   // Validate query
-  if (!query || typeof query !== 'string') {
+  if (!query || typeof query !== "string") {
     throw new Error("Invalid search query");
   }
 
@@ -79,18 +79,21 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
     }
 
     // Call Exa directly to avoid proxy issues
-    const response = await fetch("https://ai.hackclub.com/proxy/v1/exa/answer", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
+    const response = await fetch(
+      "https://ai.hackclub.com/proxy/v1/exa/answer",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          query,
+          numResults: Math.min(numResults, 10),
+          useAutoprompt: true,
+        }),
       },
-      body: JSON.stringify({
-        query,
-        numResults: Math.min(numResults, 10),
-        useAutoprompt: true,
-      }),
-    });
+    );
 
     if (!response.ok) {
       // Handle non-JSON error responses gracefully

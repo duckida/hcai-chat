@@ -1,6 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
+import { buildToolStepMessages } from "@/lib/tool-messages.mjs";
 
 function toSdkTools(clientTools, apiKey) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
@@ -291,34 +292,12 @@ export async function POST(req) {
               break;
             }
 
-            const assistantToolCalls = collectedToolCalls.map((tc) => ({
-              id: tc.toolCallId,
-              type: "function",
-              function: {
-                name: tc.toolName,
-                arguments: JSON.stringify(tc.input),
-              },
-            }));
-
-            currentMessages.push({
-              role: "assistant",
-              content: collectedText,
-              tool_calls: assistantToolCalls,
+            const toolStepMessages = buildToolStepMessages({
+              collectedText,
+              collectedToolCalls,
+              collectedToolResults,
             });
-
-            for (const toolCall of collectedToolCalls) {
-              const toolResult = collectedToolResults.find(
-                (r) => r.toolCallId === toolCall.toolCallId,
-              );
-              if (toolResult) {
-                currentMessages.push({
-                  role: "tool",
-                  content: JSON.stringify(toolResult.result),
-                  tool_call_id: toolCall.toolCallId,
-                  name: toolCall.toolName,
-                });
-              }
-            }
+            currentMessages.push(...toolStepMessages);
           }
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));

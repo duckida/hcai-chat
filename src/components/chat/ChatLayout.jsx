@@ -170,7 +170,6 @@ export default function ChatLayout({
         <Button
           onClick={() => {
             onNewChat();
-            setSidebarOpen(false);
             setMobileSheetOpen(false);
           }}
           className="w-full justify-start gap-2 bg-white hover:bg-[#f3f3f3] text-slate-900 border-none shadow-sm h-10 px-3 rounded-lg transition-all font-medium"
