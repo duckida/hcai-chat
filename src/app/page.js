@@ -93,6 +93,9 @@ export default function Home() {
         setActiveConversation(parsed[0].id);
         setMessages(parsed[0].messages);
         setArtifactPanelOpen(parsed[0].artifactPanelOpen ?? false);
+        if (parsed[0].model) {
+          setSelectedModel(parsed[0].model);
+        }
       }
     }
 
@@ -152,6 +155,20 @@ export default function Home() {
     );
   }, [webSearchEnabled]);
 
+  const handleModelChange = useCallback(
+    (model) => {
+      setSelectedModel(model);
+      if (activeConversation) {
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === activeConversation ? { ...conv, model } : conv,
+          ),
+        );
+      }
+    },
+    [activeConversation],
+  );
+
   const handleNewChat = useCallback(() => {
     const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
     const shouldOpen = artifactsEnabled && isDesktop;
@@ -163,6 +180,7 @@ export default function Home() {
       createdAt: new Date().toISOString(),
       messages: [],
       artifactPanelOpen: shouldOpen,
+      model: selectedModel,
     };
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newId);
@@ -170,7 +188,7 @@ export default function Home() {
     setStreamingContent("");
     setStreamingThinking("");
     setArtifactPanelOpen(shouldOpen);
-  }, [artifactsEnabled]);
+  }, [artifactsEnabled, selectedModel]);
 
   const handleSelectConversation = useCallback(
     (id) => {
@@ -178,6 +196,9 @@ export default function Home() {
       const conversation = conversations.find((c) => c.id === id);
       setMessages(conversation?.messages || []);
       setArtifactPanelOpen(conversation?.artifactPanelOpen ?? false);
+      if (conversation?.model) {
+        setSelectedModel(conversation.model);
+      }
       setStreamingContent("");
       setStreamingThinking("");
     },
@@ -231,6 +252,7 @@ export default function Home() {
           createdAt: new Date().toISOString(),
           messages: [],
           artifactPanelOpen: shouldOpen,
+          model: selectedModel,
         };
         setConversations((prev) => [newConversation, ...prev]);
         setActiveConversation(newId);
@@ -467,7 +489,7 @@ export default function Home() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
+        onModelChange={handleModelChange}
         thinkingEnabled={thinkingEnabled}
         onThinkingChange={setThinkingEnabled}
         artifactsEnabled={artifactsEnabled}
