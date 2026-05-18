@@ -231,13 +231,13 @@ export default function ChatLayout({
                 <Button
                   variant="ghost"
                   onClick={() => onSelectConversation(conv.id)}
-                  className={`w-full justify-start text-left h-9 px-2.5 rounded-lg group ${
+                  className={`w-full justify-start text-left h-9 pl-2.5 pr-14 rounded-lg group ${
                     activeConversation === conv.id
                       ? "bg-[#ececec] text-slate-900"
                       : "text-slate-600 hover:text-slate-900 hover:bg-[#ececec]/50"
                   }`}
                 >
-                  <span className="truncate text-[13px] font-medium pr-14">
+                  <span className="truncate text-[13px] font-medium block w-full">
                     {conv.title}
                   </span>
                 </Button>

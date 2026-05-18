@@ -16,6 +16,7 @@ import {
   User,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -239,7 +240,12 @@ const Message = ({ message, isStreaming = false }) => {
   const hasSources = message.sources && message.sources.length > 0;
 
   return (
-    <div className="w-full">
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="w-full"
+    >
       <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
         <div
           className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center ${
@@ -298,7 +304,7 @@ const Message = ({ message, isStreaming = false }) => {
           )}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 
@@ -389,7 +395,12 @@ export default function MessageList({
               ))}
 
             {(streamingContent || streamingThinking) && (
-              <div className="w-full">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3 }}
+                className="w-full"
+              >
                 <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
                   <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
                     <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
@@ -425,14 +436,19 @@ export default function MessageList({
                     )}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {isLoading &&
               !streamingContent &&
               !streamingThinking &&
               thinkingEnabled && (
-                <div className="w-full">
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="w-full"
+                >
                   <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
                     <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
                       <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
@@ -441,7 +457,7 @@ export default function MessageList({
                       <ThinkingBlock thinking="" isStreaming={true} />
                     </div>
                   </div>
-                </div>
+                </motion.div>
               )}
           </>
         )}
