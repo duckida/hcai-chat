@@ -31,6 +31,8 @@ export default function ApiKeyModal({
   onSave,
   titleGenerationModel,
   onTitleGenerationModelChange,
+  theme = "aurora",
+  onThemeChange,
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -199,6 +201,35 @@ export default function ApiKeyModal({
                     </div>
                   )}
                 </ScrollArea>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+              Theme
+            </Label>
+            <Select value={theme} onValueChange={onThemeChange}>
+              <SelectTrigger className="w-full border-[#ececec] bg-[#f9f9f9] rounded-xl px-4 h-12 focus:bg-white focus:ring-4 focus:ring-slate-100">
+                <SelectValue placeholder="Select Theme" />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                sideOffset={5}
+                className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+              >
+                <SelectItem
+                  value="aurora"
+                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                >
+                  Aurora
+                </SelectItem>
+                <SelectItem
+                  value="sunrise"
+                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                >
+                  Sunrise
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>

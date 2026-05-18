@@ -32,6 +32,8 @@ export default function Home() {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
+  const [theme, setTheme] = useState("aurora");
+
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
   const isSubmittingRef = useRef(false);
@@ -114,6 +116,14 @@ export default function Home() {
     const savedWebSearch = localStorage.getItem("web_search_enabled");
     if (savedWebSearch) setWebSearchEnabled(JSON.parse(savedWebSearch));
 
+    const savedTheme = localStorage.getItem("theme");
+    if (savedTheme) {
+      setTheme(savedTheme);
+      if (savedTheme === "sunrise") {
+        document.documentElement.classList.add("theme-sunrise");
+      }
+    }
+
     if (!getStoredApiKey()) {
       setIsApiKeyModalOpen(true);
     }
@@ -154,6 +164,15 @@ export default function Home() {
       JSON.stringify(webSearchEnabled),
     );
   }, [webSearchEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("theme", theme);
+    if (theme === "sunrise") {
+      document.documentElement.classList.add("theme-sunrise");
+    } else {
+      document.documentElement.classList.remove("theme-sunrise");
+    }
+  }, [theme]);
 
   const handleModelChange = useCallback(
     (model) => {
@@ -528,6 +547,8 @@ export default function Home() {
         onSave={() => toast.success("Settings updated")}
         titleGenerationModel={titleGenerationModel}
         onTitleGenerationModelChange={setTitleGenerationModel}
+        theme={theme}
+        onThemeChange={setTheme}
       />
       <Toaster position="top-center" richColors />
     </>
