@@ -237,7 +237,7 @@ export default function ChatLayout({
                       : "text-slate-600 hover:text-slate-900 hover:bg-[#ececec]/50"
                   }`}
                 >
-                  <span className="truncate text-[13px] font-medium pr-6">
+                  <span className="truncate text-[13px] font-medium pr-14">
                     {conv.title}
                   </span>
                 </Button>
@@ -289,7 +289,7 @@ export default function ChatLayout({
   return (
     <div className="flex h-screen bg-white text-slate-900 overflow-hidden font-sans antialiased selection:bg-slate-200">
       <aside
-        className={`hidden md:block transition-all duration-300 ease-in-out ${sidebarOpen ? "w-[260px]" : "w-0"}`}
+        className={`hidden md:block transition-all duration-300 ease-in-out shrink-0 overflow-hidden ${sidebarOpen ? "w-[260px]" : "w-0"}`}
       >
         <SidebarContent />
       </aside>
@@ -456,13 +456,14 @@ export default function ChatLayout({
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
           {children}
-          {artifactFullscreen && (
-            <div className="absolute inset-0">{rightPanel}</div>
-          )}
         </main>
       </div>
 
       {!artifactFullscreen && rightPanel}
+
+      {artifactFullscreen && (
+        <div className="fixed inset-0 z-[100] bg-white">{rightPanel}</div>
+      )}
     </div>
   );
 }

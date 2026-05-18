@@ -135,7 +135,15 @@ export default function Home() {
 
   useEffect(() => {
     localStorage.setItem("artifacts_enabled", JSON.stringify(artifactsEnabled));
-  }, [artifactsEnabled]);
+    if (
+      artifactsEnabled &&
+      typeof window !== "undefined" &&
+      window.innerWidth >= 768
+    ) {
+      setArtifactPanelOpen(true);
+      saveArtifactPanelOpen(true);
+    }
+  }, [artifactsEnabled, saveArtifactPanelOpen]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -145,21 +153,24 @@ export default function Home() {
   }, [webSearchEnabled]);
 
   const handleNewChat = useCallback(() => {
+    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
+    const shouldOpen = artifactsEnabled && isDesktop;
+
     const newId = Date.now().toString();
     const newConversation = {
       id: newId,
       title: "New Chat",
       createdAt: new Date().toISOString(),
       messages: [],
-      artifactPanelOpen: false,
+      artifactPanelOpen: shouldOpen,
     };
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newId);
     setMessages([]);
     setStreamingContent("");
     setStreamingThinking("");
-    setArtifactPanelOpen(false);
-  }, []);
+    setArtifactPanelOpen(shouldOpen);
+  }, [artifactsEnabled]);
 
   const handleSelectConversation = useCallback(
     (id) => {
@@ -209,17 +220,21 @@ export default function Home() {
 
       let currentId = activeConversation;
       if (!currentId) {
+        const isDesktop =
+          typeof window !== "undefined" && window.innerWidth >= 768;
+        const shouldOpen = artifactsEnabled && isDesktop;
+
         const newId = Date.now().toString();
         const newConversation = {
           id: newId,
           title: "New Chat",
           createdAt: new Date().toISOString(),
           messages: [],
-          artifactPanelOpen: false,
+          artifactPanelOpen: shouldOpen,
         };
         setConversations((prev) => [newConversation, ...prev]);
         setActiveConversation(newId);
-        setArtifactPanelOpen(false);
+        setArtifactPanelOpen(shouldOpen);
         currentId = newId;
       }
 

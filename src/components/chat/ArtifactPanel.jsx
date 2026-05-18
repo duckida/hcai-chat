@@ -185,15 +185,26 @@ export default function ArtifactPanel({
         {/* Header */}
         <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[#ececec] bg-[#fdfdfd] shrink-0">
           <div className="flex items-center gap-1 sm:gap-2">
-            <Button
-              variant="ghost"
-              onClick={onToggle}
-              className="flex items-center gap-1.5 h-8 px-2 sm:px-1 text-slate-600 hover:text-slate-900"
-              title="Close"
-            >
-              <PanelRightClose className="w-4 h-4" />
-              <span className="text-[13px] font-medium sm:hidden">Back</span>
-            </Button>
+            {fullscreen ? (
+              <Button
+                variant="ghost"
+                onClick={handleFullscreenToggle}
+                className="flex items-center gap-1.5 h-8 w-8 px-0 text-slate-600 hover:text-slate-900 justify-center"
+                title="Exit fullscreen"
+              >
+                <X className="w-4 h-4" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={onToggle}
+                className="flex items-center gap-1.5 h-8 px-2 sm:px-1 text-slate-600 hover:text-slate-900"
+                title="Close"
+              >
+                <PanelRightClose className="w-4 h-4" />
+                <span className="text-[13px] font-medium sm:hidden">Back</span>
+              </Button>
+            )}
             <div className="hidden sm:flex items-center gap-2">
               <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></div>
               <span className="text-[11px] font-bold text-slate-400 font-mono uppercase tracking-widest leading-none">
@@ -265,7 +276,7 @@ export default function ArtifactPanel({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative bg-[#fdfdfd]">
           {!activeArtifact ? (
             <div className="flex items-center justify-center h-full text-slate-400 text-sm">
               No artifact to display
@@ -273,7 +284,7 @@ export default function ArtifactPanel({
           ) : activeTab === "preview" ? (
             <iframe
               ref={iframeRef}
-              className="w-full h-full bg-white"
+              className="absolute inset-0 w-full h-full bg-white border-0"
               title="Artifact Preview"
               sandbox="allow-scripts"
               srcDoc={activeArtifact}
@@ -287,7 +298,7 @@ export default function ArtifactPanel({
               }}
             />
           ) : (
-            <div className="h-full overflow-y-auto">
+            <div className="absolute inset-0 overflow-y-auto bg-[#fdfdfd]">
               <div className="p-4 artifact-code min-w-0">
                 <Streamdown
                   mode={streamingArtifact ? "stream" : "static"}
