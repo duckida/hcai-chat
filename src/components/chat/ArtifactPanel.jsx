@@ -142,7 +142,7 @@ export default function ArtifactPanel({
               variant="ghost"
               size="icon"
               onClick={onToggle}
-              className="h-8 w-8 text-slate-400 hover:text-purple-600 hover:bg-purple-50 transition-colors"
+              className="h-8 w-8 text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
               title="Open artifact panel"
             >
               <PanelRightOpen className="w-4 h-4" />
@@ -155,7 +155,7 @@ export default function ArtifactPanel({
               className={`rounded-full py-3 px-5 shadow-lg flex items-center gap-2.5 font-semibold text-[14px] transition-all active:scale-95 ${
                 streamingArtifact
                   ? "bg-slate-200 text-slate-500 cursor-default"
-                  : "bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white shadow-purple-600/30 cursor-pointer"
+                  : "bg-primary hover:bg-primary/90 active:bg-primary/80 text-primary-foreground shadow-lg cursor-pointer"
               }`}
             >
               <Puzzle
@@ -181,11 +181,11 @@ export default function ArtifactPanel({
         >
           {/* Resize handle - desktop only */}
           <div
-            className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-purple-200 transition-colors ${isResizing ? "bg-purple-500" : ""}`}
+            className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/30 transition-colors ${isResizing ? "bg-primary" : ""}`}
             onMouseDown={startResize}
           >
             <div
-              className={`w-0.5 h-8 rounded-full ${isResizing ? "bg-purple-500" : "bg-slate-300"}`}
+              className={`w-0.5 h-8 rounded-full ${isResizing ? "bg-primary" : "bg-slate-300"}`}
             ></div>
           </div>
 
