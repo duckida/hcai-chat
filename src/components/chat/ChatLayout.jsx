@@ -68,6 +68,36 @@ export default function ChatLayout({
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const editInputRef = useRef(null);
 
+  const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef(false);
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    dragRef.current = true;
+    setIsDragging(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (e) => {
+      if (!dragRef.current) return;
+      const newWidth = Math.max(200, Math.min(600, e.clientX));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      dragRef.current = false;
+      setIsDragging(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  };
+
   // Sync local search with parent if controlled
   const effectiveSearchQuery =
     onSearchChange !== undefined ? searchQuery : localSearchQuery;
@@ -165,7 +195,7 @@ export default function ChatLayout({
   }, []);
 
   const SidebarContent = () => (
-    <div className="flex flex-col h-full bg-[#f9f9f9] border-r border-[#ececec]">
+    <div className="flex flex-col h-full bg-[#f9f9f9]">
       <div className="p-3 mb-2">
         <Button
           onClick={() => {
@@ -237,12 +267,12 @@ export default function ChatLayout({
                       : "text-slate-600 hover:text-slate-900 hover:bg-[#ececec]/50"
                   }`}
                 >
-                  <span className="truncate text-[13px] font-medium block w-full">
+                  <span className="truncate text-[13px] font-medium block flex-1 text-left min-w-0">
                     {conv.title}
                   </span>
                 </Button>
               )}
-              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center h-full gap-0.5">
+              <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10">
                 {editingId !== conv.id && (
                   <Button
                     variant="ghost"
@@ -289,9 +319,18 @@ export default function ChatLayout({
   return (
     <div className="flex h-screen bg-white text-slate-900 overflow-hidden font-sans antialiased selection:bg-slate-200">
       <aside
-        className={`hidden md:block transition-all duration-300 ease-in-out shrink-0 overflow-hidden ${sidebarOpen ? "w-[260px]" : "w-0"}`}
+        className={`hidden md:block shrink-0 overflow-hidden relative border-r border-[#ececec] bg-[#f9f9f9] ${!isDragging ? "transition-all duration-300 ease-in-out" : ""}`}
+        style={{ width: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
       >
-        <SidebarContent />
+        <div className="w-full h-full flex flex-col min-w-[200px]">
+          <SidebarContent />
+        </div>
+        <button
+          type="button"
+          aria-label="Resize sidebar"
+          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-slate-300/50 active:bg-slate-300 transition-colors z-50 border-none bg-transparent p-0"
+          onMouseDown={handleMouseDown}
+        />
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 relative">

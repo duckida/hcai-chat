@@ -241,8 +241,8 @@ const Message = ({ message, isStreaming = false }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={{ duration: 0.3 }}
       className="w-full"
     >
@@ -250,7 +250,7 @@ const Message = ({ message, isStreaming = false }) => {
         <div
           className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center ${
             isAssistant
-              ? "bg-[#0f172a] text-white shadow-lg"
+              ? "bg-primary text-primary-foreground shadow-lg"
               : "bg-[#f1f5f9] text-slate-400 border border-slate-200"
           }`}
         >
@@ -402,7 +402,7 @@ export default function MessageList({
                 className="w-full"
               >
                 <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
-                  <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
+                  <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
                     <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                   </div>
                   <div className="flex-1 space-y-4 overflow-hidden pt-1">
@@ -450,7 +450,7 @@ export default function MessageList({
                   className="w-full"
                 >
                   <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
-                    <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-[#0f172a] text-white shadow-lg">
+                    <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
                       <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="flex-1 space-y-4 overflow-hidden pt-1">

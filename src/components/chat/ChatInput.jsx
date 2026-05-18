@@ -233,8 +233,8 @@ export default function ChatInput({ onSend, isLoading }) {
               onClick={handleSend}
               className={`h-8.5 w-8.5 rounded-full transition-all ${
                 (input.trim() || files.length > 0) && !isLoading
-                  ? "bg-[#0f172a] text-white hover:bg-black shadow-md"
-                  : "bg-[#e5e5e5] text-[#a0a0a0] cursor-not-allowed"
+                  ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+                  : "bg-muted text-muted-foreground cursor-not-allowed"
               }`}
             >
               <ArrowUp className="w-5 h-5 stroke-[2.5]" />

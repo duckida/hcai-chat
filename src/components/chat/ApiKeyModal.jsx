@@ -246,7 +246,7 @@ export default function ApiKeyModal({
         <DialogFooter className="sm:flex-col sm:space-x-0 space-y-2 mt-2">
           <Button
             onClick={handleSave}
-            className="w-full bg-slate-900 hover:bg-black text-white h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
           >
             Save and Connect
           </Button>

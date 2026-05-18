@@ -217,12 +217,12 @@ export default function ArtifactPanel({
                   </Button>
                 )}
                 <div className="hidden sm:flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]"></div>
+                  <div className="w-2 h-2 rounded-full bg-primary shadow-sm"></div>
                   <span className="text-[11px] font-bold text-slate-400 font-mono uppercase tracking-widest leading-none">
                     Artifact
                   </span>
                   {streamingArtifact && (
-                    <span className="text-[10px] text-purple-500 animate-pulse font-medium">
+                    <span className="text-[10px] text-primary animate-pulse font-medium">
                       streaming...
                     </span>
                   )}
@@ -295,8 +295,8 @@ export default function ArtifactPanel({
               ) : activeTab === "preview" ? (
                 streamingArtifact ? (
                   <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-                    <div className="w-8 h-8 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
-                    <div className="text-sm font-medium animate-pulse text-purple-600">
+                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    <div className="text-sm font-medium animate-pulse text-primary">
                       Generating artifact...
                     </div>
                   </div>
