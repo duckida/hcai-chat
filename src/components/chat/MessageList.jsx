@@ -26,16 +26,20 @@ import CustomLink from "./CustomLink";
 const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
 
-const ThinkingBlock = ({ thinking, isStreaming = false }) => {
+const ThinkingBlock = ({
+  thinking,
+  isStreaming = false,
+  defaultView = "closed",
+}) => {
   const [isExpanded, setIsExpanded] = useState(
-    Boolean(thinking) || isStreaming,
+    isStreaming ? true : defaultView === "open",
   );
 
   useEffect(() => {
-    if (thinking || isStreaming) {
+    if (isStreaming) {
       setIsExpanded(true);
     }
-  }, [thinking, isStreaming]);
+  }, [isStreaming]);
 
   if (!thinking && !isStreaming) return null;
 
@@ -231,7 +235,11 @@ const FileBubble = ({ file }) => (
   </div>
 );
 
-const Message = ({ message, isStreaming = false }) => {
+const Message = ({
+  message,
+  isStreaming = false,
+  thinkingDefaultView = "closed",
+}) => {
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
@@ -261,7 +269,12 @@ const Message = ({ message, isStreaming = false }) => {
           )}
         </div>
         <div className="flex-1 space-y-4 overflow-hidden pt-1">
-          {isAssistant && <ThinkingBlock thinking={message.thinking} />}
+          {isAssistant && (
+            <ThinkingBlock
+              thinking={message.thinking}
+              defaultView={thinkingDefaultView}
+            />
+          )}
 
           {isAssistant && message.webSearch && !isStreaming && (
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
@@ -315,6 +328,7 @@ export default function MessageList({
   streamingThinking,
   thinkingEnabled,
   webSearchEnabled,
+  thinkingDefaultView = "closed",
 }) {
   const scrollRef = useRef(null);
 
@@ -391,6 +405,7 @@ export default function MessageList({
                   key={`${message.role}-${message.id || index}`}
                   message={message}
                   isStreaming={false}
+                  thinkingDefaultView={thinkingDefaultView}
                 />
               ))}
 
@@ -413,6 +428,7 @@ export default function MessageList({
                       <ThinkingBlock
                         thinking={streamingThinking}
                         isStreaming={true}
+                        defaultView={thinkingDefaultView}
                       />
                     )}
                     {streamingContent && (
@@ -454,7 +470,11 @@ export default function MessageList({
                       <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
                     </div>
                     <div className="flex-1 space-y-4 overflow-hidden pt-1">
-                      <ThinkingBlock thinking="" isStreaming={true} />
+                      <ThinkingBlock
+                        thinking=""
+                        isStreaming={true}
+                        defaultView={thinkingDefaultView}
+                      />
                     </div>
                   </div>
                 </motion.div>

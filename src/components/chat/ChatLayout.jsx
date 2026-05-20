@@ -59,6 +59,7 @@ export default function ChatLayout({
   rightPanel,
   children,
   artifactFullscreen = false,
+  thinkingDefaultView = "closed",
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -328,9 +329,13 @@ export default function ChatLayout({
         <button
           type="button"
           aria-label="Resize sidebar"
-          className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-slate-300/50 active:bg-slate-300 transition-colors z-50 border-none bg-transparent p-0"
+          className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center hover:bg-slate-300/20 active:bg-slate-300/30 transition-colors z-50 border-none bg-transparent p-0 ${isDragging ? "bg-slate-300/20" : ""}`}
           onMouseDown={handleMouseDown}
-        />
+        >
+          <div
+            className={`w-1 h-12 rounded-full ${isDragging ? "bg-slate-400" : "bg-slate-300"}`}
+          />
+        </button>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 relative">

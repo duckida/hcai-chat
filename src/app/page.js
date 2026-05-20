@@ -33,6 +33,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState("");
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [theme, setTheme] = useState("aurora");
+  const [thinkingDefaultView, setThinkingDefaultView] = useState("closed");
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -116,6 +117,9 @@ export default function Home() {
     const savedWebSearch = localStorage.getItem("web_search_enabled");
     if (savedWebSearch) setWebSearchEnabled(JSON.parse(savedWebSearch));
 
+    const savedThinkingDefault = localStorage.getItem("thinking_default_view");
+    if (savedThinkingDefault) setThinkingDefaultView(savedThinkingDefault);
+
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) {
       setTheme(savedTheme);
@@ -164,6 +168,10 @@ export default function Home() {
       JSON.stringify(webSearchEnabled),
     );
   }, [webSearchEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("thinking_default_view", thinkingDefaultView);
+  }, [thinkingDefaultView]);
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
@@ -536,6 +544,7 @@ export default function Home() {
             streamingThinking={streamingThinking}
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
+            thinkingDefaultView={thinkingDefaultView}
           />
           <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
         </div>
@@ -549,6 +558,8 @@ export default function Home() {
         onTitleGenerationModelChange={setTitleGenerationModel}
         theme={theme}
         onThemeChange={setTheme}
+        thinkingDefaultView={thinkingDefaultView}
+        onThinkingDefaultViewChange={setThinkingDefaultView}
       />
       <Toaster position="top-center" richColors />
     </>

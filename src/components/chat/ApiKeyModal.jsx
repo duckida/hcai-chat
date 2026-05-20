@@ -33,22 +33,15 @@ export default function ApiKeyModal({
   onTitleGenerationModelChange,
   theme = "aurora",
   onThemeChange,
+  thinkingDefaultView = "closed",
+  onThinkingDefaultViewChange,
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
   const [groupedModels, setGroupedModels] = useState({});
 
-  useEffect(() => {
-    if (isOpen) {
-      const stored = getStoredApiKey();
-      setApiKey(stored || "");
-      setError("");
-      fetchModels();
-    }
-  }, [isOpen]);
-
-  const fetchModels = async () => {
+  const fetchModels = useRef(async () => {
     try {
       const response = await fetch("/api/models");
       if (response.ok) {
@@ -85,7 +78,16 @@ export default function ApiKeyModal({
         }
       }
     } catch (e) {}
-  };
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      const stored = getStoredApiKey();
+      setApiKey(stored || "");
+      setError("");
+      fetchModels.current();
+    }
+  }, [isOpen]);
 
   const handleSave = () => {
     if (!apiKey.trim()) {
@@ -229,6 +231,38 @@ export default function ApiKeyModal({
                   className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
                 >
                   Sunrise
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-3">
+            <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+              Thinking Default View
+            </Label>
+            <Select
+              value={thinkingDefaultView}
+              onValueChange={onThinkingDefaultViewChange}
+            >
+              <SelectTrigger className="w-full border-[#ececec] bg-[#f9f9f9] rounded-xl px-4 h-12 focus:bg-white focus:ring-4 focus:ring-slate-100">
+                <SelectValue placeholder="Select Default View" />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                sideOffset={5}
+                className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+              >
+                <SelectItem
+                  value="closed"
+                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                >
+                  Closed
+                </SelectItem>
+                <SelectItem
+                  value="open"
+                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                >
+                  Open
                 </SelectItem>
               </SelectContent>
             </Select>
