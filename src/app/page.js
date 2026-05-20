@@ -135,7 +135,30 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("conversations", JSON.stringify(conversations));
+    // Strip non-image file attachments before saving to localStorage
+    const conversationsToSave = conversations.map((conv) => ({
+      ...conv,
+      messages: conv.messages.map((msg) => {
+        let newMsg = { ...msg };
+        if (newMsg._files) {
+          newMsg._files = newMsg._files.filter((f) =>
+            f.type.startsWith("image/"),
+          );
+          if (newMsg._files.length === 0) {
+            delete newMsg._files;
+          }
+        }
+        if (Array.isArray(newMsg.content)) {
+          newMsg.content = newMsg.content.filter(
+            (part) => !part.isFileAttachment,
+          );
+          // If only one text part remains, we could convert it back to string,
+          // but array is fine. If empty, maybe keep it empty.
+        }
+        return newMsg;
+      }),
+    }));
+    localStorage.setItem("conversations", JSON.stringify(conversationsToSave));
   }, [conversations]);
 
   useEffect(() => {
@@ -300,6 +323,7 @@ export default function Home() {
             contentParts.push({
               type: "text",
               text: `--- File: ${file.name} ---\n${file.text}\n---`,
+              isFileAttachment: true,
             });
           }
         }
