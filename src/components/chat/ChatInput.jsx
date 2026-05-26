@@ -81,8 +81,10 @@ const FilePreview = ({ file, onRemove }) => {
 export default function ChatInput({ onSend, isLoading }) {
   const [input, setInput] = useState("");
   const [files, setFiles] = useState([]);
+  const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
+  const dragCounter = useRef(0);
 
   const handleSend = useCallback(() => {
     if ((!input.trim() && files.length === 0) || isLoading) return;
@@ -170,6 +172,43 @@ export default function ChatInput({ onSend, isLoading }) {
     }
   };
 
+  const handleDragEnter = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current++;
+    if (e.dataTransfer.items?.length > 0) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current--;
+    if (dragCounter.current <= 0) {
+      dragCounter.current = 0;
+      setIsDragging(false);
+    }
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounter.current = 0;
+
+    const files = Array.from(e.dataTransfer.files);
+    const validFiles = files.filter((f) => SUPPORTED_TYPES.includes(f.type));
+    if (validFiles.length === 0) return;
+    const processed = await Promise.all(validFiles.map(processFile));
+    setFiles((prev) => [...prev, ...processed]);
+  };
+
   const handleChange = (e) => {
     const el = e.target;
     setInput(el.value);
@@ -193,7 +232,24 @@ export default function ChatInput({ onSend, isLoading }) {
   };
 
   return (
-    <div className="shrink-0 bg-white/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30">
+    <div
+      className={`shrink-0 bg-white/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30 ${isDragging ? "relative" : ""}`}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      role="none"
+    >
+      {isDragging && (
+        <div className="absolute inset-0 z-50 mx-3 sm:mx-4 my-3 sm:my-8 rounded-[28px] border-2 border-dashed border-primary/60 bg-primary/[0.04] backdrop-blur-sm flex items-center justify-center pointer-events-none">
+          <div className="text-center">
+            <Paperclip className="w-10 h-10 mx-auto text-primary/60 mb-2" />
+            <p className="text-sm font-semibold text-primary/70">
+              Drop files here
+            </p>
+          </div>
+        </div>
+      )}
       <div className="max-w-[700px] mx-auto relative">
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
