@@ -206,8 +206,8 @@ function getUserText(content) {
 
 const ImageAttachment = ({ src, alt }) => {
   const [loaded, setLoaded] = useState(false);
-  return (
-    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 max-w-md">
+  const content = (
+    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 max-w-md cursor-pointer transition-shadow hover:shadow-md">
       {!loaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
           <ImageIcon className="w-6 h-6 text-slate-300" />
@@ -221,6 +221,16 @@ const ImageAttachment = ({ src, alt }) => {
       />
     </div>
   );
+
+  if (src?.startsWith("http")) {
+    return (
+      <a href={src} target="_blank" rel="noopener noreferrer">
+        {content}
+      </a>
+    );
+  }
+
+  return content;
 };
 
 const FileBubble = ({ file }) => {
