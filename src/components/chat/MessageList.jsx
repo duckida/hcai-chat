@@ -16,7 +16,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
@@ -277,6 +277,14 @@ const Message = ({
   const renderedText = normalizeLatexDelimiters(cleanedText);
   const hasSources = message.sources && message.sources.length > 0;
 
+  // Extract image sources from content parts for rendering
+  const contentImages = useMemo(() => {
+    if (!Array.isArray(message.content)) return [];
+    return message.content
+      .filter((p) => p.type === "image")
+      .map((p) => p.image);
+  }, [message.content]);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -313,19 +321,20 @@ const Message = ({
             </div>
           )}
 
-          {!isAssistant && attachments && attachments.length > 0 && (
+          {!isAssistant && (
             <div className="flex flex-wrap gap-2.5">
-              {attachments.map((file) =>
-                file.type?.startsWith("image/") ? (
-                  <ImageAttachment
-                    key={file.id}
-                    src={file.url || file.dataUrl}
-                    alt={file.name}
-                  />
-                ) : (
+              {contentImages.map((src, i) => (
+                <ImageAttachment
+                  key={src || i}
+                  src={src}
+                  alt={`Image ${i + 1}`}
+                />
+              ))}
+              {attachments
+                ?.filter((f) => !f.type?.startsWith("image/"))
+                .map((file) => (
                   <FileBubble key={file.id} file={file} />
-                ),
-              )}
+                ))}
             </div>
           )}
 
