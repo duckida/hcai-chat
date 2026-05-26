@@ -20,6 +20,7 @@ import {
   Minimize,
   X,
   ExternalLink,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -58,6 +59,7 @@ export default function ArtifactPanel({
 }) {
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
   const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const iframeRef = useRef(null);
@@ -124,6 +126,14 @@ export default function ArtifactPanel({
     navigator.clipboard.writeText(activeArtifact);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleShare = async () => {
+    if (!activeArtifact) return;
+    const url = `data:text/html;charset=utf-8,${encodeURIComponent(activeArtifact)}`;
+    await navigator.clipboard.writeText(url);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2000);
   };
 
   if (allArtifacts.length === 0) return null;
@@ -262,8 +272,23 @@ export default function ArtifactPanel({
                 <Button
                   variant="ghost"
                   size="icon"
+                  onClick={handleShare}
+                  className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  title="Copy share URL"
+                >
+                  {shareCopied ? (
+                    <Check className="w-3.5 h-3.5 text-green-500" />
+                  ) : (
+                    <Share2 className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="icon"
                   onClick={handleCopy}
                   className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  title="Copy code"
                 >
                   {copied ? (
                     <Check className="w-3.5 h-3.5 text-green-500" />
