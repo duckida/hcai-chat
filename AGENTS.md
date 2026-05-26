@@ -17,10 +17,10 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
 
 ### Core Directories
 - `src/app/`: Next.js App Router pages and API routes.
-  - `api/chat/`: Handles streaming chat completions and artifact processing.
+  - `api/chat/`: Handles streaming chat completions and artifact processing. Tool execution uses the AI SDK's native multi-step loop (`stopWhen: stepCountIs(5)`) with executors from `src/lib/tools.js`.
   - `api/exa/`: Proxy for Exa web search capabilities.
   - `api/models/`: Fetches available AI models.
-  - `api/tools/`: Manages tool execution (e.g., web searches).
+  - `api/tools/`: Manages tool execution via the shared `executeTool` from `src/lib/tools.js`.
   - `layout.js`: Root layout, global providers, and fonts.
   - `page.js`: Main chat application entry point and state management.
 - `src/components/`: React components.
@@ -29,6 +29,8 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
   - `ui/`: Low-level Shadcn UI primitives (Button, Card, Dialog, Input, etc.).
 - `src/lib/`: Utility functions and client-side logic.
   - `api-client.js` / `exa-client.js`: API wrappers for chat and search.
+  - `tools.js`: Central tool registry defining all available tools (web_search, javascript_calculator) and their executors. Used by both `/api/chat` and `/api/tools` routes.
+  - `tool-stream.mjs`: Helper for normalizing tool output from stream parts.
   - `artifacts.js`: Logic for managing the "Artifacts" side panel.
   - `utils.js`: Tailwind class merging (cn) and helpers.
 
@@ -44,9 +46,19 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
 The application uses a streaming response pattern. When the AI generates content meant for an "Artifact" (like code or a document), the client parses these instructions and renders them in the `ArtifactPanel`.
 
 ### 2. Web Search Integration (Exa)
-The agent can perform web searches via the `/api/exa` routes. This is integrated into the chat flow, allowing the model to fetch real-time information using tools.
+The agent can perform web searches via the `/api/exa` routes. This is integrated into the chat flow, allowing the model to fetch real-time information using tools. Executed through the shared tool registry in `src/lib/tools.js`.
 
-### 3. State Management & Persistence
+### 3. Tool Registry (`src/lib/tools.js`)
+All tools are defined in a central registry (`TOOLS` array) with JSON Schema parameters. Each tool has a corresponding executor function. The `executeTool` dispatcher routes calls by tool name:
+- `web_search` — calls the Exa answer endpoint, normalizes the response
+- `javascript_calculator` — evaluates arithmetic expressions using a safe parser (tokenizer → Shunting-yard → RPN evaluator), supporting `+ - * / % ^ ( )` and unary minus
+
+Both `/api/chat` and `/api/tools` routes use the same `executeTool` function, ensuring consistent behavior.
+
+### 4. Multi-Step Tool Loop
+The chat route (`/api/chat`) uses `streamText` with `stopWhen: stepCountIs(5)` to let the AI SDK handle the full tool-call → tool-result → follow-up-text lifecycle natively. This avoids manual message reconstruction and ensures the model continues generating after a tool returns.
+
+### 5. State Management & Persistence
 - **Conversations**: Chat history is managed in the main page component and persisted via `localStorage`.
 - **API Keys**: User-provided API keys for external services are stored securely in `localStorage`.
 
