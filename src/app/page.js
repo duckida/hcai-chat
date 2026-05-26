@@ -23,8 +23,9 @@ export default function Home() {
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
   const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
-  const [titleGenerationModel, setTitleGenerationModel] =
-    useState("gpt-4o-mini");
+  const [titleGenerationModel, setTitleGenerationModel] = useState(
+    "qwen/qwen3-next-80b-a3b-instruct",
+  );
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -34,6 +35,7 @@ export default function Home() {
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [theme, setTheme] = useState("aurora");
   const [thinkingDefaultView, setThinkingDefaultView] = useState("closed");
+  const [showMetrics, setShowMetrics] = useState(true);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -120,6 +122,9 @@ export default function Home() {
     const savedThinkingDefault = localStorage.getItem("thinking_default_view");
     if (savedThinkingDefault) setThinkingDefaultView(savedThinkingDefault);
 
+    const savedShowMetrics = localStorage.getItem("show_metrics");
+    if (savedShowMetrics) setShowMetrics(JSON.parse(savedShowMetrics));
+
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) {
       setTheme(savedTheme);
@@ -139,7 +144,7 @@ export default function Home() {
     const conversationsToSave = conversations.map((conv) => ({
       ...conv,
       messages: conv.messages.map((msg) => {
-        let newMsg = { ...msg };
+        const newMsg = { ...msg };
         if (newMsg._files) {
           newMsg._files = newMsg._files.filter((f) =>
             f.type.startsWith("image/"),
@@ -195,6 +200,10 @@ export default function Home() {
   useEffect(() => {
     localStorage.setItem("thinking_default_view", thinkingDefaultView);
   }, [thinkingDefaultView]);
+
+  useEffect(() => {
+    localStorage.setItem("show_metrics", JSON.stringify(showMetrics));
+  }, [showMetrics]);
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
@@ -335,7 +344,6 @@ export default function Home() {
             name: f.name,
             type: f.type,
             size: f.size,
-            dataUrl: f.type.startsWith("image/") ? f.dataUrl : null,
           })),
         };
       } else {
@@ -360,13 +368,14 @@ export default function Home() {
       let fullResponse = "";
       let fullThinking = "";
       let sources = []; // Store citations from web_search tool
+      let metrics = null; // Store metrics
       isStreamingComplete.current = false;
       try {
+        const tools = getTools({ includeWebSearch: needsWebSearch });
+
         if (needsWebSearch) {
           // Server-side tool calling with maxSteps: model thinks → searches
           // → thinks about results → generates artifact, all in one stream.
-          const tools = getTools();
-
           await streamChatCompletion(
             updatedMessages,
             selectedModel,
@@ -395,6 +404,7 @@ export default function Home() {
                 thinking: fullThinking || undefined,
                 sources: sources.length > 0 ? sources : undefined,
                 webSearch: true,
+                metrics,
               };
               const finalMessages = [...updatedMessages, assistantMessage];
 
@@ -434,6 +444,9 @@ export default function Home() {
             (searchSources) => {
               sources = searchSources;
             },
+            (metricsData) => {
+              metrics = metricsData;
+            },
           );
         } else {
           // Use regular chat completion
@@ -464,6 +477,7 @@ export default function Home() {
                 role: "assistant",
                 content: fullResponse,
                 thinking: fullThinking || undefined,
+                metrics,
               };
               const finalMessages = [...updatedMessages, assistantMessage];
 
@@ -507,6 +521,13 @@ export default function Home() {
             },
             thinkingEnabled,
             artifactsEnabled,
+            tools,
+            "auto",
+            null,
+            null,
+            (metricsData) => {
+              metrics = metricsData;
+            },
           );
         }
       } catch (_error) {
@@ -569,6 +590,7 @@ export default function Home() {
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
             thinkingDefaultView={thinkingDefaultView}
+            showMetrics={showMetrics}
           />
           <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
         </div>
@@ -584,6 +606,8 @@ export default function Home() {
         onThemeChange={setTheme}
         thinkingDefaultView={thinkingDefaultView}
         onThinkingDefaultViewChange={setThinkingDefaultView}
+        showMetrics={showMetrics}
+        onShowMetricsChange={setShowMetrics}
       />
       <Toaster position="top-center" richColors />
     </>

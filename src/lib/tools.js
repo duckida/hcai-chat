@@ -41,7 +41,250 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "javascript_calculator",
+      description:
+        "Evaluate a mathematical expression using JavaScript-style arithmetic. Supports +, -, *, /, %, ^, parentheses, decimals, and unary minus.",
+      parameters: {
+        type: "object",
+        properties: {
+          expression: {
+            type: "string",
+            description:
+              "A mathematical expression to evaluate, e.g. '(12.5 * (3 + 4)) / 2'.",
+          },
+        },
+        required: ["expression"],
+      },
+    },
+  },
 ];
+
+function tokenizeExpression(expression) {
+  const tokens = [];
+  let i = 0;
+
+  while (i < expression.length) {
+    const char = expression[i];
+
+    if (/\s/.test(char)) {
+      i += 1;
+      continue;
+    }
+
+    if (/[0-9.]/.test(char)) {
+      let num = char;
+      i += 1;
+
+      while (i < expression.length && /[0-9.]/.test(expression[i])) {
+        num += expression[i];
+        i += 1;
+      }
+
+      if ((num.match(/\./g) || []).length > 1) {
+        throw new Error(`Invalid number: ${num}`);
+      }
+
+      const value = Number(num);
+      if (Number.isNaN(value)) {
+        throw new Error(`Invalid number: ${num}`);
+      }
+
+      tokens.push({ type: "number", value });
+      continue;
+    }
+
+    if ("+-*/%^()".includes(char)) {
+      if (char === "(") {
+        tokens.push({ type: "leftParen" });
+      } else if (char === ")") {
+        tokens.push({ type: "rightParen" });
+      } else {
+        tokens.push({ type: "operator", value: char });
+      }
+      i += 1;
+      continue;
+    }
+
+    throw new Error(`Invalid character: ${char}`);
+  }
+
+  return tokens;
+}
+
+function toRpn(tokens) {
+  const output = [];
+  const operators = [];
+  const precedence = {
+    "u-": 4,
+    "^": 3,
+    "*": 2,
+    "/": 2,
+    "%": 2,
+    "+": 1,
+    "-": 1,
+  };
+  const rightAssociative = new Set(["^", "u-"]);
+
+  let prevType = "start";
+
+  for (const token of tokens) {
+    if (token.type === "number") {
+      output.push(token);
+      prevType = "number";
+      continue;
+    }
+
+    if (token.type === "leftParen") {
+      operators.push(token);
+      prevType = "leftParen";
+      continue;
+    }
+
+    if (token.type === "rightParen") {
+      while (
+        operators.length > 0 &&
+        operators[operators.length - 1].type !== "leftParen"
+      ) {
+        output.push(operators.pop());
+      }
+
+      if (operators.length === 0) {
+        throw new Error("Mismatched parentheses");
+      }
+
+      operators.pop();
+      prevType = "rightParen";
+      continue;
+    }
+
+    if (token.type === "operator") {
+      let operator = token.value;
+      const isUnaryMinus =
+        operator === "-" &&
+        (prevType === "start" ||
+          prevType === "operator" ||
+          prevType === "leftParen");
+      if (isUnaryMinus) {
+        operator = "u-";
+      } else if (
+        prevType === "start" ||
+        prevType === "operator" ||
+        prevType === "leftParen"
+      ) {
+        throw new Error("Invalid operator placement");
+      }
+
+      while (operators.length > 0) {
+        const top = operators[operators.length - 1];
+        if (top.type !== "operator") break;
+
+        const topPrecedence = precedence[top.value];
+        const currentPrecedence = precedence[operator];
+        const shouldPop = rightAssociative.has(operator)
+          ? currentPrecedence < topPrecedence
+          : currentPrecedence <= topPrecedence;
+
+        if (!shouldPop) break;
+        output.push(operators.pop());
+      }
+
+      operators.push({ type: "operator", value: operator });
+      prevType = "operator";
+    }
+  }
+
+  while (operators.length > 0) {
+    const op = operators.pop();
+    if (op.type === "leftParen" || op.type === "rightParen") {
+      throw new Error("Mismatched parentheses");
+    }
+    output.push(op);
+  }
+
+  return output;
+}
+
+function evaluateRpn(rpn) {
+  const stack = [];
+
+  for (const token of rpn) {
+    if (token.type === "number") {
+      stack.push(token.value);
+      continue;
+    }
+
+    if (token.type !== "operator") {
+      throw new Error("Invalid token in expression");
+    }
+
+    if (token.value === "u-") {
+      if (stack.length < 1) {
+        throw new Error("Malformed expression");
+      }
+      stack.push(-stack.pop());
+      continue;
+    }
+
+    if (stack.length < 2) {
+      throw new Error("Malformed expression");
+    }
+
+    const right = stack.pop();
+    const left = stack.pop();
+    let value;
+
+    switch (token.value) {
+      case "+":
+        value = left + right;
+        break;
+      case "-":
+        value = left - right;
+        break;
+      case "*":
+        value = left * right;
+        break;
+      case "/":
+        if (right === 0) throw new Error("Division by zero");
+        value = left / right;
+        break;
+      case "%":
+        if (right === 0) throw new Error("Division by zero");
+        value = left % right;
+        break;
+      case "^":
+        value = left ** right;
+        break;
+      default:
+        throw new Error(`Unsupported operator: ${token.value}`);
+    }
+
+    if (!Number.isFinite(value)) {
+      throw new Error("Result is not finite");
+    }
+
+    stack.push(value);
+  }
+
+  if (stack.length !== 1) {
+    throw new Error("Malformed expression");
+  }
+
+  return stack[0];
+}
+
+function evaluateMathExpression(expression) {
+  const trimmed = expression.trim();
+  if (!trimmed) {
+    throw new Error("Expression is required");
+  }
+
+  const tokens = tokenizeExpression(trimmed);
+  const rpn = toRpn(tokens);
+  return evaluateRpn(rpn);
+}
 
 /**
  * Execute a web search using the /api/exa endpoint
@@ -62,23 +305,8 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
   }
 
   try {
-    const body = {
-      endpoint: "answer",
-      apiKey: key,
-      data: {
-        query: query,
-        numResults: Math.min(numResults, 10),
-        useAutoprompt: true,
-      },
-      stream: false,
-    };
+    const sanitizedNumResults = Math.max(1, Math.min(numResults || 5, 10));
 
-    // Log body shape for debugging (remove in production)
-    if (!body.apiKey) {
-      console.error("Missing apiKey in request body", body);
-    }
-
-    // Call Exa directly to avoid proxy issues
     const response = await fetch(
       "https://ai.hackclub.com/proxy/v1/exa/answer",
       {
@@ -89,7 +317,7 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
         },
         body: JSON.stringify({
           query,
-          numResults: Math.min(numResults, 10),
+          numResults: sanitizedNumResults,
           useAutoprompt: true,
         }),
       },
@@ -107,7 +335,7 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
           const text = await response.text();
           if (text) errorMessage = text;
         }
-      } catch (e) {
+      } catch (_e) {
         // Keep default error message
       }
       throw new Error(errorMessage);
@@ -128,7 +356,7 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
 
     return {
       query,
-      numResults,
+      numResults: sanitizedNumResults,
       answer: result.answer || result.content || "",
       citations: result.citations || result.sources || [],
       success: true,
@@ -137,6 +365,20 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
     console.error("Error executing web_search:", error);
     throw new Error(`Web search failed: ${error.message}`);
   }
+}
+
+export function executeJavascriptCalculator(expression) {
+  if (typeof expression !== "string") {
+    throw new Error("Expression must be a string");
+  }
+
+  const result = evaluateMathExpression(expression);
+
+  return {
+    expression,
+    result,
+    success: true,
+  };
 }
 
 /**
@@ -159,6 +401,9 @@ export async function executeTool(toolName, params, apiKey = null) {
       case "web_search":
         return await executeWebSearch(params.query, params.numResults, apiKey);
 
+      case "javascript_calculator":
+        return executeJavascriptCalculator(params.expression);
+
       default:
         throw new Error(
           `Tool "${toolName}" is registered but has no executor. Please add execution logic.`,
@@ -174,8 +419,16 @@ export async function executeTool(toolName, params, apiKey = null) {
  * Get all available tools with their schemas
  * @returns {Array} Array of tool objects ready for tool calling
  */
-export function getTools() {
-  return TOOLS;
+export function getTools(options = {}) {
+  const { includeWebSearch = true } = options;
+
+  return TOOLS.filter((tool) => {
+    if (!includeWebSearch && tool.function.name === "web_search") {
+      return false;
+    }
+
+    return true;
+  });
 }
 
 /**

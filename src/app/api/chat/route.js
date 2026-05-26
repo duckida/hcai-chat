@@ -1,8 +1,8 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText, jsonSchema, streamText, tool } from "ai";
+import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
-import { buildToolStepMessages } from "@/lib/tool-messages.mjs";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
+import { executeTool } from "@/lib/tools";
 
 function toSdkTools(clientTools, apiKey) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
@@ -21,42 +21,8 @@ function toSdkTools(clientTools, apiKey) {
           inputSchema: jsonSchema(
             toolDef.function.parameters || { type: "object" },
           ),
-          execute: async (args) => {
-            if (toolDef.function.name === "web_search") {
-              const query = args.query || "";
-              const numResults = Math.min(args.numResults || 5, 10);
-
-              const response = await fetch(
-                "https://ai.hackclub.com/proxy/v1/exa/answer",
-                {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                    Authorization: `Bearer ${apiKey}`,
-                  },
-                  body: JSON.stringify({ query, numResults }),
-                },
-              );
-
-              if (!response.ok) {
-                return `Search failed with status ${response.status}`;
-              }
-
-              const data = await response.json();
-
-              const citations = data.citations || data.sources || [];
-
-              return {
-                answer: data.answer || data.content || "",
-                citations,
-                query,
-                numResults,
-                success: true,
-              };
-            }
-
-            throw new Error(`Unknown tool: ${toolDef.function.name}`);
-          },
+          execute: async (args) =>
+            executeTool(toolDef.function.name, args || {}, apiKey),
         }),
       ]),
   );
@@ -68,14 +34,11 @@ async function emitStreamParts(
   toolCallIndexes,
   nextToolIndexRef,
 ) {
-  const collectedToolCalls = [];
-  const collectedToolResults = [];
-  let collectedText = "";
+  let finalUsage = null;
 
   for await (const part of result.fullStream) {
     switch (part.type) {
       case "text-delta": {
-        collectedText += part.text;
         send({
           choices: [{ delta: { content: part.text } }],
         });
@@ -86,6 +49,11 @@ async function emitStreamParts(
         send({
           choices: [{ delta: { thinking: part.text } }],
         });
+        break;
+      }
+
+      case "finish": {
+        finalUsage = part.usage;
         break;
       }
 
@@ -171,23 +139,12 @@ async function emitStreamParts(
           ],
         });
 
-        collectedToolCalls.push({
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          input: part.input,
-        });
         break;
       }
 
       case "tool-result":
       case "tool-error": {
         const output = getToolOutput(part);
-        collectedToolResults.push({
-          toolCallId: part.toolCallId,
-          toolName: part.toolName,
-          result: output,
-          isError: part.type === "tool-error",
-        });
         if (part.toolName === "web_search" && output) {
           const res = output;
           send({
@@ -204,7 +161,9 @@ async function emitStreamParts(
     }
   }
 
-  return { result, collectedToolCalls, collectedToolResults, collectedText };
+  return {
+    usage: finalUsage || (await result.usage.catch(() => null)),
+  };
 }
 
 export async function POST(req) {
@@ -275,36 +234,46 @@ export async function POST(req) {
 
         try {
           const currentMessages = [...processedMessages];
-          const MAX_STEPS = 5;
+          const totalUsage = { inputTokens: 0, outputTokens: 0 };
+          const startTime = Date.now();
 
-          for (let step = 0; step < MAX_STEPS; step++) {
-            const { collectedToolCalls, collectedToolResults, collectedText } =
-              await emitStreamParts(
-                await streamText({
-                  model: hackclub(model),
-                  system: systemPrompt,
-                  messages: currentMessages,
-                  tools: availableTools,
-                  maxSteps: 1,
-                }),
-                send,
-                toolCallIndexes,
-                nextToolIndexRef,
-              );
+          const { usage } = await emitStreamParts(
+            await streamText({
+              model: hackclub(model),
+              system: systemPrompt,
+              messages: currentMessages,
+              tools: availableTools,
+              stopWhen: stepCountIs(5),
+            }),
+            send,
+            toolCallIndexes,
+            nextToolIndexRef,
+          );
 
-            if (collectedToolCalls.length === 0) {
-              break;
-            }
-
-            const toolStepMessages = buildToolStepMessages({
-              collectedText,
-              collectedToolCalls,
-              collectedToolResults,
-            });
-            for (const message of toolStepMessages) {
-              currentMessages.push(message);
-            }
+          // Accumulate usage data
+          if (usage) {
+            totalUsage.inputTokens +=
+              usage.promptTokens || usage.inputTokens || 0;
+            totalUsage.outputTokens +=
+              usage.completionTokens || usage.outputTokens || 0;
           }
+
+          const endTime = Date.now();
+          const duration = (endTime - startTime) / 1000; // in seconds
+          const tokensPerSecond =
+            duration > 0 ? totalUsage.outputTokens / duration : 0;
+
+          // Send usage data before [DONE]
+          send({
+            type: "usage",
+            usage: {
+              inputTokens: totalUsage.inputTokens,
+              outputTokens: totalUsage.outputTokens,
+              totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
+              duration,
+              tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
+            },
+          });
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();

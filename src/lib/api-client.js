@@ -39,6 +39,7 @@ export const streamChatCompletion = async (
   toolChoice = "auto",
   onToolCall = null,
   onSearchResult = null,
+  onMetrics = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -83,6 +84,12 @@ export const streamChatCompletion = async (
 
       try {
         const parsed = JSON.parse(data);
+
+        // Usage metrics from server
+        if (parsed.type === "usage" && onMetrics) {
+          onMetrics(parsed.usage);
+          return;
+        }
 
         // Search result metadata from server-side tool execution
         if (parsed.type === "search_result" && onSearchResult) {
@@ -136,7 +143,10 @@ export const streamChatCompletion = async (
   }
 };
 
-export const generateTitle = async (message, model = "gpt-4o-mini") => {
+export const generateTitle = async (
+  message,
+  model = "qwen/qwen3-next-80b-a3b-instruct",
+) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) return "New Chat";
 

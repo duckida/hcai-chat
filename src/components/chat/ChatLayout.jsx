@@ -10,6 +10,7 @@ import {
   Key,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Brain,
   Puzzle,
   Search,
@@ -23,14 +24,15 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectLabel,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
+} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -166,11 +168,17 @@ export default function ChatLayout({
             );
 
             const grouped = uniqueModels.reduce((acc, model) => {
-              const [providerRaw] = model.id.split("/");
-              const provider =
-                providerRaw.charAt(0).toUpperCase() + providerRaw.slice(1);
-              // Keep model name as it comes from hcai (e.g., qwen-3.6-flash)
-              const name = model.id.split("/").pop();
+              let provider, name;
+              if (model.name && model.name.includes(":")) {
+                const parts = model.name.split(":");
+                provider = parts[0].trim();
+                name = parts.slice(1).join(":").trim();
+              } else {
+                const [providerRaw] = model.id.split("/");
+                provider =
+                  providerRaw.charAt(0).toUpperCase() + providerRaw.slice(1);
+                name = model.name || model.id.split("/").pop();
+              }
 
               if (!acc[provider]) acc[provider] = [];
               acc[provider].push({ id: model.id, name });
@@ -454,43 +462,57 @@ export default function ChatLayout({
                   </TooltipProvider>
                 </div>
 
-                <Select value={selectedModel} onValueChange={onModelChange}>
-                  <SelectTrigger className="w-auto min-w-[100px] sm:min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[12px] sm:text-[14px] text-slate-800 bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1.5 sm:px-3 rounded-xl">
-                    <SelectValue placeholder="Model" />
-                  </SelectTrigger>
-                  <SelectContent
-                    position="popper"
-                    sideOffset={5}
-                    className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex items-center justify-between w-auto min-w-[100px] sm:min-w-[140px] border-none shadow-none hover:bg-slate-100 transition-colors focus:ring-0 font-bold text-[12px] sm:text-[14px] text-slate-800 bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1.5 sm:px-3 rounded-xl"
+                    >
+                      <span className="truncate max-w-[150px] sm:max-w-[200px]">
+                        {Object.values(groupedModels)
+                          .flat()
+                          .find((m) => m.id === selectedModel)?.name || "Model"}
+                      </span>
+                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[60vh] overflow-y-auto"
                   >
-                    <ScrollArea className="h-[400px]">
-                      {Object.entries(groupedModels).length > 0 ? (
-                        Object.entries(groupedModels).map(
-                          ([provider, models]) => (
-                            <SelectGroup key={provider}>
-                              <SelectLabel className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-8 py-2 bg-slate-50/50">
-                                {provider}
-                              </SelectLabel>
-                              {models.map((m) => (
-                                <SelectItem
-                                  key={m.id}
-                                  value={m.id}
-                                  className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
-                                >
-                                  {m.name}
-                                </SelectItem>
-                              ))}
-                            </SelectGroup>
-                          ),
-                        )
-                      ) : (
-                        <div className="p-4 text-xs text-center text-slate-400 font-medium">
-                          Loading models...
-                        </div>
-                      )}
-                    </ScrollArea>
-                  </SelectContent>
-                </Select>
+                    {Object.entries(groupedModels).length > 0 ? (
+                      Object.entries(groupedModels).map(
+                        ([provider, models]) => (
+                          <DropdownMenuSub key={provider}>
+                            <DropdownMenuSubTrigger className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-default">
+                              {provider}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuPortal>
+                              <DropdownMenuSubContent className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[60vh] overflow-y-auto">
+                                {models.map((m) => (
+                                  <DropdownMenuItem
+                                    key={m.id}
+                                    onClick={() => onModelChange(m.id)}
+                                    className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer flex items-center justify-between"
+                                  >
+                                    <span>{m.name}</span>
+                                    {selectedModel === m.id && (
+                                      <Check className="h-4 w-4 ml-2" />
+                                    )}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuPortal>
+                          </DropdownMenuSub>
+                        ),
+                      )
+                    ) : (
+                      <div className="p-4 text-xs text-center text-slate-400 font-medium">
+                        Loading models...
+                      </div>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </>
             )}
           </div>

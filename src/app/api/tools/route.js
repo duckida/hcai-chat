@@ -26,15 +26,21 @@ export async function POST(req) {
     // Execute the tool using the central tool executor
     // Pass the API key from the client
     const result = await executeTool(tool, parameters, apiKey);
+    const resultText =
+      result?.answer ||
+      result?.content ||
+      (typeof result?.result === "number" ? String(result.result) : "");
 
     // Return standardized response format
     return Response.json({
       tool,
-      result: result.answer || result.content || "",
+      result: resultText,
+      rawResult: result,
       sources: result.citations || result.sources || [],
       metadata: {
         query: result.query,
         numResults: result.numResults,
+        expression: result.expression,
         success: result.success,
       },
     });

@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Streamdown } from "streamdown";
 import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import { cjk } from "@streamdown/cjk";
 import {
@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+const math = createMathPlugin({ singleDollarTextMath: true });
 
 const CustomLink = ({ href, children }) => {
   const isExternal = href.startsWith("http");
@@ -176,8 +178,8 @@ export default function ArtifactPanel({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 50 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="flex flex-row h-full bg-white max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50"
-          style={{ width: fullscreen ? "100%" : panelWidth }}
+          className="flex flex-row h-full bg-white max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
+          style={{ width: panelWidth }}
         >
           {/* Resize handle - desktop only */}
           <div
@@ -229,8 +231,8 @@ export default function ArtifactPanel({
                 </div>
               </div>
 
-              <div className="flex items-center gap-1">
-                <div className="flex bg-slate-100 rounded-lg p-0.5 mr-1">
+              <div className="flex items-center gap-1 shrink min-w-0">
+                <div className="flex bg-slate-100 rounded-lg p-0.5 shrink min-w-0">
                   <button
                     type="button"
                     onClick={() => setActiveTab("preview")}
@@ -274,7 +276,7 @@ export default function ArtifactPanel({
                   variant="ghost"
                   size="icon"
                   onClick={handleFullscreenToggle}
-                  className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  className="h-7 w-7 text-slate-400 hover:text-slate-700 max-md:hidden"
                   title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                 >
                   {fullscreen ? (

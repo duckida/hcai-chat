@@ -2,7 +2,7 @@
 
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import {
   Brain,
@@ -12,6 +12,7 @@ import {
   FileText,
   Globe,
   ImageIcon,
+  Loader2,
   Sparkles,
   User,
 } from "lucide-react";
@@ -21,8 +22,11 @@ import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
+import { normalizeLatexDelimiters } from "@/lib/latex";
 import CustomLink from "./CustomLink";
+import ResponseMetrics from "./ResponseMetrics";
 
+const math = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
 
@@ -31,15 +35,11 @@ const ThinkingBlock = ({
   isStreaming = false,
   defaultView = "closed",
 }) => {
-  const [isExpanded, setIsExpanded] = useState(
-    isStreaming ? true : defaultView === "open",
-  );
+  const [isExpanded, setIsExpanded] = useState(defaultView === "open");
 
   useEffect(() => {
-    if (isStreaming) {
-      setIsExpanded(true);
-    }
-  }, [isStreaming]);
+    setIsExpanded(defaultView === "open");
+  }, [defaultView]);
 
   if (!thinking && !isStreaming) return null;
 
@@ -51,7 +51,11 @@ const ThinkingBlock = ({
         onClick={() => setIsExpanded(!isExpanded)}
         className="text-xs text-slate-500 hover:text-slate-700 gap-1.5 h-7 px-2.5 rounded-lg"
       >
-        <Brain className="w-3.5 h-3.5" />
+        {isStreaming && !isExpanded ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : (
+          <Brain className="w-3.5 h-3.5" />
+        )}
         <span className="font-medium">Thinking</span>
         {isStreaming && !thinking && (
           <span className="flex gap-1 ml-1">
@@ -82,7 +86,7 @@ const ThinkingBlock = ({
               plugins={streamdownPlugins}
               components={streamdownComponents}
             >
-              {thinking}
+              {normalizeLatexDelimiters(thinking)}
             </Streamdown>
           ) : (
             <span className="text-slate-400 italic">Thinking...</span>
@@ -239,12 +243,14 @@ const Message = ({
   message,
   isStreaming = false,
   thinkingDefaultView = "closed",
+  showMetrics = true,
 }) => {
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
   const text = attachments ? getUserText(content) : getMessageText(content);
   const { cleanedText, artifacts } = extractHtmlArtifacts(text);
+  const renderedText = normalizeLatexDelimiters(cleanedText);
   const hasSources = message.sources && message.sources.length > 0;
 
   return (
@@ -296,16 +302,16 @@ const Message = ({
           )}
 
           <div className="max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
-            {cleanedText && (
+            {renderedText && (
               <Streamdown
                 mode="static"
                 plugins={streamdownPlugins}
                 components={streamdownComponents}
               >
-                {cleanedText}
+                {renderedText}
               </Streamdown>
             )}
-            {!cleanedText && artifacts.length > 0 && (
+            {!renderedText && artifacts.length > 0 && (
               <p className="text-sm text-slate-400 italic">
                 Artifact generated
               </p>
@@ -314,6 +320,13 @@ const Message = ({
 
           {isAssistant && hasSources && (
             <SourcesBlock sources={message.sources} />
+          )}
+
+          {isAssistant && showMetrics && message.metrics && (
+            <ResponseMetrics
+              usage={message.metrics}
+              duration={message.metrics.duration}
+            />
           )}
         </div>
       </div>
@@ -329,6 +342,7 @@ export default function MessageList({
   thinkingEnabled,
   webSearchEnabled,
   thinkingDefaultView = "closed",
+  showMetrics = true,
 }) {
   const scrollRef = useRef(null);
 
@@ -406,6 +420,7 @@ export default function MessageList({
                   message={message}
                   isStreaming={false}
                   thinkingDefaultView={thinkingDefaultView}
+                  showMetrics={showMetrics}
                 />
               ))}
 
@@ -433,7 +448,9 @@ export default function MessageList({
                     )}
                     {streamingContent && (
                       <div className="max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
-                        {extractHtmlArtifacts(streamingContent).cleanedText ? (
+                        {normalizeLatexDelimiters(
+                          extractHtmlArtifacts(streamingContent).cleanedText,
+                        ) ? (
                           <Streamdown
                             mode="stream"
                             caret="block"
@@ -441,7 +458,10 @@ export default function MessageList({
                             plugins={streamdownPlugins}
                             components={streamdownComponents}
                           >
-                            {extractHtmlArtifacts(streamingContent).cleanedText}
+                            {normalizeLatexDelimiters(
+                              extractHtmlArtifacts(streamingContent)
+                                .cleanedText,
+                            )}
                           </Streamdown>
                         ) : (
                           <div className="opacity-50 italic text-sm">
