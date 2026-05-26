@@ -40,6 +40,15 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
 - `tailwind.config.js`: Styling configuration with custom typography and colors.
 - `jsconfig.json`: Path aliasing (e.g., `@/*` maps to `./src/*`).
 
+### File Upload & Storage (`src/lib/bucky.js`)
+Files uploaded to the chat (images, PDFs, text, etc.) are stored externally via **bucky.hackclub.com**, a simple file upload API:
+- **Upload**: `POST` multipart/form-data with a `file` field to `https://bucky.hackclub.com/`
+- **Response**: Returns a publicly accessible S3 URL (`https://imgutil.s3.us-east-2.amazonaws.com/<sha256>/<filename>`)
+- **Client utility** (`src/lib/bucky.js`): `uploadFileToBucky(file)` and `dataUrlToBlob(dataUrl)` converters
+- **Flow**: When a user sends files, `page.js` uploads them to bucky in parallel (via `Promise.allSettled`) before constructing the message. Resized images are uploaded as blobs; text/other files use the raw `File` object. Failed uploads fall back to inline data URL.
+- **Messages**: Images reference the bucky URL (`{ type: "image", image: "https://..." }`) instead of base64 data URLs. File metadata (`_files`) includes a `url` field for persisted access.
+- **Persistence**: `_files` with bucky URLs survive localStorage serialization, so images and files remain accessible across sessions.
+
 ## 🧠 Key Architectural Concepts
 
 ### 1. Streaming Chat & Artifacts

@@ -223,21 +223,35 @@ const ImageAttachment = ({ src, alt }) => {
   );
 };
 
-const FileBubble = ({ file }) => (
-  <div className="inline-flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 shadow-sm">
-    <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-      <FileText className="w-5 h-5 text-blue-600" />
+const FileBubble = ({ file }) => {
+  const content = (
+    <div className="inline-flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 shadow-sm cursor-default transition-shadow hover:shadow-md">
+      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+        <FileText className="w-5 h-5 text-blue-600" />
+      </div>
+      <div className="min-w-0 max-w-[200px]">
+        <p className="text-sm font-medium text-slate-700 truncate">
+          {file.name}
+        </p>
+        <p className="text-xs text-slate-400">
+          {file.size < 1024 * 1024
+            ? `${Math.round(file.size / 1024)} KB`
+            : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+        </p>
+      </div>
     </div>
-    <div className="min-w-0 max-w-[200px]">
-      <p className="text-sm font-medium text-slate-700 truncate">{file.name}</p>
-      <p className="text-xs text-slate-400">
-        {file.size < 1024 * 1024
-          ? `${Math.round(file.size / 1024)} KB`
-          : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-      </p>
-    </div>
-  </div>
-);
+  );
+
+  if (file.url) {
+    return (
+      <a href={file.url} target="_blank" rel="noopener noreferrer">
+        {content}
+      </a>
+    );
+  }
+
+  return content;
+};
 
 const Message = ({
   message,
@@ -292,8 +306,12 @@ const Message = ({
           {!isAssistant && attachments && attachments.length > 0 && (
             <div className="flex flex-wrap gap-2.5">
               {attachments.map((file) =>
-                file.dataUrl ? (
-                  <ImageAttachment key={file.id} src={file.dataUrl} />
+                file.type?.startsWith("image/") ? (
+                  <ImageAttachment
+                    key={file.id}
+                    src={file.url || file.dataUrl}
+                    alt={file.name}
+                  />
                 ) : (
                   <FileBubble key={file.id} file={file} />
                 ),

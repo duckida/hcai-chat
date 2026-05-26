@@ -106,6 +106,7 @@ export default function ChatInput({ onSend, isLoading }) {
             type: file.type,
             size: file.size,
             dataUrl,
+            rawFile: file,
           });
         };
         reader.readAsDataURL(file);
@@ -120,6 +121,7 @@ export default function ChatInput({ onSend, isLoading }) {
           type: file.type,
           size: file.size,
           text: ev.target.result,
+          rawFile: file,
         });
       };
       reader.readAsText(file);

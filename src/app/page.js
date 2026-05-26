@@ -14,6 +14,7 @@ import {
 } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { getTools } from "@/lib/tools";
+import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
 
 export default function Home() {
   const [conversations, setConversations] = useState([]);
@@ -140,25 +141,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    // Strip non-image file attachments before saving to localStorage
+    // Strip inline data from non-image files before saving to localStorage
     const conversationsToSave = conversations.map((conv) => ({
       ...conv,
       messages: conv.messages.map((msg) => {
         const newMsg = { ...msg };
+        // Remove _files entries without a URL (these had inline data that won't survive)
         if (newMsg._files) {
-          newMsg._files = newMsg._files.filter((f) =>
-            f.type.startsWith("image/"),
+          newMsg._files = newMsg._files.filter(
+            (f) => f.url || f.type.startsWith("image/"),
           );
           if (newMsg._files.length === 0) {
             delete newMsg._files;
           }
-        }
-        if (Array.isArray(newMsg.content)) {
-          newMsg.content = newMsg.content.filter(
-            (part) => !part.isFileAttachment,
-          );
-          // If only one text part remains, we could convert it back to string,
-          // but array is fine. If empty, maybe keep it empty.
         }
         return newMsg;
       }),
@@ -319,15 +314,41 @@ export default function Home() {
         currentId = newId;
       }
 
+      // Upload files to bucky
+      let fileUrls = [];
+      if (files.length > 0) {
+        const results = await Promise.allSettled(
+          files.map(async (file) => {
+            if (file.type.startsWith("image/") && file.dataUrl) {
+              const blob = dataUrlToBlob(file.dataUrl);
+              const uploadFile = new File([blob], file.name, {
+                type: file.type,
+              });
+              return await uploadFileToBucky(uploadFile);
+            }
+            if (file.rawFile) return await uploadFileToBucky(file.rawFile);
+            return null;
+          }),
+        );
+        fileUrls = results.map((r) =>
+          r.status === "fulfilled" ? r.value : null,
+        );
+      }
+
       let userMessage;
       if (files.length > 0) {
         const contentParts = [];
         if (content.trim()) {
           contentParts.push({ type: "text", text: content });
         }
-        for (const file of files) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const buckyUrl = fileUrls[i];
           if (file.type.startsWith("image/")) {
-            contentParts.push({ type: "image", image: file.dataUrl });
+            contentParts.push({
+              type: "image",
+              image: buckyUrl || file.dataUrl,
+            });
           } else if (file.text) {
             contentParts.push({
               type: "text",
@@ -339,11 +360,12 @@ export default function Home() {
         userMessage = {
           role: "user",
           content: contentParts,
-          _files: files.map((f) => ({
+          _files: files.map((f, i) => ({
             id: f.id,
             name: f.name,
             type: f.type,
             size: f.size,
+            url: fileUrls[i] || null,
           })),
         };
       } else {
