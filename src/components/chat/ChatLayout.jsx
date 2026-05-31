@@ -28,6 +28,10 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
@@ -478,46 +482,79 @@ export default function ChatLayout({
                     className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[60vh] overflow-y-auto"
                   >
                     {Object.entries(groupedModels).length > 0 ? (
-                      Object.entries(groupedModels).map(
-                        ([provider, models]) => (
-                          <div key={provider}>
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                setExpandedProvider(
-                                  expandedProvider === provider
-                                    ? null
-                                    : provider,
-                                );
-                              }}
-                              className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-slate-100"
-                            >
-                              <span className="font-medium">{provider}</span>
-                              <ChevronDown
-                                className={`h-3.5 w-3.5 opacity-50 transition-transform ${expandedProvider === provider ? "rotate-180" : ""}`}
-                              />
-                            </button>
-                            {expandedProvider === provider && (
-                              <div className="pb-1">
-                                {models.map((m) => (
-                                  <DropdownMenuItem
-                                    key={m.id}
-                                    onClick={() => onModelChange(m.id)}
-                                    className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer flex items-center justify-between"
-                                  >
-                                    <span>{m.name}</span>
-                                    {selectedModel === m.id && (
-                                      <Check className="h-4 w-4 ml-2" />
-                                    )}
-                                  </DropdownMenuItem>
-                                ))}
+                      <>
+                        <div className="hidden md:block">
+                          {Object.entries(groupedModels).map(
+                            ([provider, models]) => (
+                              <DropdownMenuSub key={provider}>
+                                <DropdownMenuSubTrigger className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-default">
+                                  {provider}
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                  <DropdownMenuSubContent className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[60vh] overflow-y-auto">
+                                    {models.map((m) => (
+                                      <DropdownMenuItem
+                                        key={m.id}
+                                        onClick={() => onModelChange(m.id)}
+                                        className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer flex items-center justify-between"
+                                      >
+                                        <span>{m.name}</span>
+                                        {selectedModel === m.id && (
+                                          <Check className="h-4 w-4 ml-2" />
+                                        )}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                              </DropdownMenuSub>
+                            ),
+                          )}
+                        </div>
+                        <div className="md:hidden">
+                          {Object.entries(groupedModels).map(
+                            ([provider, models]) => (
+                              <div key={provider}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setExpandedProvider(
+                                      expandedProvider === provider
+                                        ? null
+                                        : provider,
+                                    );
+                                  }}
+                                  className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-slate-100"
+                                >
+                                  <span className="font-medium">
+                                    {provider}
+                                  </span>
+                                  <ChevronDown
+                                    className={`h-3.5 w-3.5 opacity-50 transition-transform ${expandedProvider === provider ? "rotate-180" : ""}`}
+                                  />
+                                </button>
+                                {expandedProvider === provider && (
+                                  <div className="pb-1 pl-4">
+                                    {models.map((m) => (
+                                      <DropdownMenuItem
+                                        key={m.id}
+                                        onClick={() => onModelChange(m.id)}
+                                        className="text-[12px] transition-colors rounded-lg py-2 px-3 cursor-pointer flex items-center justify-between"
+                                      >
+                                        <span>{m.name}</span>
+                                        {selectedModel === m.id && (
+                                          <Check className="h-3.5 w-3.5 ml-2" />
+                                        )}
+                                      </DropdownMenuItem>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ),
-                      )
+                            ),
+                          )}
+                        </div>
+                      </>
                     ) : (
                       <div className="p-4 text-xs text-center text-slate-400 font-medium">
                         Loading models...
