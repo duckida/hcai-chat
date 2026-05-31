@@ -26,10 +26,6 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
 } from "@/components/ui/dropdown-menu";
 import {
   Select,
@@ -73,6 +69,7 @@ export default function ApiKeyModal({
   const [showKey, setShowKey] = useState(false);
   const [error, setError] = useState("");
   const [groupedModels, setGroupedModels] = useState({});
+  const [expandedProvider, setExpandedProvider] = useState(null);
 
   const fetchModels = useRef(async () => {
     try {
@@ -230,12 +227,27 @@ export default function ApiKeyModal({
                     {Object.entries(groupedModels).length > 0 ? (
                       Object.entries(groupedModels).map(
                         ([provider, models]) => (
-                          <DropdownMenuSub key={provider}>
-                            <DropdownMenuSubTrigger className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-default">
-                              {provider}
-                            </DropdownMenuSubTrigger>
-                            <DropdownMenuPortal>
-                              <DropdownMenuSubContent className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[40vh] overflow-y-auto">
+                          <div key={provider}>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                setExpandedProvider(
+                                  expandedProvider === provider
+                                    ? null
+                                    : provider,
+                                );
+                              }}
+                              className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-slate-100"
+                            >
+                              <span className="font-medium">{provider}</span>
+                              <ChevronDown
+                                className={`h-3.5 w-3.5 opacity-50 transition-transform ${expandedProvider === provider ? "rotate-180" : ""}`}
+                              />
+                            </button>
+                            {expandedProvider === provider && (
+                              <div className="pb-1">
                                 {models.map((m) => (
                                   <DropdownMenuItem
                                     key={m.id}
@@ -250,9 +262,9 @@ export default function ApiKeyModal({
                                     )}
                                   </DropdownMenuItem>
                                 ))}
-                              </DropdownMenuSubContent>
-                            </DropdownMenuPortal>
-                          </DropdownMenuSub>
+                              </div>
+                            )}
+                          </div>
                         ),
                       )
                     ) : (
