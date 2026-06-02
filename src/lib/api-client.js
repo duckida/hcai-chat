@@ -48,10 +48,7 @@ export const streamChatCompletion = async (
   }
 
   try {
-    const body = { model, messages, apiKey };
-    if (includeThinking) {
-      body.think = true;
-    }
+    const body = { model, messages, apiKey, think: !!includeThinking };
     body.artifacts = artifactsEnabled;
 
     if (tools && Array.isArray(tools) && tools.length > 0) {
@@ -339,11 +336,8 @@ export const streamChatWithTools = async (
       messages,
       apiKey,
       stream: true,
+      think: !!includeThinking,
     };
-
-    if (includeThinking) {
-      body.think = true;
-    }
 
     // Add artifacts parameter if enabled
     if (artifactsEnabled) {

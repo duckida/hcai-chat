@@ -175,6 +175,7 @@ export async function POST(req) {
       artifacts,
       tools: clientTools,
       stream,
+      think,
     } = await req.json();
 
     const now = new Date();
@@ -205,12 +206,20 @@ export async function POST(req) {
       baseUrl: "https://ai.hackclub.com/proxy/v1",
     });
 
+    const reasoningOpts =
+      think === true
+        ? { include_reasoning: true }
+        : { include_reasoning: false };
+
     if (stream === false) {
       const result = await generateText({
         model: hackclub(model),
         system: systemPrompt,
         messages: processedMessages,
         tools: availableTools,
+        providerOptions: {
+          openrouter: reasoningOpts,
+        },
       });
 
       return Response.json({
@@ -244,6 +253,9 @@ export async function POST(req) {
               messages: currentMessages,
               tools: availableTools,
               stopWhen: stepCountIs(5),
+              providerOptions: {
+                openrouter: reasoningOpts,
+              },
             }),
             send,
             toolCallIndexes,
