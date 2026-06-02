@@ -1,5 +1,5 @@
 // Exa-specific API client functions
-import { getStoredApiKey, getErrorMessage } from "./api-client";
+import { getErrorMessage, getStoredApiKey } from "./api-client";
 
 export const streamExaAnswer = async (
   query,

@@ -1,5 +1,5 @@
-import { streamText } from "ai";
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
+import { streamText } from "ai";
 
 async function test() {
   try {

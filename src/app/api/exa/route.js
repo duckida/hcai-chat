@@ -42,13 +42,13 @@ export async function POST(req) {
       let error;
       const contentType = response.headers.get("content-type");
       try {
-        if (contentType && contentType.includes("application/json")) {
+        if (contentType?.includes("application/json")) {
           error = await response.json();
         } else {
           const textError = await response.text();
           error = { error: textError || `HTTP error ${response.status}` };
         }
-      } catch (parseError) {
+      } catch (_parseError) {
         error = {
           error: `HTTP error ${response.status}: ${response.statusText}`,
         };

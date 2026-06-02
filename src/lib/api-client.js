@@ -178,9 +178,9 @@ export const generateTitle = async (
         return title.trim().replace(/^["']|["']$/g, "");
       }
     }
-  } catch (e) {}
+  } catch (_e) {}
   // Fallback: use a truncated version of the user's message
-  return message.slice(0, 30) + "...";
+  return `${message.slice(0, 30)}...`;
 };
 
 // Exa API functions
@@ -491,7 +491,7 @@ export const streamExaAnswer = async (
               parsed.choices?.[0]?.delta?.content ||
               "";
             if (content) onChunk(content);
-          } catch (e) {}
+          } catch (_e) {}
         }
       }
     }
@@ -537,7 +537,7 @@ export const executeToolCall = async (toolName, parameters, apiKey = null) => {
         const text = await response.text();
         if (text) errorMessage = text;
       }
-    } catch (e) {
+    } catch (_e) {
       // Keep default error message
     }
     throw new Error(errorMessage);

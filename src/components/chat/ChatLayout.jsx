@@ -1,38 +1,36 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import {
-  Menu,
-  Plus,
-  Trash2,
-  Settings,
-  MessageSquare,
-  Key,
+  Brain,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
-  Brain,
+  Globe,
+  Key,
+  Menu,
+  Pencil,
+  Plus,
   Puzzle,
   Search,
-  Pencil,
-  Check,
+  Trash2,
   X,
-  Globe,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
-} from "@/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
@@ -170,7 +168,7 @@ export default function ChatLayout({
 
             const grouped = uniqueModels.reduce((acc, model) => {
               let provider, name;
-              if (model.name && model.name.includes(":")) {
+              if (model.name?.includes(":")) {
                 const parts = model.name.split(":");
                 provider = parts[0].trim();
                 name = parts.slice(1).join(":").trim();
@@ -199,7 +197,7 @@ export default function ChatLayout({
             setGroupedModels(sortedGrouped);
           }
         }
-      } catch (e) {}
+      } catch (_e) {}
     };
     fetchModels();
   }, []);

@@ -172,12 +172,12 @@ li > ol {
 
 /* Prevent code overflow in Streamdown / artifact panels */
 .artifact-code pre {
-  overflow-x: auto !important;
-  white-space: pre !important;
-  max-width: 100% !important;
+  overflow-x: auto;
+  white-space: pre;
+  max-width: 100%;
 }
 .artifact-code pre code {
-  white-space: pre !important;
+  white-space: pre;
 }
 
 .theme-sunrise {

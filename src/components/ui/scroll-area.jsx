@@ -1,7 +1,7 @@
 "use client";
 
-import * as React from "react";
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui";
+import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -10,8 +10,6 @@ const ScrollArea = React.forwardRef(
     const viewportRef = React.useRef(null);
 
     React.useImperativeHandle(ref, () => ({
-      scrollTop: viewportRef.current?.scrollTop || 0,
-      scrollHeight: viewportRef.current?.scrollHeight || 0,
       set scrollTop(val) {
         if (viewportRef.current) viewportRef.current.scrollTop = val;
       },

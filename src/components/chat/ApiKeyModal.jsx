@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import {
+  Check,
+  ChevronDown,
   Eye,
   EyeOff,
   Key,
   ShieldCheck,
-  Check,
-  ChevronDown,
 } from "lucide-react";
-import { getStoredApiKey, setStoredApiKey } from "@/lib/api-client";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,19 +18,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   DropdownMenu,
-  DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
   DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -38,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { getStoredApiKey, setStoredApiKey } from "@/lib/api-client";
 
 const Toggle = ({ checked, onChange }) => (
   <button
@@ -88,7 +88,7 @@ export default function ApiKeyModal({
 
           const grouped = uniqueModels.reduce((acc, model) => {
             let provider, name;
-            if (model.name && model.name.includes(":")) {
+            if (model.name?.includes(":")) {
               const parts = model.name.split(":");
               provider = parts[0].trim();
               name = parts.slice(1).join(":").trim();
@@ -117,7 +117,7 @@ export default function ApiKeyModal({
           setGroupedModels(sortedGrouped);
         }
       }
-    } catch (e) {}
+    } catch (_e) {}
   });
 
   useEffect(() => {

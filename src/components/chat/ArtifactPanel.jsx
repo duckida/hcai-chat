@@ -1,29 +1,27 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Streamdown } from "streamdown";
+import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
-import { cjk } from "@streamdown/cjk";
+import { AnimatePresence, motion } from "framer-motion";
 import {
-  Code,
-  Eye,
-  Copy,
   Check,
+  Code,
+  Copy,
+  Expand,
+  ExternalLink,
+  Eye,
+  Minimize,
   PanelRightClose,
   PanelRightOpen,
   Puzzle,
-  GripVertical,
-  Expand,
-  Minimize,
-  X,
-  ExternalLink,
   Share2,
+  X,
 } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 const math = createMathPlugin({ singleDollarTextMath: true });
 
@@ -336,7 +334,7 @@ export default function ArtifactPanel({
                     srcDoc={activeArtifact}
                     onLoad={(e) => {
                       const doc = e.target.contentDocument;
-                      if (doc && doc.body) {
+                      if (doc?.body) {
                         doc.body.tabIndex = 0;
                         doc.body.style.margin = "0";
                         doc.body.focus();
