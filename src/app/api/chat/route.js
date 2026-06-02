@@ -267,6 +267,7 @@ export async function POST(req) {
           send({
             type: "usage",
             usage: {
+              model,
               inputTokens: totalUsage.inputTokens,
               outputTokens: totalUsage.outputTokens,
               totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,

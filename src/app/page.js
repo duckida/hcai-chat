@@ -13,8 +13,9 @@ import {
   streamChatCompletion,
 } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
-import { getTools } from "@/lib/tools";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
+import { getAllConversations, saveAllConversations } from "@/lib/db";
+import { getTools } from "@/lib/tools";
 
 export default function Home() {
   const [conversations, setConversations] = useState([]);
@@ -23,7 +24,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
-  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
+  const [selectedModel, setSelectedModel] = useState("qwen/qwen3.6-flash");
   const [titleGenerationModel, setTitleGenerationModel] = useState(
     "qwen/qwen3-next-80b-a3b-instruct",
   );
@@ -91,19 +92,31 @@ export default function Home() {
   }, [saveArtifactPanelOpen]);
 
   useEffect(() => {
-    const stored = localStorage.getItem("conversations");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      setConversations(parsed);
-      if (parsed.length > 0 && isFirstMount.current) {
-        setActiveConversation(parsed[0].id);
-        setMessages(parsed[0].messages);
-        setArtifactPanelOpen(parsed[0].artifactPanelOpen ?? false);
-        if (parsed[0].model) {
-          setSelectedModel(parsed[0].model);
+    (async () => {
+      let convs = [];
+      try {
+        convs = await getAllConversations();
+      } catch {}
+      // Migrate from localStorage if IndexedDB is empty
+      if (convs.length === 0) {
+        const stored = localStorage.getItem("conversations");
+        if (stored) {
+          try {
+            convs = JSON.parse(stored);
+            localStorage.removeItem("conversations");
+          } catch {}
         }
       }
-    }
+      setConversations(convs);
+      if (convs.length > 0 && isFirstMount.current) {
+        setActiveConversation(convs[0].id);
+        setMessages(convs[0].messages);
+        setArtifactPanelOpen(convs[0].artifactPanelOpen ?? false);
+        if (convs[0].model) {
+          setSelectedModel(convs[0].model);
+        }
+      }
+    })();
 
     const savedModel = localStorage.getItem("selected_model");
     if (savedModel) setSelectedModel(savedModel);
@@ -140,25 +153,13 @@ export default function Home() {
     isFirstMount.current = false;
   }, []);
 
+  const saveTimerRef = useRef(null);
+
   useEffect(() => {
-    // Strip inline data from non-image files before saving to localStorage
-    const conversationsToSave = conversations.map((conv) => ({
-      ...conv,
-      messages: conv.messages.map((msg) => {
-        const newMsg = { ...msg };
-        // Remove _files entries without a URL (these had inline data that won't survive)
-        if (newMsg._files) {
-          newMsg._files = newMsg._files.filter(
-            (f) => f.url || f.type.startsWith("image/"),
-          );
-          if (newMsg._files.length === 0) {
-            delete newMsg._files;
-          }
-        }
-        return newMsg;
-      }),
-    }));
-    localStorage.setItem("conversations", JSON.stringify(conversationsToSave));
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveAllConversations(conversations).catch(() => {});
+    }, 500);
   }, [conversations]);
 
   useEffect(() => {

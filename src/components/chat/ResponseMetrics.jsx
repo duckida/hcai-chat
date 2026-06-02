@@ -1,20 +1,23 @@
 "use client";
 
+import { Clock, DollarSign, Hash, Zap } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Zap, Clock, Hash } from "lucide-react";
+import { calcCost, formatPrice } from "@/lib/pricing";
 
 export default function ResponseMetrics({ usage, duration }) {
   if (!usage) return null;
 
   const totalTokens = usage.inputTokens + usage.outputTokens;
   const tokensPerSecond = duration > 0 ? usage.outputTokens / duration : 0;
+  const cost = usage.model
+    ? calcCost(usage.model, usage.inputTokens, usage.outputTokens)
+    : null;
 
-  // Format duration as a readable string
   const formatDuration = (seconds) => {
     if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
     if (seconds < 60) return `${seconds.toFixed(1)}s`;
@@ -72,6 +75,25 @@ export default function ResponseMetrics({ usage, duration }) {
             Tokens per second (speed)
           </TooltipContent>
         </Tooltip>
+
+        {cost !== null && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 hover:text-slate-700 transition-colors cursor-help"
+              >
+                <DollarSign className="w-3.5 h-3.5" />
+                <span>{formatPrice(cost)}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              <p className="font-medium">Cost</p>
+              <p>Model: {usage.model}</p>
+              <p>Total: {formatPrice(cost)}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </TooltipProvider>
   );

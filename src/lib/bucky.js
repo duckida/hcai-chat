@@ -1,11 +1,12 @@
-const BUCKY_URL = "https://bucky.hackclub.com/";
+const PROXY_URL = "/api/upload";
 
 export async function uploadFileToBucky(file) {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(BUCKY_URL, { method: "POST", body: formData });
+  const response = await fetch(PROXY_URL, { method: "POST", body: formData });
   if (!response.ok) {
-    throw new Error(`Upload failed: ${response.status}`);
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Upload failed: ${response.status}`);
   }
   return (await response.text()).trim();
 }
