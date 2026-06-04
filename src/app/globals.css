@@ -242,8 +242,7 @@ li > ol {
 }
 
 .theme-sunrise {
-  --font-sans:
-    "KakaoBigFont", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-inter: "KakaoBigFont", ui-sans-serif, system-ui, sans-serif;
   --background: #ffffff;
   --foreground: #111111;
   --card: #ffffff;
@@ -288,8 +287,7 @@ li > ol {
 }
 
 .theme-hackclub {
-  --font-sans:
-    "Phantom Sans", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-inter: "Phantom Sans", ui-sans-serif, system-ui, sans-serif;
   --background: #ffffff;
   --foreground: #1f2d3d;
   --card: #ffffff;
