@@ -40,6 +40,7 @@ export const streamChatCompletion = async (
   onToolCall = null,
   onSearchResult = null,
   onMetrics = null,
+  maxTokens = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -50,6 +51,7 @@ export const streamChatCompletion = async (
   try {
     const body = { model, messages, apiKey, think: !!includeThinking };
     body.artifacts = artifactsEnabled;
+    if (maxTokens) body.max_tokens = maxTokens;
 
     if (tools && Array.isArray(tools) && tools.length > 0) {
       body.tools = tools;

@@ -69,6 +69,8 @@ export default function ApiKeyModal({
   onThinkingDefaultViewChange,
   showMetrics = true,
   onShowMetricsChange,
+  maxTokens = 4096,
+  onMaxTokensChange,
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -383,6 +385,26 @@ export default function ApiKeyModal({
                   Show Response Metrics
                 </Label>
                 <Toggle checked={showMetrics} onChange={onShowMetricsChange} />
+              </div>
+
+              <div className="space-y-3">
+                <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                  Max Output Tokens
+                </Label>
+                <div className="flex items-center gap-4 px-1">
+                  <input
+                    type="range"
+                    min="256"
+                    max="16384"
+                    step="256"
+                    value={maxTokens}
+                    onChange={(e) => onMaxTokensChange(Number(e.target.value))}
+                    className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900"
+                  />
+                  <span className="text-sm font-bold text-slate-700 min-w-[4rem] text-right tabular-nums">
+                    {maxTokens.toLocaleString()}
+                  </span>
+                </div>
               </div>
 
               <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">

@@ -38,6 +38,7 @@ export default function Home() {
   const [theme, setTheme] = useState("aurora");
   const [thinkingDefaultView, setThinkingDefaultView] = useState("closed");
   const [showMetrics, setShowMetrics] = useState(true);
+  const [maxTokens, setMaxTokens] = useState(4096);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -139,6 +140,9 @@ export default function Home() {
     const savedShowMetrics = localStorage.getItem("show_metrics");
     if (savedShowMetrics) setShowMetrics(JSON.parse(savedShowMetrics));
 
+    const savedMaxTokens = localStorage.getItem("max_tokens");
+    if (savedMaxTokens) setMaxTokens(JSON.parse(savedMaxTokens));
+
     const savedTheme = localStorage.getItem("theme");
     if (savedTheme) {
       setTheme(savedTheme);
@@ -209,6 +213,10 @@ export default function Home() {
       document.documentElement.classList.remove("theme-sunrise");
     }
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem("max_tokens", JSON.stringify(maxTokens));
+  }, [maxTokens]);
 
   const handleModelChange = useCallback(
     (model) => {
@@ -470,6 +478,7 @@ export default function Home() {
             (metricsData) => {
               metrics = metricsData;
             },
+            maxTokens,
           );
         } else {
           // Use regular chat completion
@@ -551,6 +560,7 @@ export default function Home() {
             (metricsData) => {
               metrics = metricsData;
             },
+            maxTokens,
           );
         }
       } catch (_error) {
@@ -569,6 +579,7 @@ export default function Home() {
       artifactsEnabled,
       webSearchEnabled,
       titleGenerationModel,
+      maxTokens,
     ],
   );
 
@@ -631,6 +642,8 @@ export default function Home() {
         onThinkingDefaultViewChange={setThinkingDefaultView}
         showMetrics={showMetrics}
         onShowMetricsChange={setShowMetrics}
+        maxTokens={maxTokens}
+        onMaxTokensChange={setMaxTokens}
       />
       <Toaster position="top-center" richColors />
     </>

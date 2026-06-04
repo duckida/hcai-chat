@@ -176,6 +176,7 @@ export async function POST(req) {
       tools: clientTools,
       stream,
       think,
+      max_tokens,
     } = await req.json();
 
     const now = new Date();
@@ -217,6 +218,7 @@ export async function POST(req) {
         system: systemPrompt,
         messages: processedMessages,
         tools: availableTools,
+        maxTokens: max_tokens,
         providerOptions: {
           openrouter: reasoningOpts,
         },
@@ -252,6 +254,7 @@ export async function POST(req) {
               system: systemPrompt,
               messages: currentMessages,
               tools: availableTools,
+              maxTokens: max_tokens,
               stopWhen: stepCountIs(5),
               providerOptions: {
                 openrouter: reasoningOpts,
