@@ -3,6 +3,67 @@
 @import "shadcn/tailwind.css";
 @import "streamdown/styles.css";
 
+@font-face {
+  font-family: "KakaoBigFont";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2503@1.0/KakaoBigSans-Regular.woff2")
+    format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "KakaoBigFont";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2503@1.0/KakaoBigSans-Bold.woff2")
+    format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "KakaoBigFont";
+  src: url("https://cdn.jsdelivr.net/gh/projectnoonnu/2503@1.0/KakaoBigSans-ExtraBold.woff2")
+    format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Phantom Sans";
+  src:
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Regular.woff2")
+    format("woff2"),
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Regular.woff")
+    format("woff");
+  font-weight: normal;
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Phantom Sans";
+  src:
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Bold.woff2")
+    format("woff2"),
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Bold.woff")
+    format("woff");
+  font-weight: bold;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Phantom Sans";
+  src:
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Italic.woff2")
+    format("woff2"),
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Italic.woff")
+    format("woff");
+  font-weight: normal;
+  font-style: italic;
+  font-display: swap;
+}
+
 @source "../node_modules/streamdown/dist/*.js";
 @source "../node_modules/@streamdown/code/dist/*.js";
 @source "../node_modules/@streamdown/math/dist/*.js";
@@ -181,6 +242,8 @@ li > ol {
 }
 
 .theme-sunrise {
+  --font-sans:
+    "KakaoBigFont", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --background: #ffffff;
   --foreground: #111111;
   --card: #ffffff;
@@ -222,4 +285,52 @@ li > ol {
   --input: #333333;
   --ring: #ffe81f;
   --radius: 1rem;
+}
+
+.theme-hackclub {
+  --font-sans:
+    "Phantom Sans", var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --background: #ffffff;
+  --foreground: #1f2d3d;
+  --card: #ffffff;
+  --card-foreground: #1f2d3d;
+  --popover: #ffffff;
+  --popover-foreground: #1f2d3d;
+  --primary: #ec3750;
+  --primary-foreground: #ffffff;
+  --secondary: #e0e6ed;
+  --secondary-foreground: #3c4858;
+  --muted: #f9fafc;
+  --muted-foreground: #8492a6;
+  --accent: #338eda;
+  --accent-foreground: #ffffff;
+  --destructive: #ec3750;
+  --destructive-foreground: #ffffff;
+  --border: #e0e6ed;
+  --input: #e0e6ed;
+  --ring: #ec3750;
+  --radius: 0.75rem;
+}
+
+.theme-hackclub.dark {
+  --background: #17171d;
+  --foreground: #ffffff;
+  --card: #252429;
+  --card-foreground: #ffffff;
+  --popover: #252429;
+  --popover-foreground: #ffffff;
+  --primary: #ec3750;
+  --primary-foreground: #ffffff;
+  --secondary: #121217;
+  --secondary-foreground: #8492a6;
+  --muted: #252429;
+  --muted-foreground: #8492a6;
+  --accent: #5bc0de;
+  --accent-foreground: #121217;
+  --destructive: #ec3750;
+  --destructive-foreground: #ffffff;
+  --border: #252429;
+  --input: #252429;
+  --ring: #ec3750;
+  --radius: 0.75rem;
 }

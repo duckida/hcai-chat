@@ -344,6 +344,12 @@ export default function ApiKeyModal({
                     >
                       Sunrise
                     </SelectItem>
+                    <SelectItem
+                      value="hackclub"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                    >
+                      Hack Club
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>

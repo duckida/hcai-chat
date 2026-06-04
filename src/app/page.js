@@ -148,7 +148,14 @@ export default function Home() {
       setTheme(savedTheme);
       if (savedTheme === "sunrise") {
         document.documentElement.classList.add("theme-sunrise");
+      } else if (savedTheme === "hackclub") {
+        document.documentElement.classList.add("theme-hackclub");
       }
+    } else {
+      document.documentElement.classList.remove(
+        "theme-sunrise",
+        "theme-hackclub",
+      );
     }
 
     if (!getStoredApiKey()) {
@@ -207,10 +214,14 @@ export default function Home() {
 
   useEffect(() => {
     localStorage.setItem("theme", theme);
+    document.documentElement.classList.remove(
+      "theme-sunrise",
+      "theme-hackclub",
+    );
     if (theme === "sunrise") {
       document.documentElement.classList.add("theme-sunrise");
-    } else {
-      document.documentElement.classList.remove("theme-sunrise");
+    } else if (theme === "hackclub") {
+      document.documentElement.classList.add("theme-hackclub");
     }
   }, [theme]);
 
