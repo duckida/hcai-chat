@@ -22,8 +22,23 @@ const MODEL_PRICING = {
   "qwen/qwen3.6-flash": { input: 0.1, output: 0.4 },
 };
 
+// Dynamic pricing cache populated from the OpenRouter models API
+const dynamicPricing = {};
+
+export function populatePricingFromModels(models) {
+  if (!Array.isArray(models)) return;
+  for (const model of models) {
+    if (model.id && model.pricing) {
+      dynamicPricing[model.id] = {
+        input: parseFloat(model.pricing.prompt) * 1_000_000,
+        output: parseFloat(model.pricing.completion) * 1_000_000,
+      };
+    }
+  }
+}
+
 export function getModelPricing(modelName) {
-  return MODEL_PRICING[modelName] || null;
+  return MODEL_PRICING[modelName] || dynamicPricing[modelName] || null;
 }
 
 export function calcCost(modelName, inputTokens, outputTokens) {

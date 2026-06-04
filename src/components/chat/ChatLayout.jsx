@@ -37,6 +37,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { populatePricingFromModels } from "@/lib/pricing";
 
 export default function ChatLayout({
   onNewChat,
@@ -161,6 +162,7 @@ export default function ChatLayout({
         if (response.ok) {
           const data = await response.json();
           if (data.data && Array.isArray(data.data)) {
+            populatePricingFromModels(data.data);
             // Remove duplicates and group by provider
             const uniqueModels = Array.from(
               new Map(data.data.map((m) => [m.id, m])).values(),

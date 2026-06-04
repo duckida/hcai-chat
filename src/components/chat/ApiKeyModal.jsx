@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getStoredApiKey, setStoredApiKey } from "@/lib/api-client";
+import { populatePricingFromModels } from "@/lib/pricing";
 
 const Toggle = ({ checked, onChange }) => (
   <button
@@ -81,6 +82,7 @@ export default function ApiKeyModal({
       if (response.ok) {
         const data = await response.json();
         if (data.data && Array.isArray(data.data)) {
+          populatePricingFromModels(data.data);
           // Remove duplicates and group by provider
           const uniqueModels = Array.from(
             new Map(data.data.map((m) => [m.id, m])).values(),
