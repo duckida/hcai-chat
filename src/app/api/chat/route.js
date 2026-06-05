@@ -1,6 +1,7 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
+import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
 import { executeTool } from "@/lib/tools";
 
@@ -35,6 +36,7 @@ async function emitStreamParts(
   nextToolIndexRef,
 ) {
   let finalUsage = null;
+  let finalCost = null;
 
   for await (const part of result.fullStream) {
     switch (part.type) {
@@ -54,6 +56,7 @@ async function emitStreamParts(
 
       case "finish": {
         finalUsage = part.usage;
+        finalCost = part.providerMetadata?.openrouter?.usage?.cost ?? null;
         break;
       }
 
@@ -163,6 +166,7 @@ async function emitStreamParts(
 
   return {
     usage: finalUsage || (await result.usage.catch(() => null)),
+    cost: finalCost,
   };
 }
 
@@ -248,7 +252,7 @@ export async function POST(req) {
           const totalUsage = { inputTokens: 0, outputTokens: 0 };
           const startTime = Date.now();
 
-          const { usage } = await emitStreamParts(
+          const { usage, cost } = await emitStreamParts(
             await streamText({
               model: hackclub(model),
               system: systemPrompt,
@@ -278,6 +282,19 @@ export async function POST(req) {
           const tokensPerSecond =
             duration > 0 ? totalUsage.outputTokens / duration : 0;
 
+          let finalCost = cost;
+          if (finalCost == null) {
+            const pricingMap = await getModelPricingMap();
+            const pricing = pricingMap[model];
+            if (pricing) {
+              finalCost = calcApiCost(
+                pricing,
+                totalUsage.inputTokens,
+                totalUsage.outputTokens,
+              );
+            }
+          }
+
           // Send usage data before [DONE]
           send({
             type: "usage",
@@ -288,13 +305,15 @@ export async function POST(req) {
               totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
               duration,
               tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
+              cost: finalCost,
             },
           });
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (error) {
-          controller.error(error);
+          send({ type: "error", error: error.message || "Stream failed" });
+          controller.close();
         }
       },
     });

@@ -21,6 +21,17 @@ export async function GET() {
 
     const data = await response.json();
 
+    // Filter to only models whose output modality is strictly text
+    const rawModels = data.data || data;
+    if (Array.isArray(rawModels)) {
+      data.data = rawModels.filter(
+        (model) =>
+          model.architecture?.output_modalities &&
+          model.architecture.output_modalities.length === 1 &&
+          model.architecture.output_modalities[0] === "text",
+      );
+    }
+
     // Return with proper CORS headers for client-side access
     return Response.json(data, {
       headers: {

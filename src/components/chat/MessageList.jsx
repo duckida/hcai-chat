@@ -6,6 +6,7 @@ import { createMathPlugin } from "@streamdown/math";
 import { mermaid } from "@streamdown/mermaid";
 import { motion } from "framer-motion";
 import {
+  AlertTriangle,
   Brain,
   ChevronDown,
   ChevronUp,
@@ -17,6 +18,7 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
@@ -213,11 +215,15 @@ const ImageAttachment = ({ src, alt }) => {
           <ImageIcon className="w-6 h-6 text-slate-300" />
         </div>
       )}
-      <img
+      <Image
         src={src}
         alt={alt || "Image attachment"}
+        width={800}
+        height={600}
+        unoptimized
+        style={{ width: "100%", height: "auto" }}
         onLoad={() => setLoaded(true)}
-        className={`w-full h-auto max-h-80 object-contain ${loaded ? "opacity-100" : "opacity-0"}`}
+        className={`max-h-80 object-contain ${loaded ? "opacity-100" : "opacity-0"}`}
       />
     </div>
   );
@@ -261,6 +267,40 @@ const FileBubble = ({ file }) => {
   }
 
   return content;
+};
+
+const ErrorMessage = ({ error }) => {
+  if (!error) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="w-full"
+    >
+      <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
+        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-red-500 text-white shadow-lg">
+          <AlertTriangle className="h-4.5 w-4.5" />
+        </div>
+        <div className="flex-1 space-y-4 overflow-hidden pt-1">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-4 h-4 text-red-600" />
+              <span className="font-semibold text-red-700 text-[15.5px]">
+                {error.title || "Error"}
+              </span>
+            </div>
+            {error.details && (
+              <p className="text-[14px] text-red-600/80 leading-relaxed">
+                {error.details}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
 };
 
 const Message = ({
@@ -376,6 +416,7 @@ export default function MessageList({
   isLoading,
   streamingContent,
   streamingThinking,
+  streamingError,
   thinkingEnabled,
   webSearchEnabled,
   thinkingDefaultView = "closed",
@@ -389,11 +430,18 @@ export default function MessageList({
       (messages.length > 0 ||
         streamingContent ||
         streamingThinking ||
+        streamingError ||
         isLoading)
     ) {
       scrollRef.current.scrollToBottom();
     }
-  }, [messages, streamingContent, streamingThinking, isLoading]);
+  }, [
+    messages,
+    streamingContent,
+    streamingThinking,
+    streamingError,
+    isLoading,
+  ]);
 
   const activeMessages =
     streamingContent || streamingThinking
@@ -401,7 +449,10 @@ export default function MessageList({
       : messages || [];
 
   const hasContent =
-    activeMessages.length > 0 || streamingContent || streamingThinking;
+    activeMessages.length > 0 ||
+    streamingContent ||
+    streamingThinking ||
+    streamingError;
 
   return (
     <ScrollArea
@@ -440,6 +491,7 @@ export default function MessageList({
                   return false;
                 }
                 if (message.role === "tool") return false;
+                if (message.error) return true;
                 const messageText =
                   typeof message.content === "string"
                     ? message.content
@@ -451,15 +503,25 @@ export default function MessageList({
                   (message.thinking && message.thinking.trim() !== "")
                 );
               })
-              .map((message, index) => (
-                <Message
-                  key={`${message.role}-${message.id || index}`}
-                  message={message}
-                  isStreaming={false}
-                  thinkingDefaultView={thinkingDefaultView}
-                  showMetrics={showMetrics}
-                />
-              ))}
+              .map((message, index) => {
+                if (message.error) {
+                  return (
+                    <ErrorMessage
+                      key={`error-${message.id || index}`}
+                      error={message.error}
+                    />
+                  );
+                }
+                return (
+                  <Message
+                    key={`${message.role}-${message.id || index}`}
+                    message={message}
+                    isStreaming={false}
+                    thinkingDefaultView={thinkingDefaultView}
+                    showMetrics={showMetrics}
+                  />
+                );
+              })}
 
             {(streamingContent || streamingThinking) && (
               <motion.div

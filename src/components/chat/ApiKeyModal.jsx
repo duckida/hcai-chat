@@ -39,7 +39,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getStoredApiKey, setStoredApiKey } from "@/lib/api-client";
-import { populatePricingFromModels } from "@/lib/pricing";
 
 const Toggle = ({ checked, onChange }) => (
   <button
@@ -69,7 +68,7 @@ export default function ApiKeyModal({
   onThinkingDefaultViewChange,
   showMetrics = true,
   onShowMetricsChange,
-  maxTokens = 4096,
+  maxTokens = 32000,
   onMaxTokensChange,
 }) {
   const [apiKey, setApiKey] = useState("");
@@ -84,7 +83,6 @@ export default function ApiKeyModal({
       if (response.ok) {
         const data = await response.json();
         if (data.data && Array.isArray(data.data)) {
-          populatePricingFromModels(data.data);
           // Remove duplicates and group by provider
           const uniqueModels = Array.from(
             new Map(data.data.map((m) => [m.id, m])).values(),
@@ -401,7 +399,7 @@ export default function ApiKeyModal({
                   <input
                     type="range"
                     min="256"
-                    max="16384"
+                    max="32768"
                     step="256"
                     value={maxTokens}
                     onChange={(e) => onMaxTokensChange(Number(e.target.value))}

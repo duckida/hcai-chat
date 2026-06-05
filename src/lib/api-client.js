@@ -19,7 +19,13 @@ export const getErrorMessage = (errorData, defaultMessage) => {
 
 export const getStoredApiKey = () => {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(API_KEY_STORAGE_KEY);
+  const key = localStorage.getItem(API_KEY_STORAGE_KEY);
+  if (!key) return null;
+  if (key.startsWith("{") || key.startsWith("[")) {
+    localStorage.removeItem(API_KEY_STORAGE_KEY);
+    return null;
+  }
+  return key;
 };
 
 export const setStoredApiKey = (apiKey) => {
@@ -87,6 +93,12 @@ export const streamChatCompletion = async (
         // Usage metrics from server
         if (parsed.type === "usage" && onMetrics) {
           onMetrics(parsed.usage);
+          return;
+        }
+
+        // Error event from server
+        if (parsed.type === "error") {
+          onError(new Error(parsed.error || "Server error"));
           return;
         }
 

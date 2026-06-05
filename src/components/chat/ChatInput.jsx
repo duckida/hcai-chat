@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowUp, FileText, Paperclip, X } from "lucide-react";
+import Image from "next/image";
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
@@ -45,11 +46,13 @@ const FilePreview = ({ file, onRemove }) => {
   return (
     <div className="relative group inline-flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
       {isImage ? (
-        <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
-          <img
+        <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
+          <Image
             src={file.dataUrl}
             alt={file.name}
-            className="w-full h-full object-cover"
+            fill
+            unoptimized
+            className="object-cover"
           />
         </div>
       ) : (

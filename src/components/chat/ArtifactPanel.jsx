@@ -161,6 +161,7 @@ export default function ArtifactPanel({
           {/* Mobile floating pill */}
           <div className="md:hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-40">
             <button
+              type="button"
               onClick={streamingArtifact ? undefined : onToggle}
               className={`rounded-full py-3 px-5 shadow-lg flex items-center gap-2.5 font-semibold text-[14px] transition-all active:scale-95 ${
                 streamingArtifact
@@ -190,14 +191,13 @@ export default function ArtifactPanel({
           style={{ width: panelWidth }}
         >
           {/* Resize handle - desktop only */}
-          <div
-            className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/30 transition-colors ${isResizing ? "bg-primary" : ""}`}
+          <hr
+            aria-orientation="vertical"
+            aria-valuenow={panelWidth}
+            tabIndex={0}
+            className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/30 transition-colors border-none ${isResizing ? "bg-primary" : ""}`}
             onMouseDown={startResize}
-          >
-            <div
-              className={`w-0.5 h-8 rounded-full ${isResizing ? "bg-primary" : "bg-slate-300"}`}
-            ></div>
-          </div>
+          />
 
           {/* Panel content */}
           <div className="flex flex-col flex-1 min-w-0 border-l border-[#ececec]">

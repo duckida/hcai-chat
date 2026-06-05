@@ -231,6 +231,16 @@ li > ol {
   color: var(--shiki-dark);
 }
 
+/* Horizontal rules (---) inherit `border-border` which is near-white in light themes.
+   Use a stronger color so the rule is actually visible. */
+[data-streamdown="horizontal-rule"] {
+  border-color: var(--muted-foreground);
+  opacity: 0.35;
+}
+.dark [data-streamdown="horizontal-rule"] {
+  opacity: 0.5;
+}
+
 /* Prevent code overflow in Streamdown / artifact panels */
 .artifact-code pre {
   overflow-x: auto;

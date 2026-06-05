@@ -38,7 +38,8 @@ export default function Home() {
   const [theme, setTheme] = useState("aurora");
   const [thinkingDefaultView, setThinkingDefaultView] = useState("closed");
   const [showMetrics, setShowMetrics] = useState(true);
-  const [maxTokens, setMaxTokens] = useState(4096);
+  const [maxTokens, setMaxTokens] = useState(32000);
+  const [streamingError, setStreamingError] = useState(null);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -261,6 +262,7 @@ export default function Home() {
     setMessages([]);
     setStreamingContent("");
     setStreamingThinking("");
+    setStreamingError(null);
     setArtifactPanelOpen(shouldOpen);
   }, [artifactsEnabled, selectedModel]);
 
@@ -275,6 +277,7 @@ export default function Home() {
       }
       setStreamingContent("");
       setStreamingThinking("");
+      setStreamingError(null);
     },
     [conversations],
   );
@@ -395,6 +398,7 @@ export default function Home() {
       setMessages(updatedMessages);
       setStreamingContent("");
       setStreamingThinking("");
+      setStreamingError(null);
       setIsLoading(true);
 
       // Prevent double submission
@@ -431,10 +435,26 @@ export default function Home() {
               }
             },
             (error) => {
-              toast.error(error.message);
+              isStreamingComplete.current = true;
+              setStreamingError({ title: "API Error", details: error.message });
               setIsLoading(false);
               setStreamingContent("");
               setStreamingThinking("");
+
+              const errorMessage = {
+                role: "assistant",
+                content: "",
+                error: { title: "API Error", details: error.message },
+              };
+              const finalMessages = [...updatedMessages, errorMessage];
+              setMessages(finalMessages);
+              setConversations((prev) =>
+                prev.map((conv) =>
+                  conv.id === currentId
+                    ? { ...conv, messages: finalMessages }
+                    : conv,
+                ),
+              );
             },
             async () => {
               if (isStreamingComplete.current) return;
@@ -506,10 +526,26 @@ export default function Home() {
               }
             },
             (error) => {
-              toast.error(error.message);
+              isStreamingComplete.current = true;
+              setStreamingError({ title: "API Error", details: error.message });
               setIsLoading(false);
               setStreamingContent("");
               setStreamingThinking("");
+
+              const errorMessage = {
+                role: "assistant",
+                content: "",
+                error: { title: "API Error", details: error.message },
+              };
+              const finalMessages = [...updatedMessages, errorMessage];
+              setMessages(finalMessages);
+              setConversations((prev) =>
+                prev.map((conv) =>
+                  conv.id === currentId
+                    ? { ...conv, messages: finalMessages }
+                    : conv,
+                ),
+              );
             },
             async () => {
               // Guard against double invocation (e.g. React StrictMode)
@@ -575,9 +611,28 @@ export default function Home() {
           );
         }
       } catch (_error) {
+        isStreamingComplete.current = true;
+        const errorMsg = {
+          title: "Error",
+          details: _error.message || "An unexpected error occurred.",
+        };
+        setStreamingError(errorMsg);
         setIsLoading(false);
         setStreamingContent("");
         setStreamingThinking("");
+
+        const errorMessage = {
+          role: "assistant",
+          content: "",
+          error: errorMsg,
+        };
+        const finalMessages = [...updatedMessages, errorMessage];
+        setMessages(finalMessages);
+        setConversations((prev) =>
+          prev.map((conv) =>
+            conv.id === currentId ? { ...conv, messages: finalMessages } : conv,
+          ),
+        );
       } finally {
         isSubmittingRef.current = false;
       }
@@ -632,6 +687,7 @@ export default function Home() {
             isLoading={isLoading}
             streamingContent={streamingContent}
             streamingThinking={streamingThinking}
+            streamingError={streamingError}
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
             thinkingDefaultView={thinkingDefaultView}

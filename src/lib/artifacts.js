@@ -34,10 +34,11 @@ export function extractHtmlArtifacts(text) {
 
   // Now extract complete fenced ```html blocks (case-insensitive, multiline)
   const completeRegex = /```html\s*\n([\s\S]*?)```/gi;
-  let match;
+  let match = completeRegex.exec(remainingText);
 
-  while ((match = completeRegex.exec(remainingText)) !== null) {
+  while (match !== null) {
     artifacts.push(match[1].trim());
+    match = completeRegex.exec(remainingText);
   }
 
   // Remove all complete ```html``` blocks from the remaining text

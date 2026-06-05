@@ -7,16 +7,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { calcCost, formatPrice } from "@/lib/pricing";
+import { formatPrice } from "@/lib/pricing";
 
 export default function ResponseMetrics({ usage, duration }) {
   if (!usage) return null;
 
   const totalTokens = usage.inputTokens + usage.outputTokens;
   const tokensPerSecond = duration > 0 ? usage.outputTokens / duration : 0;
-  const cost = usage.model
-    ? calcCost(usage.model, usage.inputTokens, usage.outputTokens)
-    : null;
+  const cost = usage.cost ?? null;
 
   const formatDuration = (seconds) => {
     if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
