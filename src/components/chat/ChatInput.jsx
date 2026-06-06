@@ -1,13 +1,13 @@
 "use client";
 
 import { ArrowUp, FileText, Paperclip, X } from "lucide-react";
-import Image from "next/image";
+import NextImage from "next/image";
 import { useCallback, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 
 function resizeImage(dataUrl, maxDim = 2048) {
-  return new Promise((resolve) => {
-    const img = new Image();
+  return new Promise((resolve, reject) => {
+    const img = new globalThis.Image();
     img.onload = () => {
       let { width, height } = img;
       if (width <= maxDim && height <= maxDim) {
@@ -24,6 +24,7 @@ function resizeImage(dataUrl, maxDim = 2048) {
       ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL("image/jpeg", 0.85));
     };
+    img.onerror = () => reject(new Error("Failed to load image"));
     img.src = dataUrl;
   });
 }
@@ -47,7 +48,7 @@ const FilePreview = ({ file, onRemove }) => {
     <div className="relative group inline-flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-2 shadow-sm">
       {isImage ? (
         <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted">
-          <Image
+          <NextImage
             src={file.dataUrl}
             alt={file.name}
             fill
