@@ -7,7 +7,19 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!node_modules", "!.next", "!dist", "!build"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!.next",
+      "!dist",
+      "!build",
+      "!coverage",
+      "!**/__tests__/**",
+      "!**/*.test.{js,jsx,mjs,ts,tsx}",
+      "!**/*.spec.{js,jsx,mjs,ts,tsx}",
+      "!vitest.setup.jsx",
+      "!vitest.config.mjs"
+    ]
   },
   "formatter": {
     "enabled": true,

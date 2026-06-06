@@ -71,6 +71,22 @@ The chat route (`/api/chat`) uses `streamText` with `stopWhen: stepCountIs(5)` t
 - **Conversations**: Chat history is managed in the main page component and persisted via `localStorage`.
 - **API Keys**: User-provided API keys for external services are stored securely in `localStorage`.
 
+## 🧪 Testing
+The project uses **Vitest** and **React Testing Library** for unit testing, covering UI components, API routes, and library utilities.
+
+### Test Structure
+- `src/lib/__tests__/`: Tests for utility functions, business logic, and API clients.
+- `src/components/chat/__tests__/`: Tests for React components and UI interactions (using JSDOM).
+- `src/app/api/**/__tests__/`: Tests for Next.js API route handlers.
+
+### Key Testing Guidelines
+- **Commands**: 
+  - `npm run test`: Run the test suite (watch mode by default or standard execution).
+  - `npm run test:coverage`: Run tests and generate a coverage report (via v8).
+- **Mocks & Setup**: Global mocks for `fetch`, `localStorage`, Next.js navigation (`next/navigation`), and `next-themes` are defined in `vitest.setup.jsx`. Polyfills for `ResizeObserver` and `matchMedia` are also included for headless component support (Radix UI).
+- **Model Constraints**: Whenever AI models are explicitly referenced in tests (like for title generation, fallbacks, or settings defaults), use `google/gemini-3.1-flash-lite` to ensure consistency.
+- **Isolation**: Use `vi.resetModules()` and fake timers (`vi.useFakeTimers()`) for tests that rely on stateful module variables or cached data (e.g., `model-pricing`) to prevent cross-test state leakage.
+
 ## 🛠 Development Workflow
 
 ### Getting Started

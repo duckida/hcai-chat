@@ -237,7 +237,7 @@ export default function ChatInput({ onSend, isLoading }) {
 
   return (
     <div
-      className={`shrink-0 bg-background/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30 ${isDragging ? "relative" : ""}`}
+      className={`shrink-0 bg-background/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 z-30 ${isDragging ? "relative" : ""}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -254,7 +254,7 @@ export default function ChatInput({ onSend, isLoading }) {
           </div>
         </div>
       )}
-      <div className="max-w-[700px] mx-auto relative">
+      <div className="max-w-[700px] mx-auto px-4 sm:px-6 relative">
         {files.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-3">
             {files.map((file) => (
@@ -291,6 +291,7 @@ export default function ChatInput({ onSend, isLoading }) {
           <div className="flex items-center pr-2 pb-1.5 self-end">
             <Button
               size="icon"
+              aria-label="Send"
               disabled={(!input.trim() && files.length === 0) || isLoading}
               onClick={handleSend}
               className={`h-8.5 w-8.5 rounded-full transition-all ${
