@@ -163,7 +163,7 @@
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.8 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -287,7 +287,7 @@ li > ol {
   --secondary: #222222;
   --secondary-foreground: #999999;
   --muted: #222222;
-  --muted-foreground: #666666;
+  --muted-foreground: #888888;
   --accent: #e6cf00;
   --accent-foreground: #111111;
   --border: #333333;

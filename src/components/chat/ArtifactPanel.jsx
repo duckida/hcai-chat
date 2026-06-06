@@ -152,7 +152,7 @@ export default function ArtifactPanel({
               variant="ghost"
               size="icon"
               onClick={onToggle}
-              className="h-8 w-8 text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
               title="Open artifact panel"
             >
               <PanelRightOpen className="w-4 h-4" />
@@ -165,7 +165,7 @@ export default function ArtifactPanel({
               onClick={streamingArtifact ? undefined : onToggle}
               className={`rounded-full py-3 px-5 shadow-lg flex items-center gap-2.5 font-semibold text-[14px] transition-all active:scale-95 ${
                 streamingArtifact
-                  ? "bg-slate-200 text-slate-500 cursor-default"
+                  ? "bg-muted text-muted-foreground cursor-default"
                   : "bg-primary hover:bg-primary/90 active:bg-primary/80 text-primary-foreground shadow-lg cursor-pointer"
               }`}
             >
@@ -187,8 +187,13 @@ export default function ArtifactPanel({
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: 50 }}
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="flex flex-row h-full bg-white max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
-          style={{ width: panelWidth }}
+          className="flex flex-row h-full bg-background max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
+          style={{
+            width:
+              typeof window !== "undefined" && window.innerWidth < 768
+                ? undefined
+                : panelWidth,
+          }}
         >
           {/* Resize handle - desktop only */}
           <hr
@@ -200,15 +205,15 @@ export default function ArtifactPanel({
           />
 
           {/* Panel content */}
-          <div className="flex flex-col flex-1 min-w-0 border-l border-[#ececec]">
+          <div className="flex flex-col flex-1 min-w-0 border-l border-border">
             {/* Header */}
-            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-[#ececec] bg-[#fdfdfd] shrink-0">
+            <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-border bg-background shrink-0">
               <div className="flex items-center gap-1 sm:gap-2">
                 {fullscreen ? (
                   <Button
                     variant="ghost"
                     onClick={handleFullscreenToggle}
-                    className="flex items-center gap-1.5 h-8 w-8 px-0 text-slate-600 hover:text-slate-900 justify-center"
+                    className="flex items-center gap-1.5 h-8 w-8 px-0 text-muted-foreground hover:text-foreground justify-center"
                     title="Exit fullscreen"
                   >
                     <X className="w-4 h-4" />
@@ -217,7 +222,7 @@ export default function ArtifactPanel({
                   <Button
                     variant="ghost"
                     onClick={onToggle}
-                    className="flex items-center gap-1.5 h-8 px-2 sm:px-1 text-slate-600 hover:text-slate-900"
+                    className="flex items-center gap-1.5 h-8 px-2 sm:px-1 text-muted-foreground hover:text-foreground"
                     title="Close"
                   >
                     <PanelRightClose className="w-4 h-4" />
@@ -228,7 +233,7 @@ export default function ArtifactPanel({
                 )}
                 <div className="hidden sm:flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary shadow-sm"></div>
-                  <span className="text-[11px] font-bold text-slate-400 font-mono uppercase tracking-widest leading-none">
+                  <span className="text-[11px] font-bold text-muted-foreground font-mono uppercase tracking-widest leading-none">
                     Artifact
                   </span>
                   {streamingArtifact && (
@@ -240,14 +245,14 @@ export default function ArtifactPanel({
               </div>
 
               <div className="flex items-center gap-1 shrink min-w-0">
-                <div className="flex bg-slate-100 rounded-lg p-0.5 shrink min-w-0">
+                <div className="flex bg-muted rounded-lg p-0.5 shrink min-w-0">
                   <button
                     type="button"
                     onClick={() => setActiveTab("preview")}
                     className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold rounded-md transition-all ${
                       activeTab === "preview"
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
@@ -258,8 +263,8 @@ export default function ArtifactPanel({
                     onClick={() => setActiveTab("code")}
                     className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold rounded-md transition-all ${
                       activeTab === "code"
-                        ? "bg-white text-slate-900 shadow-sm"
-                        : "text-slate-500 hover:text-slate-700"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     <Code className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
@@ -271,7 +276,7 @@ export default function ArtifactPanel({
                   variant="ghost"
                   size="icon"
                   onClick={handleShare}
-                  className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   title="Copy share URL"
                 >
                   {shareCopied ? (
@@ -285,7 +290,7 @@ export default function ArtifactPanel({
                   variant="ghost"
                   size="icon"
                   onClick={handleCopy}
-                  className="h-7 w-7 text-slate-400 hover:text-slate-700"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
                   title="Copy code"
                 >
                   {copied ? (
@@ -299,7 +304,7 @@ export default function ArtifactPanel({
                   variant="ghost"
                   size="icon"
                   onClick={handleFullscreenToggle}
-                  className="h-7 w-7 text-slate-400 hover:text-slate-700 max-md:hidden"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground max-md:hidden"
                   title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
                 >
                   {fullscreen ? (
@@ -312,14 +317,14 @@ export default function ArtifactPanel({
             </div>
 
             {/* Content */}
-            <div className="flex-1 overflow-hidden relative bg-[#fdfdfd]">
+            <div className="flex-1 overflow-hidden relative bg-background">
               {!activeArtifact ? (
-                <div className="flex items-center justify-center h-full text-slate-400 text-sm">
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                   No artifact to display
                 </div>
               ) : activeTab === "preview" ? (
                 streamingArtifact ? (
-                  <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
                     <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
                     <div className="text-sm font-medium animate-pulse text-primary">
                       Generating artifact...
@@ -328,7 +333,7 @@ export default function ArtifactPanel({
                 ) : (
                   <iframe
                     ref={iframeRef}
-                    className="absolute inset-0 w-full h-full bg-white border-0"
+                    className="absolute inset-0 w-full h-full bg-background border-0"
                     title="Artifact Preview"
                     sandbox="allow-scripts"
                     srcDoc={activeArtifact}
@@ -343,8 +348,8 @@ export default function ArtifactPanel({
                   />
                 )
               ) : (
-                <div className="absolute inset-0 overflow-y-auto bg-[#fdfdfd]">
-                  <div className="p-4 artifact-code min-w-0">
+                <div className="absolute inset-0 overflow-y-auto bg-background">
+                  <div className="p-4 artifact-code min-w-0 overflow-x-auto">
                     <Streamdown
                       mode={streamingArtifact ? "stream" : "static"}
                       caret={streamingArtifact ? "block" : false}

@@ -22,6 +22,12 @@ export default function RootLayout({ children }) {
     >
       <head>
         <script async src="https://scripts.simpleanalyticscdn.com/latest.js" />
+        <script
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: FOUC prevention for dark mode
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("color-mode");if(!t||t==="system"){var d=window.matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d)}else{document.documentElement.classList.toggle("dark",t==="dark")}}catch(e){}})();`,
+          }}
+        />
       </head>
       <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
         <AppWrapper>{children}</AppWrapper>

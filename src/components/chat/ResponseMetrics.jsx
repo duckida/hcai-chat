@@ -26,12 +26,12 @@ export default function ResponseMetrics({ usage, duration }) {
 
   return (
     <TooltipProvider>
-      <div className="flex items-center gap-3 mt-3 text-xs text-slate-500 px-1">
+      <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted-foreground px-1">
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1.5 hover:text-slate-700 transition-colors cursor-help"
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
             >
               <Hash className="w-3.5 h-3.5" />
               <span>{totalTokens} tokens</span>
@@ -48,7 +48,7 @@ export default function ResponseMetrics({ usage, duration }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1.5 hover:text-slate-700 transition-colors cursor-help"
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
             >
               <Clock className="w-3.5 h-3.5" />
               <span>{formatDuration(duration)}</span>
@@ -63,7 +63,7 @@ export default function ResponseMetrics({ usage, duration }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="flex items-center gap-1.5 hover:text-slate-700 transition-colors cursor-help"
+              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
             >
               <Zap className="w-3.5 h-3.5" />
               <span>{tokensPerSecond.toFixed(2)} t/s</span>
@@ -79,7 +79,7 @@ export default function ResponseMetrics({ usage, duration }) {
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="flex items-center gap-1.5 hover:text-slate-700 transition-colors cursor-help"
+                className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
               >
                 <DollarSign className="w-3.5 h-3.5" />
                 <span>{formatPrice(cost)}</span>

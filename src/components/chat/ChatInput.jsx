@@ -44,9 +44,9 @@ const FilePreview = ({ file, onRemove }) => {
   const isImage = file.type.startsWith("image/");
 
   return (
-    <div className="relative group inline-flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 shadow-sm">
+    <div className="relative group inline-flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-2 shadow-sm">
       {isImage ? (
-        <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100">
+        <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-muted">
           <Image
             src={file.dataUrl}
             alt={file.name}
@@ -56,15 +56,15 @@ const FilePreview = ({ file, onRemove }) => {
           />
         </div>
       ) : (
-        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-          <FileText className="w-5 h-5 text-blue-600" />
+        <div className="w-10 h-10 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center shrink-0">
+          <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
         </div>
       )}
       <div className="min-w-0 max-w-[160px]">
-        <p className="text-xs font-medium text-slate-700 truncate">
+        <p className="text-xs font-medium text-foreground truncate">
           {file.name}
         </p>
-        <p className="text-[10px] text-slate-400">
+        <p className="text-[10px] text-muted-foreground">
           {file.size < 1024 * 1024
             ? `${Math.round(file.size / 1024)} KB`
             : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
@@ -73,7 +73,7 @@ const FilePreview = ({ file, onRemove }) => {
       <button
         type="button"
         onClick={() => onRemove(file.id)}
-        className="absolute -top-2 -right-2 w-5 h-5 bg-slate-700 text-white rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-slate-900"
+        className="absolute -top-2 -right-2 w-5 h-5 bg-foreground text-background rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-foreground/90"
       >
         <X className="w-3 h-3" />
       </button>
@@ -236,7 +236,7 @@ export default function ChatInput({ onSend, isLoading }) {
 
   return (
     <div
-      className={`shrink-0 bg-white/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30 ${isDragging ? "relative" : ""}`}
+      className={`shrink-0 bg-background/70 backdrop-blur-xl pb-4 sm:pb-8 pt-3 sm:pt-8 px-3 sm:px-4 z-30 ${isDragging ? "relative" : ""}`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -261,11 +261,11 @@ export default function ChatInput({ onSend, isLoading }) {
             ))}
           </div>
         )}
-        <div className="relative flex items-end bg-[#f4f4f4] rounded-[28px] border border-transparent focus-within:bg-white focus-within:border-[#ececec] focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all overflow-hidden p-[5px]">
+        <div className="relative flex items-end bg-muted rounded-[28px] border border-transparent focus-within:bg-background focus-within:border-border focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all overflow-hidden p-[5px]">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 ml-2 mb-1 self-end h-9 w-9 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-all"
+            className="shrink-0 ml-2 mb-1 self-end h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -284,7 +284,7 @@ export default function ChatInput({ onSend, isLoading }) {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder="Message Hack Club AI"
-            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-[#212121] placeholder:text-slate-400 leading-[1.4] overflow-y-auto block font-medium"
+            className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-foreground placeholder:text-muted-foreground leading-[1.4] overflow-y-auto block font-medium"
             rows={1}
           />
           <div className="flex items-center pr-2 pb-1.5 self-end">
@@ -304,7 +304,7 @@ export default function ChatInput({ onSend, isLoading }) {
         </div>
       </div>
       <div className="mt-3 text-center">
-        <p className="text-[11px] text-slate-400 font-bold tracking-tight opacity-70">
+        <p className="text-[11px] text-muted-foreground/70 font-bold tracking-tight">
           AI can make mistakes. Verify important information.
         </p>
       </div>

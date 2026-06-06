@@ -30,7 +30,7 @@ export default function CustomLink({ href, children }) {
         onClick={handleClick}
         target={isExternal ? "_blank" : undefined}
         rel={isExternal ? "noopener noreferrer" : undefined}
-        className="text-blue-600 hover:text-blue-800 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-600 transition-colors inline-flex items-center gap-1"
+        className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline underline-offset-4 decoration-blue-300 dark:decoration-blue-700 hover:decoration-blue-600 transition-colors inline-flex items-center gap-1"
       >
         {children}
         {isExternal && <ExternalLink className="w-3 h-3 shrink-0" />}
@@ -46,7 +46,7 @@ export default function CustomLink({ href, children }) {
                 website. Please ensure you trust the destination.
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-slate-500 font-mono bg-slate-50 p-2 rounded border">
+            <div className="py-4 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground font-mono bg-muted p-2 rounded border border-border">
               {href}
             </div>
             <DialogFooter className="gap-2 sm:gap-0">

@@ -45,7 +45,7 @@ const Toggle = ({ checked, onChange }) => (
     type="button"
     onClick={() => onChange(!checked)}
     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-      checked ? "bg-primary" : "bg-slate-300"
+      checked ? "bg-primary" : "bg-muted-foreground/30"
     }`}
   >
     <span
@@ -143,23 +143,23 @@ export default function ApiKeyModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md bg-white border-[#ececec] rounded-3xl shadow-2xl p-0 overflow-hidden flex flex-col max-h-[90vh]">
+      <DialogContent className="sm:max-w-md bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden flex flex-col max-h-[90vh]">
         <ScrollArea className="w-full h-[90vh] max-h-[90vh]">
           <div className="p-8">
             <DialogHeader>
-              <div className="mx-auto w-16 h-16 rounded-[2rem] bg-slate-900 flex items-center justify-center mb-6 shadow-xl">
-                <Key className="h-8 w-8 text-white" />
+              <div className="mx-auto w-16 h-16 rounded-[2rem] bg-foreground flex items-center justify-center mb-6 shadow-xl">
+                <Key className="h-8 w-8 text-background" />
               </div>
-              <DialogTitle className="text-center text-2xl font-[900] tracking-tight text-slate-900 border-none">
+              <DialogTitle className="text-center text-2xl font-[900] tracking-tight text-foreground border-none">
                 Settings
               </DialogTitle>
-              <DialogDescription className="text-center text-slate-500 font-medium text-[14px] mt-2 leading-relaxed">
+              <DialogDescription className="text-center text-muted-foreground font-medium text-[14px] mt-2 leading-relaxed">
                 Configure your AI endpoint securely. Get your key at
                 <a
                   href="https://ai.hackclub.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-slate-900 font-bold hover:underline underline-offset-4 ml-1"
+                  className="text-foreground font-bold hover:underline underline-offset-4 ml-1"
                 >
                   ai.hackclub.com
                 </a>
@@ -171,7 +171,7 @@ export default function ApiKeyModal({
               <div className="space-y-3">
                 <Label
                   htmlFor="apiKey"
-                  className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1"
+                  className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1"
                 >
                   Hack Club API Key
                 </Label>
@@ -185,13 +185,13 @@ export default function ApiKeyModal({
                       setError("");
                     }}
                     placeholder="sk-hc-v1-..."
-                    className={`h-12 border-[#ececec] bg-[#f9f9f9] rounded-xl px-5 transition-all focus:bg-white focus:ring-4 focus:ring-slate-100 placeholder:text-slate-300 font-medium ${error ? "border-red-400 focus:ring-red-500/10" : ""}`}
+                    className={`h-12 border-border bg-muted rounded-xl px-5 transition-all focus:bg-background focus:ring-4 focus:ring-ring placeholder:text-muted-foreground font-medium ${error ? "border-red-400 focus:ring-destructive/10" : ""}`}
                   />
                   <Button
                     variant="ghost"
                     size="icon"
                     onClick={() => setShowKey(!showKey)}
-                    className="absolute right-2 top-0 h-full px-3 text-slate-400 hover:text-slate-900 hover:bg-transparent transition-colors"
+                    className="absolute right-2 top-0 h-full px-3 text-muted-foreground hover:text-foreground hover:bg-transparent transition-colors"
                   >
                     {showKey ? (
                       <EyeOff className="h-4.5 w-4.5" />
@@ -208,14 +208,14 @@ export default function ApiKeyModal({
               </div>
 
               <div className="space-y-3">
-                <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                <Label className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1">
                   Title Generation Model
                 </Label>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex items-center justify-between w-full border-[#ececec] bg-[#f9f9f9] rounded-xl px-4 h-12 focus:bg-white focus:ring-4 focus:ring-slate-100 text-sm"
+                      className="flex items-center justify-between w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring text-sm"
                     >
                       <span className="truncate">
                         {Object.values(groupedModels)
@@ -228,7 +228,7 @@ export default function ApiKeyModal({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent
                     align="start"
-                    className="w-[var(--radix-dropdown-menu-trigger-width)] border-[#ececec] shadow-2xl rounded-2xl p-1 bg-white z-[100] max-h-[40vh] overflow-y-auto"
+                    className="w-[var(--radix-dropdown-menu-trigger-width)] border-border shadow-2xl rounded-2xl p-1 bg-popover z-[100] max-h-[40vh] overflow-y-auto"
                   >
                     {Object.entries(groupedModels).length > 0 ? (
                       <>
@@ -240,7 +240,7 @@ export default function ApiKeyModal({
                                   {provider}
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuPortal>
-                                  <DropdownMenuSubContent className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100] max-h-[40vh] overflow-y-auto">
+                                  <DropdownMenuSubContent className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100] max-h-[40vh] overflow-y-auto">
                                     {models.map((m) => (
                                       <DropdownMenuItem
                                         key={m.id}
@@ -276,7 +276,7 @@ export default function ApiKeyModal({
                                         : provider,
                                     );
                                   }}
-                                  className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-slate-100"
+                                  className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-accent"
                                 >
                                   <span className="font-medium">
                                     {provider}
@@ -309,7 +309,7 @@ export default function ApiKeyModal({
                         </div>
                       </>
                     ) : (
-                      <div className="p-4 text-xs text-center text-slate-400 font-medium">
+                      <div className="p-4 text-xs text-center text-muted-foreground font-medium">
                         Loading models...
                       </div>
                     )}
@@ -318,33 +318,33 @@ export default function ApiKeyModal({
               </div>
 
               <div className="space-y-3">
-                <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                <Label className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1">
                   Theme
                 </Label>
                 <Select value={theme} onValueChange={onThemeChange}>
-                  <SelectTrigger className="w-full border-[#ececec] bg-[#f9f9f9] rounded-xl px-4 h-12 focus:bg-white focus:ring-4 focus:ring-slate-100">
+                  <SelectTrigger className="w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring">
                     <SelectValue placeholder="Select Theme" />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
                     sideOffset={5}
-                    className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+                    className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
                   >
                     <SelectItem
                       value="aurora"
-                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
                     >
                       Aurora
                     </SelectItem>
                     <SelectItem
                       value="sunrise"
-                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
                     >
                       Sunrise
                     </SelectItem>
                     <SelectItem
                       value="hackclub"
-                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
                     >
                       Hack Club
                     </SelectItem>
@@ -353,30 +353,30 @@ export default function ApiKeyModal({
               </div>
 
               <div className="space-y-3">
-                <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                <Label className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1">
                   Thinking Default View
                 </Label>
                 <Select
                   value={thinkingDefaultView}
                   onValueChange={onThinkingDefaultViewChange}
                 >
-                  <SelectTrigger className="w-full border-[#ececec] bg-[#f9f9f9] rounded-xl px-4 h-12 focus:bg-white focus:ring-4 focus:ring-slate-100">
+                  <SelectTrigger className="w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring">
                     <SelectValue placeholder="Select Default View" />
                   </SelectTrigger>
                   <SelectContent
                     position="popper"
                     sideOffset={5}
-                    className="border-[#ececec] shadow-2xl rounded-2xl p-1 min-w-[220px] bg-white z-[100]"
+                    className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
                   >
                     <SelectItem
                       value="closed"
-                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
                     >
                       Closed
                     </SelectItem>
                     <SelectItem
                       value="open"
-                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-slate-100 cursor-pointer"
+                      className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
                     >
                       Open
                     </SelectItem>
@@ -384,15 +384,15 @@ export default function ApiKeyModal({
                 </Select>
               </div>
 
-              <div className="flex items-center justify-between py-3 px-4 bg-slate-50 rounded-xl border border-slate-100">
-                <Label className="text-[13px] font-bold text-slate-700 uppercase tracking-widest">
+              <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
+                <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
                   Show Response Metrics
                 </Label>
                 <Toggle checked={showMetrics} onChange={onShowMetricsChange} />
               </div>
 
               <div className="space-y-3">
-                <Label className="text-[13px] font-bold text-slate-400 uppercase tracking-widest pl-1">
+                <Label className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1">
                   Max Output Tokens
                 </Label>
                 <div className="flex items-center gap-4 px-1">
@@ -403,17 +403,17 @@ export default function ApiKeyModal({
                     step="256"
                     value={maxTokens}
                     onChange={(e) => onMaxTokensChange(Number(e.target.value))}
-                    className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-slate-900"
+                    className="flex-1 h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-foreground"
                   />
-                  <span className="text-sm font-bold text-slate-700 min-w-[4rem] text-right tabular-nums">
+                  <span className="text-sm font-bold text-foreground min-w-[4rem] text-right tabular-nums">
                     {maxTokens.toLocaleString()}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-slate-50 p-4 rounded-xl border border-slate-100">
+              <div className="flex items-center gap-3 bg-muted p-4 rounded-xl border border-border">
                 <ShieldCheck className="w-5 h-5 text-green-500 shrink-0" />
-                <p className="text-[12px] text-slate-500 font-medium leading-normal">
+                <p className="text-[12px] text-muted-foreground font-medium leading-normal">
                   Your key is stored only on your local device and never sent to
                   our servers.
                 </p>
@@ -430,7 +430,7 @@ export default function ApiKeyModal({
               <Button
                 variant="ghost"
                 onClick={onClose}
-                className="w-full text-slate-400 hover:text-slate-900 h-10 rounded-xl text-[13px] font-semibold"
+                className="w-full text-muted-foreground hover:text-foreground h-10 rounded-xl text-[13px] font-semibold"
               >
                 Cancel
               </Button>

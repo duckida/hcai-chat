@@ -51,7 +51,7 @@ const ThinkingBlock = ({
         variant="ghost"
         size="sm"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="text-xs text-slate-500 hover:text-slate-700 gap-1.5 h-7 px-2.5 rounded-lg"
+        className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-7 px-2.5 rounded-lg"
       >
         {isStreaming && !isExpanded ? (
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -61,13 +61,13 @@ const ThinkingBlock = ({
         <span className="font-medium">Thinking</span>
         {isStreaming && !thinking && (
           <span className="flex gap-1 ml-1">
-            <span className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"></span>
+            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></span>
             <span
-              className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"
+              className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
               style={{ animationDelay: "0.1s" }}
             ></span>
             <span
-              className="w-1 h-1 bg-slate-400 rounded-full animate-bounce"
+              className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
               style={{ animationDelay: "0.2s" }}
             ></span>
           </span>
@@ -79,7 +79,7 @@ const ThinkingBlock = ({
         )}
       </Button>
       {isExpanded && (
-        <div className="mt-2 ml-1 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm text-slate-600 leading-relaxed">
+        <div className="mt-2 ml-1 p-4 bg-muted rounded-xl border border-border text-sm text-muted-foreground leading-relaxed overflow-x-auto">
           {thinking ? (
             <Streamdown
               mode={isStreaming ? "stream" : "static"}
@@ -91,7 +91,7 @@ const ThinkingBlock = ({
               {normalizeLatexDelimiters(thinking)}
             </Streamdown>
           ) : (
-            <span className="text-slate-400 italic">Thinking...</span>
+            <span className="text-muted-foreground italic">Thinking...</span>
           )}
         </div>
       )}
@@ -103,17 +103,17 @@ const WebSearchIndicator = ({ isSearching = false }) => {
   if (!isSearching) return null;
 
   return (
-    <div className="flex items-center gap-2 text-sm text-slate-500 mb-4">
+    <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
       <Globe className="w-4 h-4 animate-pulse" />
       <span>Searching the web...</span>
       <span className="flex gap-1">
-        <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"></span>
+        <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"></span>
         <span
-          className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+          className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
           style={{ animationDelay: "0.1s" }}
         ></span>
         <span
-          className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+          className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
           style={{ animationDelay: "0.2s" }}
         ></span>
       </span>
@@ -127,12 +127,12 @@ const SourcesBlock = ({ sources }) => {
   if (!sources || sources.length === 0) return null;
 
   return (
-    <div className="mt-4 pt-4 border-t border-slate-200">
+    <div className="mt-4 pt-4 border-t border-border">
       <Button
         variant="ghost"
         size="sm"
         onClick={() => setIsExpanded((prev) => !prev)}
-        className="mb-2 h-7 gap-1.5 rounded-lg px-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-700"
+        className="mb-2 h-7 gap-1.5 rounded-lg px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
       >
         <Globe className="w-3.5 h-3.5" />
         <span>Sources ({sources.length})</span>
@@ -156,9 +156,11 @@ const SourcesBlock = ({ sources }) => {
             return (
               <div
                 key={sourceKey}
-                className="text-xs text-slate-600 bg-slate-50 px-3 py-2 rounded-lg flex items-start gap-2"
+                className="text-xs text-muted-foreground bg-muted px-3 py-2 rounded-lg flex items-start gap-2"
               >
-                <span className="text-slate-400 shrink-0">{index + 1}.</span>
+                <span className="text-muted-foreground/60 shrink-0">
+                  {index + 1}.
+                </span>
                 <div className="flex-1 min-w-0">
                   {typeof source === "string" ? (
                     <span>{source}</span>
@@ -167,7 +169,7 @@ const SourcesBlock = ({ sources }) => {
                       href={source.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-blue-600 hover:text-blue-800 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-600 transition-colors break-all inline-flex items-center gap-1"
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 underline underline-offset-4 decoration-blue-300 dark:decoration-blue-700 hover:decoration-blue-600 transition-colors break-all inline-flex items-center gap-1"
                     >
                       {source.title || source.url || `Source ${index + 1}`}
                       <ExternalLink className="w-3 h-3 shrink-0" />
@@ -209,10 +211,10 @@ function getUserText(content) {
 const ImageAttachment = ({ src, alt }) => {
   const [loaded, setLoaded] = useState(false);
   const content = (
-    <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-50 max-w-md cursor-pointer transition-shadow hover:shadow-md">
+    <div className="relative rounded-xl overflow-hidden border border-border bg-muted max-w-md cursor-pointer transition-shadow hover:shadow-md">
       {!loaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-slate-100">
-          <ImageIcon className="w-6 h-6 text-slate-300" />
+        <div className="absolute inset-0 flex items-center justify-center bg-muted">
+          <ImageIcon className="w-6 h-6 text-muted-foreground/50" />
         </div>
       )}
       <Image
@@ -241,15 +243,15 @@ const ImageAttachment = ({ src, alt }) => {
 
 const FileBubble = ({ file }) => {
   const content = (
-    <div className="inline-flex items-center gap-2.5 bg-white border border-slate-200 rounded-xl px-3.5 py-2.5 shadow-sm cursor-default transition-shadow hover:shadow-md">
-      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-        <FileText className="w-5 h-5 text-blue-600" />
+    <div className="inline-flex items-center gap-2.5 bg-background border border-border rounded-xl px-3.5 py-2.5 shadow-sm cursor-default transition-shadow hover:shadow-md">
+      <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950 flex items-center justify-center shrink-0">
+        <FileText className="w-5 h-5 text-blue-600 dark:text-blue-400" />
       </div>
       <div className="min-w-0 max-w-[200px]">
-        <p className="text-sm font-medium text-slate-700 truncate">
+        <p className="text-sm font-medium text-foreground truncate">
           {file.name}
         </p>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-muted-foreground">
           {file.size < 1024 * 1024
             ? `${Math.round(file.size / 1024)} KB`
             : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
@@ -284,15 +286,15 @@ const ErrorMessage = ({ error }) => {
           <AlertTriangle className="h-4.5 w-4.5" />
         </div>
         <div className="flex-1 space-y-4 overflow-hidden pt-1">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
-              <AlertTriangle className="w-4 h-4 text-red-600" />
-              <span className="font-semibold text-red-700 text-[15.5px]">
+              <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
+              <span className="font-semibold text-red-700 dark:text-red-400 text-[15.5px]">
                 {error.title || "Error"}
               </span>
             </div>
             {error.details && (
-              <p className="text-[14px] text-red-600/80 leading-relaxed">
+              <p className="text-[14px] text-red-600/80 dark:text-red-400/80 leading-relaxed">
                 {error.details}
               </p>
             )}
@@ -337,7 +339,7 @@ const Message = ({
           className={`h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center ${
             isAssistant
               ? "bg-primary text-primary-foreground shadow-lg"
-              : "bg-[#f1f5f9] text-slate-400 border border-slate-200"
+              : "bg-muted text-muted-foreground border border-border"
           }`}
         >
           {isAssistant ? (
@@ -355,9 +357,11 @@ const Message = ({
           )}
 
           {isAssistant && message.webSearch && !isStreaming && (
-            <div className="flex items-center gap-2 text-sm text-slate-500 mb-2">
-              <Globe className="w-4 h-4 text-green-600" />
-              <span className="text-green-600 font-medium">Web Search</span>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+              <Globe className="w-4 h-4 text-green-600 dark:text-green-400" />
+              <span className="text-green-600 dark:text-green-400 font-medium">
+                Web Search
+              </span>
             </div>
           )}
 
@@ -378,7 +382,7 @@ const Message = ({
             </div>
           )}
 
-          <div className="max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
+          <div className="max-w-none break-words leading-[1.8] text-foreground text-[15.5px] font-[450] selection:bg-accent overflow-x-auto">
             {renderedText && (
               <Streamdown
                 mode="static"
@@ -389,7 +393,7 @@ const Message = ({
               </Streamdown>
             )}
             {!renderedText && artifacts.length > 0 && (
-              <p className="text-sm text-slate-400 italic">
+              <p className="text-sm text-muted-foreground italic">
                 Artifact generated
               </p>
             )}
@@ -455,20 +459,17 @@ export default function MessageList({
     streamingError;
 
   return (
-    <ScrollArea
-      ref={scrollRef}
-      className="flex-1 h-full selection:bg-slate-200"
-    >
+    <ScrollArea ref={scrollRef} className="flex-1 h-full selection:bg-accent">
       <div className="py-4">
         {!hasContent ? (
           <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-slate-900 text-white flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-foreground text-background flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
               <Sparkles className="h-7 w-7 sm:h-8 sm:w-8" />
             </div>
-            <h1 className="text-xl sm:text-2xl font-[800] tracking-[-0.03em] text-slate-900 mb-2 uppercase">
+            <h1 className="text-xl sm:text-2xl font-[800] tracking-[-0.03em] text-foreground mb-2 uppercase">
               Hack Club AI
             </h1>
-            <p className="text-[12px] sm:text-[13px] font-medium text-slate-500 max-w-[260px] sm:max-w-[280px] leading-relaxed">
+            <p className="text-[12px] sm:text-[13px] font-medium text-muted-foreground max-w-[260px] sm:max-w-[280px] leading-relaxed">
               Modern open source intelligence. Start a conversation to get
               started.
             </p>
@@ -546,7 +547,7 @@ export default function MessageList({
                       />
                     )}
                     {streamingContent && (
-                      <div className="max-w-none break-words leading-[1.8] text-slate-800 text-[15.5px] font-[450] selection:bg-slate-200">
+                      <div className="max-w-none break-words leading-[1.8] text-foreground text-[15.5px] font-[450] selection:bg-accent overflow-x-auto">
                         {normalizeLatexDelimiters(
                           extractHtmlArtifacts(streamingContent).cleanedText,
                         ) ? (

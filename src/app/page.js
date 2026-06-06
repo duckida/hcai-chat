@@ -435,6 +435,7 @@ export default function Home() {
               }
             },
             (error) => {
+              console.log("[ONERROR] called with:", error.message);
               isStreamingComplete.current = true;
               setStreamingError({ title: "API Error", details: error.message });
               setIsLoading(false);
@@ -447,6 +448,11 @@ export default function Home() {
                 error: { title: "API Error", details: error.message },
               };
               const finalMessages = [...updatedMessages, errorMessage];
+              console.log(
+                "[ONERROR] setting messages:",
+                finalMessages.length,
+                finalMessages,
+              );
               setMessages(finalMessages);
               setConversations((prev) =>
                 prev.map((conv) =>
@@ -457,6 +463,10 @@ export default function Home() {
               );
             },
             async () => {
+              console.log(
+                "[ONCOMPLETE] called, isStreamingComplete:",
+                isStreamingComplete.current,
+              );
               if (isStreamingComplete.current) return;
               isStreamingComplete.current = true;
 
@@ -681,7 +691,7 @@ export default function Home() {
           />
         }
       >
-        <div className="flex flex-col h-full bg-white relative min-h-0">
+        <div className="flex flex-col h-full bg-background relative min-h-0">
           <MessageList
             messages={messages}
             isLoading={isLoading}
