@@ -151,7 +151,6 @@ export const streamChatCompletion = async (
     }
   } catch (error) {
     onError(error);
-    throw error;
   }
 };
 
@@ -468,7 +467,6 @@ export const streamExaAnswer = async (
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.log("[STREAM_CHAT] response not ok:", response.status, errorData);
       throw new Error(
         getErrorMessage(errorData, `API Error: ${response.status}`),
       );

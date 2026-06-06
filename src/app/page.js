@@ -435,7 +435,6 @@ export default function Home() {
               }
             },
             (error) => {
-              console.log("[ONERROR] called with:", error.message);
               isStreamingComplete.current = true;
               setStreamingError({ title: "API Error", details: error.message });
               setIsLoading(false);
@@ -448,11 +447,6 @@ export default function Home() {
                 error: { title: "API Error", details: error.message },
               };
               const finalMessages = [...updatedMessages, errorMessage];
-              console.log(
-                "[ONERROR] setting messages:",
-                finalMessages.length,
-                finalMessages,
-              );
               setMessages(finalMessages);
               setConversations((prev) =>
                 prev.map((conv) =>
@@ -463,12 +457,34 @@ export default function Home() {
               );
             },
             async () => {
-              console.log(
-                "[ONCOMPLETE] called, isStreamingComplete:",
-                isStreamingComplete.current,
-              );
               if (isStreamingComplete.current) return;
               isStreamingComplete.current = true;
+
+              if (!fullResponse && !fullThinking) {
+                const errorMsg = {
+                  title: "API Error",
+                  details: "No response received from the model.",
+                };
+                setStreamingError(errorMsg);
+                const errorMessage = {
+                  role: "assistant",
+                  content: "",
+                  error: errorMsg,
+                };
+                const finalMessages = [...updatedMessages, errorMessage];
+                setStreamingContent("");
+                setStreamingThinking("");
+                setMessages(finalMessages);
+                setIsLoading(false);
+                setConversations((prev) =>
+                  prev.map((conv) =>
+                    conv.id === currentId
+                      ? { ...conv, messages: finalMessages }
+                      : conv,
+                  ),
+                );
+                return;
+              }
 
               const assistantMessage = {
                 role: "assistant",
@@ -561,6 +577,32 @@ export default function Home() {
               // Guard against double invocation (e.g. React StrictMode)
               if (isStreamingComplete.current) return;
               isStreamingComplete.current = true;
+
+              if (!fullResponse && !fullThinking) {
+                const errorMsg = {
+                  title: "API Error",
+                  details: "No response received from the model.",
+                };
+                setStreamingError(errorMsg);
+                const errorMessage = {
+                  role: "assistant",
+                  content: "",
+                  error: errorMsg,
+                };
+                const finalMessages = [...updatedMessages, errorMessage];
+                setStreamingContent("");
+                setStreamingThinking("");
+                setMessages(finalMessages);
+                setIsLoading(false);
+                setConversations((prev) =>
+                  prev.map((conv) =>
+                    conv.id === currentId
+                      ? { ...conv, messages: finalMessages }
+                      : conv,
+                  ),
+                );
+                return;
+              }
 
               const assistantMessage = {
                 role: "assistant",
