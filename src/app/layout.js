@@ -19,6 +19,7 @@ export default function RootLayout({ children }) {
     <html
       lang="en"
       className={`${inter.variable} ${inter.className} h-full antialiased`}
+      suppressHydrationWarning
     >
       <head>
         <script async src="https://scripts.simpleanalyticscdn.com/latest.js" />
