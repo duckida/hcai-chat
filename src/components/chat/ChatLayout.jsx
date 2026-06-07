@@ -287,7 +287,7 @@ export default function ChatLayout({
       </div>
 
       <ScrollArea className="flex-1 px-3">
-        <div className="space-y-0.5">
+        <ul className="space-y-0.5">
           <div className="text-[11px] font-bold text-muted-foreground px-2 mb-2 uppercase tracking-wider">
             History
           </div>
@@ -295,7 +295,18 @@ export default function ChatLayout({
             const actionsRevealed = revealedActionsId === conv.id;
 
             return (
-              <div key={conv.id} className="group relative">
+              <li
+                key={conv.id}
+                className="group relative"
+                onPointerEnter={() => setRevealedActionsId(conv.id)}
+                onPointerLeave={() => setRevealedActionsId(null)}
+                onFocus={() => setRevealedActionsId(conv.id)}
+                onBlur={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget)) {
+                    setRevealedActionsId(null);
+                  }
+                }}
+              >
                 {editingId === conv.id ? (
                   <div className="flex items-center gap-1 px-2 py-1">
                     <input
@@ -353,7 +364,7 @@ export default function ChatLayout({
                   className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10 rounded-md transition-opacity ${
                     actionsRevealed
                       ? "opacity-100 pointer-events-auto bg-accent"
-                      : "opacity-0 pointer-events-none bg-muted group-hover:opacity-100 group-hover:pointer-events-auto group-hover:bg-accent/95 group-focus-within:opacity-100 group-focus-within:pointer-events-auto group-focus-within:bg-accent/95"
+                      : "opacity-0 pointer-events-none bg-muted"
                   }`}
                 >
                   {editingId !== conv.id && (
@@ -384,10 +395,10 @@ export default function ChatLayout({
                     <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
                   </Button>
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       </ScrollArea>
 
       <div className="p-3">
