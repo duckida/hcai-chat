@@ -33,12 +33,12 @@ beforeEach(() => {
 });
 
 describe("/api/chat POST", () => {
-  it("returns 500 if JSON parsing throws", async () => {
+  it("returns 400 if JSON is invalid", async () => {
     const req = { json: () => Promise.reject(new Error("bad json")) };
     const res = await POST(req);
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBe("bad json");
+    expect(data.error).toBe("Invalid JSON body");
   });
 
   it("returns JSON when stream is false", async () => {
@@ -68,7 +68,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         artifacts: true,
         stream: false,
@@ -84,7 +84,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         artifacts: false,
         stream: false,
@@ -100,7 +100,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
         max_tokens: 1024,
@@ -117,7 +117,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
       }),
@@ -136,7 +136,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
         think: true,
@@ -150,7 +150,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
         think: false,
@@ -166,7 +166,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
         tools: [
@@ -193,7 +193,7 @@ describe("/api/chat POST", () => {
     await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         stream: false,
         tools: [
@@ -219,7 +219,7 @@ describe("/api/chat POST", () => {
     const res = await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
         // stream is undefined -> default streaming path
       }),
@@ -258,7 +258,7 @@ describe("/api/chat POST", () => {
     const res = await POST(
       makeReq({
         model: TEST_MODEL,
-        messages: [],
+        messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
       }),
     );
@@ -289,7 +289,7 @@ describe("/api/chat POST", () => {
       usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
     });
 
-    const res = await POST(makeReq({ model: TEST_MODEL, messages: [], apiKey: "k" }));
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let out = "";
@@ -330,7 +330,7 @@ describe("/api/chat POST", () => {
       usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
     });
 
-    const res = await POST(makeReq({ model: TEST_MODEL, messages: [], apiKey: "k" }));
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let out = "";
@@ -361,7 +361,7 @@ describe("/api/chat POST", () => {
       usage: Promise.resolve({ promptTokens: 5, completionTokens: 7 }),
     });
 
-    const res = await POST(makeReq({ model: TEST_MODEL, messages: [], apiKey: "k" }));
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let out = "";
@@ -386,7 +386,7 @@ describe("/api/chat POST", () => {
       usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
     });
 
-    const res = await POST(makeReq({ model: TEST_MODEL, messages: [], apiKey: "k" }));
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let out = "";
@@ -454,7 +454,7 @@ describe("/api/chat POST", () => {
       const res = await POST(
         makeReq({
           model: TEST_MODEL,
-          messages: [],
+          messages: [{ role: "user", content: "hi" }],
           apiKey: "k",
           tools: [
             {

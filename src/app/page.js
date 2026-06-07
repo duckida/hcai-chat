@@ -330,6 +330,9 @@ export default function Home({
     async (content, files = []) => {
       if (!content.trim() && files.length === 0) return;
 
+      if (isSubmittingRef.current) return;
+      isSubmittingRef.current = true;
+
       // Check if this is an auto-send from URL params
       const isAutoSend =
         !hasAutoSentRef.current && initialQueryRef.current === content;
@@ -342,13 +345,16 @@ export default function Home({
         ? initialSearchEnabledRef.current
         : webSearchEnabled;
 
-      let currentId = activeConversation;
+      let currentId = activeConversationRef.current;
       if (!currentId) {
         const isDesktop =
           typeof window !== "undefined" && window.innerWidth >= 768;
         const shouldOpen = artifactsEnabled && isDesktop;
 
-        const newId = Date.now().toString();
+        const newId =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         const newConversation = {
           id: newId,
           title: "New Chat",
@@ -420,16 +426,12 @@ export default function Home({
       } else {
         userMessage = { role: "user", content };
       }
-      const updatedMessages = [...messages, userMessage];
+      const updatedMessages = [...messagesRef.current, userMessage];
       setMessages(updatedMessages);
       setStreamingContent("");
       setStreamingThinking("");
       setStreamingError(null);
       setIsLoading(true);
-
-      // Prevent double submission
-      if (isSubmittingRef.current) return;
-      isSubmittingRef.current = true;
 
       setConversations((prev) =>
         prev.map((conv) =>
@@ -439,117 +441,122 @@ export default function Home({
 
       let fullResponse = "";
       let fullThinking = "";
-      let sources = []; // Store citations from web_search tool
-      let metrics = null; // Store metrics
+      let sources = [];
+      let metrics = null;
       isStreamingComplete.current = false;
       try {
         const tools = getTools({ includeWebSearch: needsWebSearch });
 
+        const makeOnError = () => (error) => {
+          isStreamingComplete.current = true;
+          setStreamingError({ title: "API Error", details: error.message });
+          setIsLoading(false);
+          setStreamingContent("");
+          setStreamingThinking("");
+
+          const errorMessage = {
+            role: "assistant",
+            content: "",
+            error: { title: "API Error", details: error.message },
+          };
+          const finalMessages = [...updatedMessages, errorMessage];
+          setMessages(finalMessages);
+          setConversations((prev) =>
+            prev.map((conv) =>
+              conv.id === currentId
+                ? { ...conv, messages: finalMessages }
+                : conv,
+            ),
+          );
+        };
+
+        const makeOnComplete = (includeSources) => async () => {
+          if (isStreamingComplete.current) return;
+          isStreamingComplete.current = true;
+
+          if (!fullResponse && !fullThinking) {
+            const errorMsg = {
+              title: "API Error",
+              details: "No response received from the model.",
+            };
+            setStreamingError(errorMsg);
+            const errorMessage = {
+              role: "assistant",
+              content: "",
+              error: errorMsg,
+            };
+            const finalMessages = [...updatedMessages, errorMessage];
+            setStreamingContent("");
+            setStreamingThinking("");
+            setMessages(finalMessages);
+            setIsLoading(false);
+            setConversations((prev) =>
+              prev.map((conv) =>
+                conv.id === currentId
+                  ? { ...conv, messages: finalMessages }
+                  : conv,
+              ),
+            );
+            return;
+          }
+
+          const assistantMessage = {
+            role: "assistant",
+            content: fullResponse,
+            thinking: fullThinking || undefined,
+            ...(includeSources
+              ? {
+                  sources: sources.length > 0 ? sources : undefined,
+                  webSearch: true,
+                }
+              : {}),
+            metrics,
+          };
+          const finalMessages = [...updatedMessages, assistantMessage];
+
+          setStreamingContent("");
+          setStreamingThinking("");
+          setMessages(finalMessages);
+          setIsLoading(false);
+
+          let titleUpdate = {};
+          const currentConversation = conversationsRef.current.find(
+            (c) => c.id === currentId,
+          );
+          if (
+            currentConversation?.title === "New Chat" &&
+            finalMessages.length === 2
+          ) {
+            const newTitle = await generateTitle(content, titleGenerationModel);
+            titleUpdate = { title: newTitle };
+          }
+
+          setConversations((prev) =>
+            prev.map((conv) =>
+              conv.id === currentId
+                ? { ...conv, messages: finalMessages, ...titleUpdate }
+                : conv,
+            ),
+          );
+        };
+
+        const onChunk = (chunk, type) => {
+          if (type === "thinking") {
+            fullThinking += chunk;
+            setStreamingThinking(fullThinking);
+          } else {
+            fullResponse += chunk;
+            setStreamingContent(fullResponse);
+          }
+        };
+
         if (needsWebSearch) {
-          // Server-side tool calling with maxSteps: model thinks → searches
-          // → thinks about results → generates artifact, all in one stream.
           await streamChatCompletion(
             updatedMessages,
             selectedModel,
-            (chunk, type) => {
-              if (type === "thinking") {
-                fullThinking += chunk;
-                setStreamingThinking(fullThinking);
-              } else {
-                fullResponse += chunk;
-                setStreamingContent(fullResponse);
-              }
-            },
-            (error) => {
-              isStreamingComplete.current = true;
-              setStreamingError({ title: "API Error", details: error.message });
-              setIsLoading(false);
-              setStreamingContent("");
-              setStreamingThinking("");
-
-              const errorMessage = {
-                role: "assistant",
-                content: "",
-                error: { title: "API Error", details: error.message },
-              };
-              const finalMessages = [...updatedMessages, errorMessage];
-              setMessages(finalMessages);
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages }
-                    : conv,
-                ),
-              );
-            },
-            async () => {
-              if (isStreamingComplete.current) return;
-              isStreamingComplete.current = true;
-
-              if (!fullResponse && !fullThinking) {
-                const errorMsg = {
-                  title: "API Error",
-                  details: "No response received from the model.",
-                };
-                setStreamingError(errorMsg);
-                const errorMessage = {
-                  role: "assistant",
-                  content: "",
-                  error: errorMsg,
-                };
-                const finalMessages = [...updatedMessages, errorMessage];
-                setStreamingContent("");
-                setStreamingThinking("");
-                setMessages(finalMessages);
-                setIsLoading(false);
-                setConversations((prev) =>
-                  prev.map((conv) =>
-                    conv.id === currentId
-                      ? { ...conv, messages: finalMessages }
-                      : conv,
-                  ),
-                );
-                return;
-              }
-
-              const assistantMessage = {
-                role: "assistant",
-                content: fullResponse,
-                thinking: fullThinking || undefined,
-                sources: sources.length > 0 ? sources : undefined,
-                webSearch: true,
-                metrics,
-              };
-              const finalMessages = [...updatedMessages, assistantMessage];
-
-              setStreamingContent("");
-              setStreamingThinking("");
-              setMessages(finalMessages);
-              setIsLoading(false);
-
-              let titleUpdate = {};
-              const currentConversation = conversationsRef.current.find(
-                (c) => c.id === currentId,
-              );
-              if (
-                currentConversation?.title === "New Chat" &&
-                finalMessages.length === 2
-              ) {
-                const newTitle = await generateTitle(
-                  content,
-                  titleGenerationModel,
-                );
-                titleUpdate = { title: newTitle };
-              }
-
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages, ...titleUpdate }
-                    : conv,
-                ),
-              );
-            },
+            onChunk,
+            makeOnError(),
+            makeOnComplete(true),
             thinkingEnabled,
             artifactsEnabled,
             tools,
@@ -564,118 +571,12 @@ export default function Home({
             maxTokens,
           );
         } else {
-          // Use regular chat completion
           await streamChatCompletion(
             updatedMessages,
             selectedModel,
-            (chunk, type) => {
-              if (type === "thinking") {
-                fullThinking += chunk;
-                setStreamingThinking(fullThinking);
-              } else {
-                fullResponse += chunk;
-                setStreamingContent(fullResponse);
-              }
-            },
-            (error) => {
-              isStreamingComplete.current = true;
-              setStreamingError({ title: "API Error", details: error.message });
-              setIsLoading(false);
-              setStreamingContent("");
-              setStreamingThinking("");
-
-              const errorMessage = {
-                role: "assistant",
-                content: "",
-                error: { title: "API Error", details: error.message },
-              };
-              const finalMessages = [...updatedMessages, errorMessage];
-              setMessages(finalMessages);
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages }
-                    : conv,
-                ),
-              );
-            },
-            async () => {
-              // Guard against double invocation (e.g. React StrictMode)
-              if (isStreamingComplete.current) return;
-              isStreamingComplete.current = true;
-
-              if (!fullResponse && !fullThinking) {
-                const errorMsg = {
-                  title: "API Error",
-                  details: "No response received from the model.",
-                };
-                setStreamingError(errorMsg);
-                const errorMessage = {
-                  role: "assistant",
-                  content: "",
-                  error: errorMsg,
-                };
-                const finalMessages = [...updatedMessages, errorMessage];
-                setStreamingContent("");
-                setStreamingThinking("");
-                setMessages(finalMessages);
-                setIsLoading(false);
-                setConversations((prev) =>
-                  prev.map((conv) =>
-                    conv.id === currentId
-                      ? { ...conv, messages: finalMessages }
-                      : conv,
-                  ),
-                );
-                return;
-              }
-
-              const assistantMessage = {
-                role: "assistant",
-                content: fullResponse,
-                thinking: fullThinking || undefined,
-                metrics,
-              };
-              const finalMessages = [...updatedMessages, assistantMessage];
-
-              // Clear streaming FIRST so the streaming block disappears
-              // before the persisted message appears. This prevents both
-              // from being visible simultaneously (duplicate message).
-              setStreamingContent("");
-              setStreamingThinking("");
-              setMessages(finalMessages);
-
-              // Set loading to false immediately to prevent lingering loading indicator
-              // Title generation can happen in the background without blocking UI
-              setIsLoading(false);
-
-              // Generate title after first AI response (when we have both user message and AI response)
-              let titleUpdate = {};
-              // Get the current conversation to check its title using the ref
-              const currentConversation = conversationsRef.current.find(
-                (c) => c.id === currentId,
-              );
-              // Only generate title if this is a new chat (title is still "New Chat")
-              // and we have the first AI response (2 messages: user + assistant)
-              if (
-                currentConversation?.title === "New Chat" &&
-                finalMessages.length === 2
-              ) {
-                const newTitle = await generateTitle(
-                  content,
-                  titleGenerationModel,
-                );
-                titleUpdate = { title: newTitle };
-              }
-
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages, ...titleUpdate }
-                    : conv,
-                ),
-              );
-            },
+            onChunk,
+            makeOnError(),
+            makeOnComplete(false),
             thinkingEnabled,
             artifactsEnabled,
             tools,
@@ -716,8 +617,6 @@ export default function Home({
       }
     },
     [
-      messages,
-      activeConversation,
       selectedModel,
       thinkingEnabled,
       artifactsEnabled,

@@ -177,7 +177,62 @@ async function emitStreamParts(
   };
 }
 
+function validateRequest(body) {
+  const { messages, model, apiKey, max_tokens } = body;
+
+  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+    return { valid: false, status: 401, error: "Valid API key is required" };
+  }
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { valid: false, status: 400, error: "Messages array is required" };
+  }
+
+  if (messages.length > 200) {
+    return {
+      valid: false,
+      status: 400,
+      error: "Too many messages (max 200)",
+    };
+  }
+
+  if (!model || typeof model !== "string") {
+    return { valid: false, status: 400, error: "Model is required" };
+  }
+
+  if (max_tokens !== undefined && max_tokens !== null) {
+    if (
+      typeof max_tokens !== "number" ||
+      max_tokens < 1 ||
+      max_tokens > 65536
+    ) {
+      return {
+        valid: false,
+        status: 400,
+        error: "max_tokens must be between 1 and 65536",
+      };
+    }
+  }
+
+  return { valid: true };
+}
+
 export async function POST(req) {
+  let body;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  const validation = validateRequest(body);
+  if (!validation.valid) {
+    return Response.json(
+      { error: validation.error },
+      { status: validation.status },
+    );
+  }
+
   try {
     const {
       messages,
@@ -188,7 +243,7 @@ export async function POST(req) {
       stream,
       think,
       max_tokens,
-    } = await req.json();
+    } = body;
 
     const now = new Date();
     const dateStr = now.toLocaleDateString("en-US", {
@@ -332,7 +387,13 @@ export async function POST(req) {
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         } catch (error) {
+          console.error(
+            `[stream error] model=${model} msgs=${messages.length}:`,
+            error,
+          );
           send({ type: "error", error: error.message || "Stream failed" });
+          // Yield control to let the enqueued error drain before closing
+          await new Promise((r) => queueMicrotask(r));
           controller.close();
         }
       },
@@ -346,6 +407,7 @@ export async function POST(req) {
       },
     });
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    console.error(`[chat route error] model=${body?.model}:`, error);
+    return Response.json({ error: "Internal server error" }, { status: 500 });
   }
 }

@@ -51,7 +51,7 @@ describe("/api/upload POST", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const res = await POST(makeFormReq(new File(["x"], "x.txt")));
+    const res = await POST(makeFormReq(new File(["x"], "x.txt", { type: "text/plain" })));
     expect(res.status).toBe(413);
     const data = await res.json();
     expect(data.error).toBe("Upload failed: 413");
@@ -61,7 +61,7 @@ describe("/api/upload POST", () => {
     const res = await POST({ formData: () => Promise.reject(new Error("oops")) });
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toBe("oops");
+    expect(data.error).toBe("Upload failed");
   });
 
   it("trims whitespace from the returned URL", async () => {
@@ -70,7 +70,7 @@ describe("/api/upload POST", () => {
       text: () => Promise.resolve("  https://imgutil.example/x.png\n  "),
     });
     vi.stubGlobal("fetch", fetchMock);
-    const res = await POST(makeFormReq(new File(["x"], "x.png")));
+    const res = await POST(makeFormReq(new File(["x"], "x.png", { type: "image/png" })));
     const text = await res.text();
     expect(text).toBe("https://imgutil.example/x.png");
   });

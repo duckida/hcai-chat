@@ -134,7 +134,7 @@ export const streamChatCompletion = async (
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
-        buffer += decoder.decode();
+        buffer += decoder.decode(undefined);
         const remaining = buffer.trim();
         if (remaining) processLine(remaining);
         await onComplete?.();
@@ -474,32 +474,55 @@ export const streamExaAnswer = async (
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = "";
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) {
+        buffer += decoder.decode(undefined);
+        // Process any remaining complete events before finishing
+        const remaining = buffer.trim();
+        if (remaining) {
+          const lines = remaining.split("\n");
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              if (data === "[DONE]") continue;
+              try {
+                const parsed = JSON.parse(data);
+                const content =
+                  parsed.answer ||
+                  parsed.content ||
+                  parsed.choices?.[0]?.delta?.content ||
+                  "";
+                if (content) onChunk(content);
+              } catch (_e) {}
+            }
+          }
+        }
         onComplete?.();
         break;
       }
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split("\n");
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() || "";
 
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") continue;
-          try {
-            const parsed = JSON.parse(data);
-            // Exa streaming responses might have different structure
-            // Handle both direct content and nested structures
-            const content =
-              parsed.answer ||
-              parsed.content ||
-              parsed.choices?.[0]?.delta?.content ||
-              "";
-            if (content) onChunk(content);
-          } catch (_e) {}
+      for (const part of parts) {
+        for (const line of part.split("\n")) {
+          if (line.startsWith("data: ")) {
+            const data = line.slice(6);
+            if (data === "[DONE]") continue;
+            try {
+              const parsed = JSON.parse(data);
+              const content =
+                parsed.answer ||
+                parsed.content ||
+                parsed.choices?.[0]?.delta?.content ||
+                "";
+              if (content) onChunk(content);
+            } catch (_e) {}
+          }
         }
       }
     }
