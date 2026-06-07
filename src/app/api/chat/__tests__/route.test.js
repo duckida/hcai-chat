@@ -399,4 +399,102 @@ describe("/api/chat POST", () => {
     expect(out).toContain('"type":"error"');
     expect(out).toContain("stream boom");
   });
+
+  it("excludes tool call time from generation duration and tokensPerSecond", async () => {
+    const { streamText } = await import("ai");
+
+    // Simulate a stream where text-delta events are tightly grouped, but a
+    // long tool execution sits between them. Real wall-clock time spent on
+    // the tool should be reflected in `duration` but NOT in the
+    // `generationDuration` used for tokensPerSecond.
+    const startMs = 1_700_000_000_000;
+    const timeline = {
+      // stream begin (startTime)
+      0: startMs,
+      // first text-delta
+      1: startMs + 10,
+      // second text-delta after a long tool execution
+      2: startMs + 2000,
+      // stream end (endTime)
+      3: startMs + 2050,
+    };
+    let tick = 0;
+    const dateSpy = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => timeline[tick++] ?? startMs + 2050);
+
+    streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "Hello" };
+        yield { type: "tool-input-start", id: "t1", toolName: "web_search" };
+        yield { type: "tool-input-delta", id: "t1", delta: '{"q":' };
+        yield {
+          type: "tool-call",
+          toolCallId: "t1",
+          toolName: "web_search",
+          input: { q: "x" },
+        };
+        yield {
+          type: "tool-result",
+          toolCallId: "t1",
+          toolName: "web_search",
+          output: { answer: "ok", citations: [] },
+        };
+        yield { type: "text-delta", text: " world" };
+        yield {
+          type: "finish",
+          usage: { promptTokens: 5, completionTokens: 10 },
+          providerMetadata: { openrouter: { usage: { cost: 0.001 } } },
+        };
+      })(),
+      usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
+    });
+
+    try {
+      const res = await POST(
+        makeReq({
+          model: TEST_MODEL,
+          messages: [],
+          apiKey: "k",
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "web_search",
+                description: "search",
+                parameters: {
+                  type: "object",
+                  properties: { q: { type: "string" } },
+                },
+              },
+            },
+          ],
+        }),
+      );
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let out = "";
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        out += decoder.decode(value);
+      }
+
+      const usageMatch = out.match(/"type":"usage","usage":(\{[^}]+\})/);
+      expect(usageMatch).toBeTruthy();
+      const usage = JSON.parse(usageMatch[1]);
+
+      // Wall-clock duration spans the entire stream (~2050ms = 2.05s)
+      expect(usage.duration).toBeCloseTo(2.05, 5);
+      // Generation duration only counts the active text windows
+      // (10ms -> 2000ms = 1990ms ≈ 1.99s)
+      expect(usage.generationDuration).toBeCloseTo(1.99, 5);
+      // tokensPerSecond is based on the active generation window, not wall clock
+      // 10 tokens / 1.99s ≈ 5.03 t/s
+      expect(usage.tokensPerSecond).toBe(5.03);
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
 });

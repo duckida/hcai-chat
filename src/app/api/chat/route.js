@@ -34,23 +34,30 @@ async function emitStreamParts(
   send,
   toolCallIndexes,
   nextToolIndexRef,
+  generationTiming,
 ) {
   let finalUsage = null;
   let finalCost = null;
 
   for await (const part of result.fullStream) {
     switch (part.type) {
-      case "text-delta": {
-        send({
-          choices: [{ delta: { content: part.text } }],
-        });
-        break;
-      }
-
+      case "text-delta":
       case "reasoning-delta": {
-        send({
-          choices: [{ delta: { thinking: part.text } }],
-        });
+        const now = Date.now();
+        if (generationTiming.startTime == null) {
+          generationTiming.startTime = now;
+        }
+        generationTiming.endTime = now;
+
+        if (part.type === "text-delta") {
+          send({
+            choices: [{ delta: { content: part.text } }],
+          });
+        } else {
+          send({
+            choices: [{ delta: { thinking: part.text } }],
+          });
+        }
         break;
       }
 
@@ -251,6 +258,7 @@ export async function POST(req) {
           const currentMessages = [...processedMessages];
           const totalUsage = { inputTokens: 0, outputTokens: 0 };
           const startTime = Date.now();
+          const generationTiming = { startTime: null, endTime: null };
 
           const { usage, cost } = await emitStreamParts(
             await streamText({
@@ -267,6 +275,7 @@ export async function POST(req) {
             send,
             toolCallIndexes,
             nextToolIndexRef,
+            generationTiming,
           );
 
           // Accumulate usage data
@@ -278,9 +287,19 @@ export async function POST(req) {
           }
 
           const endTime = Date.now();
-          const duration = (endTime - startTime) / 1000; // in seconds
+          const totalDuration = (endTime - startTime) / 1000; // wall-clock seconds
+          // Generation duration excludes tool execution / network wait time:
+          // it spans only the windows in which text or reasoning deltas arrived.
+          const generationDurationMs =
+            generationTiming.startTime != null &&
+            generationTiming.endTime != null
+              ? generationTiming.endTime - generationTiming.startTime
+              : 0;
+          const generationDuration = generationDurationMs / 1000;
+          const durationForTps =
+            generationDurationMs > 0 ? generationDuration : 0;
           const tokensPerSecond =
-            duration > 0 ? totalUsage.outputTokens / duration : 0;
+            durationForTps > 0 ? totalUsage.outputTokens / durationForTps : 0;
 
           let finalCost = cost;
           if (finalCost == null) {
@@ -303,7 +322,8 @@ export async function POST(req) {
               inputTokens: totalUsage.inputTokens,
               outputTokens: totalUsage.outputTokens,
               totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
-              duration,
+              duration: totalDuration,
+              generationDuration,
               tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
               cost: finalCost,
             },
