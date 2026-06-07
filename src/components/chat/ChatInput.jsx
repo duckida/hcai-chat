@@ -262,11 +262,11 @@ export default function ChatInput({ onSend, isLoading }) {
             ))}
           </div>
         )}
-        <div className="relative flex items-end bg-muted rounded-[28px] border border-transparent focus-within:bg-background focus-within:border-border focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all overflow-hidden p-[5px]">
+        <div className="relative flex items-center bg-muted rounded-[28px] border border-transparent focus-within:bg-background focus-within:border-border focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:focus-within:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all overflow-hidden p-[5px]">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 ml-2 mb-1 self-end h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            className="shrink-0 ml-1 h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -288,7 +288,7 @@ export default function ChatInput({ onSend, isLoading }) {
             className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-foreground placeholder:text-muted-foreground leading-[1.4] overflow-y-auto block font-medium"
             rows={1}
           />
-          <div className="flex items-center pr-2 pb-1.5 self-end">
+          <div className="flex items-center pr-1">
             <Button
               size="icon"
               aria-label="Send"
