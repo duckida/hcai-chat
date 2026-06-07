@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
-import ApiKeyModal from "@/components/chat/ApiKeyModal";
 import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
+import SettingsModal from "@/components/chat/SettingsModal";
 import {
   generateTitle,
   getStoredApiKey,
@@ -749,7 +749,7 @@ export default function Home() {
         </div>
       </ChatLayout>
 
-      <ApiKeyModal
+      <SettingsModal
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
         onSave={() => toast.success("Settings updated")}

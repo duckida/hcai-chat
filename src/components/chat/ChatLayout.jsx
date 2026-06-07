@@ -42,7 +42,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import ThemeToggle from "./ThemeToggle";
 
 export default function ChatLayout({
   onNewChat,
@@ -643,10 +642,6 @@ export default function ChatLayout({
                 </DropdownMenu>
               </>
             )}
-          </div>
-
-          <div className="w-8 hidden sm:flex items-center justify-end">
-            <ThemeToggle />
           </div>
         </header>
 
