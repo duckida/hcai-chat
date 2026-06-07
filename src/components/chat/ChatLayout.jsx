@@ -257,7 +257,7 @@ export default function ChatLayout({
     fetchModels();
   }, []);
 
-  const SidebarContent = () => (
+  const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-muted">
       <div className="p-3 mb-2">
         <Button
@@ -410,7 +410,7 @@ export default function ChatLayout({
         style={{ width: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
       >
         <div className="w-full h-full flex flex-col min-w-[200px]">
-          <SidebarContent />
+          {renderSidebarContent()}
         </div>
         <button
           type="button"
@@ -452,7 +452,7 @@ export default function ChatLayout({
                   showCloseButton={false}
                 >
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
-                  <SidebarContent />
+                  {renderSidebarContent()}
                 </SheetContent>
               </Sheet>
             </div>
