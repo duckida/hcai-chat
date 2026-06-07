@@ -22,6 +22,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
+import ThinkingIndicator from "./ThinkingIndicator";
 
 const math = createMathPlugin({ singleDollarTextMath: true });
 
@@ -325,10 +326,11 @@ export default function ArtifactPanel({
               ) : activeTab === "preview" ? (
                 streamingArtifact ? (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-4">
-                    <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-                    <div className="text-sm font-medium animate-pulse text-primary">
-                      Generating artifact...
-                    </div>
+                    <ThinkingIndicator
+                      label="Generating artifact"
+                      size="lg"
+                      className="text-primary"
+                    />
                   </div>
                 ) : (
                   <iframe

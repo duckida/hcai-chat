@@ -14,12 +14,18 @@ import {
   FileText,
   Globe,
   ImageIcon,
-  Loader2,
   Sparkles,
   User,
 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -27,6 +33,7 @@ import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { normalizeLatexDelimiters } from "@/lib/latex";
 import CustomLink from "./CustomLink";
 import ResponseMetrics from "./ResponseMetrics";
+import ThinkingIndicator from "./ThinkingIndicator";
 
 const math = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { code, math, mermaid, cjk };
@@ -43,6 +50,11 @@ const ThinkingBlock = ({
     setIsExpanded(defaultView === "open");
   }, [defaultView]);
 
+  const normalizedThinking = useMemo(
+    () => (thinking ? normalizeLatexDelimiters(thinking) : ""),
+    [thinking],
+  );
+
   if (!thinking && !isStreaming) return null;
 
   return (
@@ -53,25 +65,12 @@ const ThinkingBlock = ({
         onClick={() => setIsExpanded(!isExpanded)}
         className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-7 px-2.5 rounded-lg"
       >
-        {isStreaming && !isExpanded ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        {isStreaming ? (
+          <ThinkingIndicator size="sm" />
         ) : (
           <Brain className="w-3.5 h-3.5" />
         )}
         <span className="font-medium">Thinking</span>
-        {isStreaming && !thinking && (
-          <span className="flex gap-1 ml-1">
-            <span className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"></span>
-            <span
-              className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-              style={{ animationDelay: "0.1s" }}
-            ></span>
-            <span
-              className="w-1 h-1 bg-muted-foreground rounded-full animate-bounce"
-              style={{ animationDelay: "0.2s" }}
-            ></span>
-          </span>
-        )}
         {isExpanded ? (
           <ChevronUp className="w-3 h-3" />
         ) : (
@@ -80,18 +79,29 @@ const ThinkingBlock = ({
       </Button>
       {isExpanded && (
         <div className="mt-2 ml-1 p-4 bg-muted rounded-xl border border-border text-sm text-muted-foreground leading-relaxed overflow-x-auto">
-          {thinking ? (
+          {normalizedThinking ? (
             <Streamdown
               mode={isStreaming ? "stream" : "static"}
-              caret={isStreaming ? "block" : false}
+              caret={isStreaming ? "line" : false}
               isAnimating={isStreaming}
+              animated={
+                isStreaming
+                  ? { animation: "blurIn", duration: 200, easing: "ease-out" }
+                  : false
+              }
               plugins={streamdownPlugins}
               components={streamdownComponents}
             >
-              {normalizeLatexDelimiters(thinking)}
+              {normalizedThinking}
             </Streamdown>
           ) : (
-            <span className="text-muted-foreground italic">Thinking...</span>
+            <span className="text-muted-foreground inline-flex items-center">
+              <ThinkingIndicator
+                label="Thinking"
+                size="sm"
+                className="text-muted-foreground"
+              />
+            </span>
           )}
         </div>
       )}
@@ -105,18 +115,8 @@ const WebSearchIndicator = ({ isSearching = false }) => {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
       <Globe className="w-4 h-4 animate-pulse" />
-      <span>Searching the web...</span>
-      <span className="flex gap-1">
-        <span className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"></span>
-        <span
-          className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
-          style={{ animationDelay: "0.1s" }}
-        ></span>
-        <span
-          className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-bounce"
-          style={{ animationDelay: "0.2s" }}
-        ></span>
-      </span>
+      <span>Searching the web</span>
+      <ThinkingIndicator size="md" className="text-muted-foreground" />
     </div>
   );
 };
@@ -305,18 +305,25 @@ const ErrorMessage = ({ error }) => {
   );
 };
 
-const Message = ({
+const Message = memo(function Message({
   message,
   isStreaming = false,
   thinkingDefaultView = "closed",
   showMetrics = true,
-}) => {
+}) {
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
   const text = attachments ? getUserText(content) : getMessageText(content);
-  const { cleanedText, artifacts } = extractHtmlArtifacts(text);
-  const renderedText = normalizeLatexDelimiters(cleanedText);
+
+  const { cleanedText, artifacts } = useMemo(
+    () => extractHtmlArtifacts(text),
+    [text],
+  );
+  const renderedText = useMemo(
+    () => normalizeLatexDelimiters(cleanedText),
+    [cleanedText],
+  );
   const hasSources = message.sources && message.sources.length > 0;
 
   // Extract image sources from content parts for rendering
@@ -413,6 +420,104 @@ const Message = ({
       </div>
     </motion.div>
   );
+});
+
+const STREAMDOWN_ANIMATED = {
+  animation: "blurIn",
+  duration: 200,
+  easing: "ease-out",
+};
+
+const StreamingMessage = memo(function StreamingMessage({
+  streamingContent,
+  streamingThinking,
+  thinkingEnabled,
+  webSearchEnabled,
+  thinkingDefaultView,
+}) {
+  const { cleanedText, hasArtifact } = useMemo(() => {
+    const {
+      cleanedText: cleaned,
+      artifacts,
+      streamingArtifact,
+    } = extractHtmlArtifacts(streamingContent || "");
+    return {
+      cleanedText: normalizeLatexDelimiters(cleaned),
+      hasArtifact: artifacts.length > 0 || !!streamingArtifact,
+    };
+  }, [streamingContent]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="w-full"
+    >
+      <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
+        <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
+          <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+        </div>
+        <div className="flex-1 space-y-4 overflow-hidden pt-1">
+          {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
+          {streamingThinking && thinkingEnabled && (
+            <ThinkingBlock
+              thinking={streamingThinking}
+              isStreaming={true}
+              defaultView={thinkingDefaultView}
+            />
+          )}
+          {streamingContent && (
+            <div className="max-w-none break-words leading-[1.8] text-foreground text-[15.5px] font-[450] selection:bg-accent overflow-x-auto">
+              {cleanedText ? (
+                <Streamdown
+                  mode="stream"
+                  caret="line"
+                  isAnimating={true}
+                  animated={STREAMDOWN_ANIMATED}
+                  plugins={streamdownPlugins}
+                  components={streamdownComponents}
+                >
+                  {cleanedText}
+                </Streamdown>
+              ) : hasArtifact ? (
+                <p className="text-sm text-muted-foreground italic">
+                  Generating artifact...
+                </p>
+              ) : (
+                <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                  <span>Streaming</span>
+                  <ThinkingIndicator
+                    size="sm"
+                    className="text-muted-foreground"
+                  />
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+});
+
+const hasRenderableContent = (message) => {
+  if (message.role === "user") {
+    if (typeof message.content === "string" && message.content.trim())
+      return true;
+    if (Array.isArray(message.content) && message.content.length > 0)
+      return true;
+    return false;
+  }
+  if (message.role === "tool") return false;
+  if (message.error) return true;
+  const messageText =
+    typeof message.content === "string"
+      ? message.content
+      : getMessageText(message.content);
+  if (messageText.trim() !== "") return true;
+  if (message.thinking && message.thinking.trim() !== "") return true;
+  return false;
 };
 
 export default function MessageList({
@@ -427,6 +532,9 @@ export default function MessageList({
   showMetrics = true,
 }) {
   const scrollRef = useRef(null);
+
+  const deferredStreamingContent = useDeferredValue(streamingContent);
+  const deferredStreamingThinking = useDeferredValue(streamingThinking);
 
   useEffect(() => {
     if (
@@ -447,10 +555,10 @@ export default function MessageList({
     isLoading,
   ]);
 
-  const activeMessages =
-    streamingContent || streamingThinking
-      ? [...(messages || [])]
-      : messages || [];
+  const activeMessages = useMemo(
+    () => (messages || []).filter(hasRenderableContent),
+    [messages],
+  );
 
   const hasContent =
     activeMessages.length > 0 ||
@@ -476,103 +584,34 @@ export default function MessageList({
           </div>
         ) : (
           <>
-            {activeMessages
-              .filter((message) => {
-                if (message.role === "user") {
-                  if (
-                    typeof message.content === "string" &&
-                    message.content.trim()
-                  )
-                    return true;
-                  if (
-                    Array.isArray(message.content) &&
-                    message.content.length > 0
-                  )
-                    return true;
-                  return false;
-                }
-                if (message.role === "tool") return false;
-                if (message.error) return true;
-                const messageText =
-                  typeof message.content === "string"
-                    ? message.content
-                    : getMessageText(message.content);
-                const { artifacts } = extractHtmlArtifacts(messageText);
+            {activeMessages.map((message, index) => {
+              if (message.error) {
                 return (
-                  messageText.trim() !== "" ||
-                  artifacts.length > 0 ||
-                  (message.thinking && message.thinking.trim() !== "")
-                );
-              })
-              .map((message, index) => {
-                if (message.error) {
-                  return (
-                    <ErrorMessage
-                      key={`error-${message.id || index}`}
-                      error={message.error}
-                    />
-                  );
-                }
-                return (
-                  <Message
-                    key={`${message.role}-${message.id || index}`}
-                    message={message}
-                    isStreaming={false}
-                    thinkingDefaultView={thinkingDefaultView}
-                    showMetrics={showMetrics}
+                  <ErrorMessage
+                    key={`error-${message.id || index}`}
+                    error={message.error}
                   />
                 );
-              })}
+              }
+              return (
+                <Message
+                  key={`${message.role}-${message.id || index}`}
+                  message={message}
+                  isStreaming={false}
+                  thinkingDefaultView={thinkingDefaultView}
+                  showMetrics={showMetrics}
+                />
+              );
+            })}
 
-            {(streamingContent || streamingThinking) && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-                className="w-full"
-              >
-                <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
-                  <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
-                    <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
-                  </div>
-                  <div className="flex-1 space-y-4 overflow-hidden pt-1">
-                    {webSearchEnabled && (
-                      <WebSearchIndicator isSearching={true} />
-                    )}
-                    {streamingThinking && thinkingEnabled && (
-                      <ThinkingBlock
-                        thinking={streamingThinking}
-                        isStreaming={true}
-                        defaultView={thinkingDefaultView}
-                      />
-                    )}
-                    {streamingContent && (
-                      <div className="max-w-none break-words leading-[1.8] text-foreground text-[15.5px] font-[450] selection:bg-accent overflow-x-auto">
-                        {normalizeLatexDelimiters(
-                          extractHtmlArtifacts(streamingContent).cleanedText,
-                        ) ? (
-                          <Streamdown
-                            mode="stream"
-                            caret="block"
-                            isAnimating={true}
-                            plugins={streamdownPlugins}
-                            components={streamdownComponents}
-                          >
-                            {normalizeLatexDelimiters(
-                              extractHtmlArtifacts(streamingContent)
-                                .cleanedText,
-                            )}
-                          </Streamdown>
-                        ) : (
-                          <div className="opacity-50 italic text-sm">
-                            Streaming content...
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </motion.div>
+            {(deferredStreamingContent || deferredStreamingThinking) && (
+              <StreamingMessage
+                streamingContent={deferredStreamingContent}
+                streamingThinking={deferredStreamingThinking}
+                thinkingEnabled={thinkingEnabled}
+                webSearchEnabled={webSearchEnabled}
+                thinkingDefaultView={thinkingDefaultView}
+              />
             )}
 
             {isLoading &&
