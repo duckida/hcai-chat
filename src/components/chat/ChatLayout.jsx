@@ -338,7 +338,7 @@ export default function ChatLayout({
                     onTouchStart={() => handleTouchStart(conv.id)}
                     onTouchEnd={handleTouchEnd}
                     onTouchCancel={handleTouchEnd}
-                    className={`w-full justify-start text-left h-9 pl-2.5 pr-14 rounded-lg group ${
+                    className={`w-full justify-start text-left h-9 pl-2.5 pr-[4.5rem] rounded-lg group ${
                       activeConversation === conv.id
                         ? "bg-accent text-foreground"
                         : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
@@ -350,10 +350,10 @@ export default function ChatLayout({
                   </Button>
                 )}
                 <div
-                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10 transition-opacity ${
+                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10 rounded-md transition-opacity ${
                     actionsRevealed
-                      ? "opacity-100 pointer-events-auto"
-                      : "opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+                      ? "opacity-100 pointer-events-auto bg-accent"
+                      : "opacity-0 pointer-events-none bg-muted group-hover:opacity-100 group-hover:pointer-events-auto group-hover:bg-accent/95 group-focus-within:opacity-100 group-focus-within:pointer-events-auto group-focus-within:bg-accent/95"
                   }`}
                 >
                   {editingId !== conv.id && (
