@@ -142,7 +142,16 @@ export default function ChatInput({ onSend, isLoading }) {
   };
 
   const handlePaste = async (e) => {
-    const items = Array.from(e.clipboardData.items);
+    if (
+      e.clipboardData?.types?.includes("text/plain") &&
+      e.clipboardData.files.length === 0
+    ) {
+      return;
+    }
+
+    const items = e.clipboardData?.items
+      ? Array.from(e.clipboardData.items)
+      : [];
     const imageItems = items.filter((item) => item.type.startsWith("image/"));
 
     if (imageItems.length > 0) {
@@ -161,12 +170,13 @@ export default function ChatInput({ onSend, isLoading }) {
           }
         }
       }
+      if (toProcess.length === 0) return;
       const processed = await Promise.all(toProcess.map(processFile));
       setFiles((prev) => [...prev, ...processed]);
       return;
     }
 
-    const fileItems = Array.from(e.clipboardData.files).filter((f) =>
+    const fileItems = Array.from(e.clipboardData?.files ?? []).filter((f) =>
       SUPPORTED_TYPES.includes(f.type),
     );
     if (fileItems.length > 0) {
@@ -242,6 +252,7 @@ export default function ChatInput({ onSend, isLoading }) {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
+      onPaste={handlePaste}
       role="none"
     >
       {isDragging && (
@@ -283,7 +294,6 @@ export default function ChatInput({ onSend, isLoading }) {
             value={input}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
             placeholder="Message Hack Club AI"
             className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-foreground placeholder:text-muted-foreground leading-[1.4] overflow-y-auto block font-medium"
             rows={1}

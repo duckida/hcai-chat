@@ -7,6 +7,24 @@ describe("ChatInput", () => {
   beforeEach(() => {
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock");
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    // JSDOM does not implement HTMLImageElement loading, so the resizeImage
+    // helper inside ChatInput would never resolve. Stub Image to fire onload
+    // immediately so image-paste tests can settle.
+    class StubImage {
+      constructor() {
+        this.width = 1;
+        this.height = 1;
+      }
+      get src() {
+        return this._src;
+      }
+      set src(value) {
+        this._src = value;
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    globalThis.Image = StubImage;
   });
 
   it("renders the textarea and send button", () => {
@@ -169,5 +187,71 @@ describe("ChatInput", () => {
     await user.click(screen.getByRole("button", { name: /send/i }));
     expect(onSend).toHaveBeenCalledWith("", expect.any(Array));
     expect(onSend.mock.calls[0][1][0].name).toBe("doc.txt");
+  });
+
+  function makeClipboardData({ files = [], types = [] } = {}) {
+    const items = files.map((file) => ({
+      kind: "file",
+      type: file.type,
+      getAsFile: () => file,
+    }));
+    return {
+      files,
+      items,
+      types: types.length > 0 ? types : files.map((f) => f.type),
+    };
+  }
+
+  it("adds a pasted file even when the textarea is not focused", async () => {
+    const user = userEvent.setup();
+    const file = new File(["pdf bytes"], "report.pdf", {
+      type: "application/pdf",
+    });
+    const { container } = render(<ChatInput onSend={vi.fn()} />);
+    const root = container.firstChild;
+
+    fireEvent.paste(root, { clipboardData: makeClipboardData({ files: [file] }) });
+
+    expect(await screen.findByText("report.pdf")).toBeInTheDocument();
+  });
+
+  it("adds a pasted image file from the clipboard items list", async () => {
+    const file = new File(["png bytes"], "shot.png", { type: "image/png" });
+    const { container } = render(<ChatInput onSend={vi.fn()} />);
+    const root = container.firstChild;
+
+    fireEvent.paste(root, { clipboardData: makeClipboardData({ files: [file] }) });
+
+    expect(await screen.findByText("shot.png")).toBeInTheDocument();
+  });
+
+  it("does not intercept plain-text pastes", async () => {
+    const user = userEvent.setup();
+    render(<ChatInput onSend={vi.fn()} />);
+    const textarea = screen.getByPlaceholderText(/message hack club ai/i);
+    textarea.focus();
+
+    const clipboardData = {
+      files: [],
+      items: [],
+      types: ["text/plain"],
+      getData: () => "hello world",
+    };
+    fireEvent.paste(textarea, { clipboardData });
+
+    // Allow the (synchronous) handler to run
+    await Promise.resolve();
+    expect(textarea.value).toBe("");
+    expect(screen.queryByText(/hello world/)).not.toBeInTheDocument();
+  });
+
+  it("ignores pasted files whose type is not supported", () => {
+    const file = new File(["x"], "archive.zip", { type: "application/zip" });
+    const { container } = render(<ChatInput onSend={vi.fn()} />);
+    const root = container.firstChild;
+
+    fireEvent.paste(root, { clipboardData: makeClipboardData({ files: [file] }) });
+
+    expect(screen.queryByText("archive.zip")).not.toBeInTheDocument();
   });
 });
