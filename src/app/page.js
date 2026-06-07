@@ -410,6 +410,13 @@ export default function Home({
               text: `--- File: ${file.name} ---\n${file.text}\n---`,
               isFileAttachment: true,
             });
+          } else if (buckyUrl) {
+            contentParts.push({
+              type: "file",
+              data: buckyUrl,
+              filename: file.name,
+              mediaType: file.type,
+            });
           }
         }
         userMessage = {

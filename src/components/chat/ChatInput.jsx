@@ -41,6 +41,13 @@ const SUPPORTED_TYPES = [
   "text/markdown",
 ];
 
+const TEXT_FILE_TYPES = new Set([
+  "text/plain",
+  "text/csv",
+  "application/json",
+  "text/markdown",
+]);
+
 const FilePreview = ({ file, onRemove }) => {
   const isImage = file.type.startsWith("image/");
 
@@ -101,13 +108,14 @@ export default function ChatInput({ onSend, isLoading }) {
   }, [input, files, isLoading, onSend]);
 
   const processFile = async (file) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     if (file.type.startsWith("image/")) {
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = async (ev) => {
           const dataUrl = await resizeImage(ev.target.result);
           resolve({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            id,
             name: file.name,
             type: file.type,
             size: file.size,
@@ -118,20 +126,29 @@ export default function ChatInput({ onSend, isLoading }) {
         reader.readAsDataURL(file);
       });
     }
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        resolve({
-          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          text: ev.target.result,
-          rawFile: file,
-        });
-      };
-      reader.readAsText(file);
-    });
+    if (TEXT_FILE_TYPES.has(file.type)) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          resolve({
+            id,
+            name: file.name,
+            type: file.type,
+            size: file.size,
+            text: ev.target.result,
+            rawFile: file,
+          });
+        };
+        reader.readAsText(file);
+      });
+    }
+    return {
+      id,
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      rawFile: file,
+    };
   };
 
   const handleKeyDown = (e) => {
