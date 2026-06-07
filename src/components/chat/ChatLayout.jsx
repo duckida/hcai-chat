@@ -287,35 +287,35 @@ export default function ChatLayout({
       </div>
 
       <ScrollArea className="flex-1 px-3">
-        <ul className="space-y-0.5">
+        <div className="space-y-0.5">
           <div className="text-[11px] font-bold text-muted-foreground px-2 mb-2 uppercase tracking-wider">
             History
           </div>
           {filteredConversations.map((conv) => {
-            const actionsRevealed = revealedActionsId === conv.id;
+            const isActive = activeConversation === conv.id;
+            const isEditing = editingId === conv.id;
 
             return (
-              <li
+              <div
                 key={conv.id}
-                className="group relative"
-                onPointerEnter={() => setRevealedActionsId(conv.id)}
-                onPointerLeave={() => setRevealedActionsId(null)}
-                onFocus={() => setRevealedActionsId(conv.id)}
-                onBlur={(e) => {
-                  if (!e.currentTarget.contains(e.relatedTarget)) {
-                    setRevealedActionsId(null);
-                  }
-                }}
+                className={`group relative flex items-center rounded-lg h-9 pl-2.5 pr-1 ${
+                  isActive
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                }`}
+                onTouchStart={() => handleTouchStart(conv.id)}
+                onTouchEnd={handleTouchEnd}
+                onTouchCancel={handleTouchEnd}
               >
-                {editingId === conv.id ? (
-                  <div className="flex items-center gap-1 px-2 py-1">
+                {isEditing ? (
+                  <>
                     <input
                       ref={editInputRef}
                       type="text"
                       value={editTitle}
                       onChange={(e) => setEditTitle(e.target.value)}
                       onKeyDown={(e) => handleKeyDown(e, conv.id)}
-                      className="flex-1 h-7 text-[13px] font-medium bg-background border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-ring"
+                      className="flex-1 h-7 text-[13px] font-medium bg-background border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-ring min-w-0"
                     />
                     <Button
                       variant="ghost"
@@ -333,72 +333,61 @@ export default function ChatLayout({
                     >
                       <X className="w-3 h-3 text-muted-foreground" />
                     </Button>
-                  </div>
+                  </>
                 ) : (
-                  <Button
-                    variant="ghost"
-                    onClick={(e) => {
-                      if (longPressTriggeredRef.current) {
-                        e.preventDefault();
-                        longPressTriggeredRef.current = false;
-                        return;
-                      }
-                      setRevealedActionsId(null);
-                      onSelectConversation(conv.id);
-                    }}
-                    onTouchStart={() => handleTouchStart(conv.id)}
-                    onTouchEnd={handleTouchEnd}
-                    onTouchCancel={handleTouchEnd}
-                    className={`w-full justify-start text-left h-9 pl-2.5 pr-[4.5rem] rounded-lg group ${
-                      activeConversation === conv.id
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-                    }`}
-                  >
-                    <span className="truncate text-[13px] font-medium block flex-1 text-left min-w-0">
-                      {conv.title}
-                    </span>
-                  </Button>
-                )}
-                <div
-                  className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 z-10 rounded-md transition-opacity ${
-                    actionsRevealed
-                      ? "opacity-100 pointer-events-auto bg-accent"
-                      : "opacity-0 pointer-events-none bg-muted"
-                  }`}
-                >
-                  {editingId !== conv.id && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
+                  <>
+                    <button
+                      type="button"
                       onClick={(e) => {
-                        e.stopPropagation();
-                        longPressTriggeredRef.current = false;
-                        handleStartRename(conv);
+                        if (longPressTriggeredRef.current) {
+                          e.preventDefault();
+                          longPressTriggeredRef.current = false;
+                          return;
+                        }
+                        onSelectConversation(conv.id);
                       }}
-                      className="h-7 w-7 hover:bg-accent rounded-md"
+                      className="flex-1 min-w-0 h-full text-left text-[13px] font-medium truncate bg-transparent border-none p-0 cursor-pointer"
                     >
-                      <Pencil className="w-3.5 h-3.5 text-muted-foreground hover:text-foreground" />
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      longPressTriggeredRef.current = false;
-                      setRevealedActionsId(null);
-                      onDeleteConversation(conv.id);
-                    }}
-                    className="h-7 w-7 hover:bg-accent rounded-md"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-muted-foreground hover:text-destructive" />
-                  </Button>
-                </div>
-              </li>
+                      {conv.title}
+                    </button>
+                    <div
+                      className={`flex items-center gap-0.5 transition-opacity ${
+                        revealedActionsId === conv.id
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        aria-label="Rename"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          longPressTriggeredRef.current = false;
+                          handleStartRename(conv);
+                        }}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-foreground"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Delete"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          longPressTriggeredRef.current = false;
+                          onDeleteConversation(conv.id);
+                        }}
+                        className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-accent text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             );
           })}
-        </ul>
+        </div>
       </ScrollArea>
 
       <div className="p-3">
