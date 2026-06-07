@@ -149,6 +149,8 @@ export default function Home({
     const savedWebSearch = localStorage.getItem("web_search_enabled");
     if (savedWebSearch) setWebSearchEnabled(JSON.parse(savedWebSearch));
 
+    if (initialSearchEnabled) setWebSearchEnabled(true);
+
     const savedThinkingDefault = localStorage.getItem("thinking_default_view");
     if (savedThinkingDefault) setThinkingDefaultView(savedThinkingDefault);
 
