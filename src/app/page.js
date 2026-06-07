@@ -17,7 +17,10 @@ import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
 import { getAllConversations, saveAllConversations } from "@/lib/db";
 import { getTools } from "@/lib/tools";
 
-export default function Home() {
+export default function Home({
+  initialQuery = null,
+  initialSearchEnabled = false,
+} = {}) {
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -45,11 +48,22 @@ export default function Home() {
   const isStreamingComplete = useRef(false);
   const isSubmittingRef = useRef(false);
   const conversationsRef = useRef(conversations);
+  const messagesRef = useRef(messages);
+  const activeConversationRef = useRef(activeConversation);
+  const initialQueryRef = useRef(initialQuery);
+  const initialSearchEnabledRef = useRef(initialSearchEnabled);
+  const hasAutoSentRef = useRef(false);
 
-  // Update ref when conversations change
+  // Update refs when state changes
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    activeConversationRef.current = activeConversation;
+  }, [activeConversation]);
 
   // Derive artifacts from persisted messages
   const messageArtifacts = useMemo(() => {
@@ -248,7 +262,10 @@ export default function Home() {
     const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
     const shouldOpen = artifactsEnabled && isDesktop;
 
-    const newId = Date.now().toString();
+    const newId =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const newConversation = {
       id: newId,
       title: "New Chat",
@@ -313,8 +330,17 @@ export default function Home() {
     async (content, files = []) => {
       if (!content.trim() && files.length === 0) return;
 
-      // Determine if we should use web search based on toggle
-      const needsWebSearch = webSearchEnabled;
+      // Check if this is an auto-send from URL params
+      const isAutoSend =
+        !hasAutoSentRef.current && initialQueryRef.current === content;
+      if (isAutoSend) {
+        hasAutoSentRef.current = true;
+      }
+
+      // Determine if we should use web search based on toggle or URL param
+      const needsWebSearch = isAutoSend
+        ? initialSearchEnabledRef.current
+        : webSearchEnabled;
 
       let currentId = activeConversation;
       if (!currentId) {
@@ -700,6 +726,18 @@ export default function Home() {
       maxTokens,
     ],
   );
+
+  // Auto-send initial query from URL params
+  useEffect(() => {
+    if (!initialQuery || hasAutoSentRef.current) return;
+    // Wait for conversations to load and component to mount
+    const timer = setTimeout(() => {
+      if (!hasAutoSentRef.current && initialQuery) {
+        handleSendMessage(initialQuery);
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [initialQuery, handleSendMessage]);
 
   return (
     <>
