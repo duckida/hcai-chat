@@ -179,7 +179,7 @@ export default function Home({
       setIsApiKeyModalOpen(true);
     }
     isFirstMount.current = false;
-  }, []);
+  }, [initialSearchEnabled]);
 
   const saveTimerRef = useRef(null);
 

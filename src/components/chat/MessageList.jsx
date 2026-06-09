@@ -84,11 +84,7 @@ const ThinkingBlock = ({
               mode={isStreaming ? "stream" : "static"}
               caret={isStreaming ? "line" : false}
               isAnimating={isStreaming}
-              animated={
-                isStreaming
-                  ? { animation: "blurIn", duration: 200, easing: "ease-out" }
-                  : false
-              }
+              animated={isStreaming ? STREAMDOWN_ANIMATED : false}
               plugins={streamdownPlugins}
               components={streamdownComponents}
             >
