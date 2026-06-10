@@ -278,15 +278,19 @@ export async function POST(req) {
         ? { include_reasoning: true }
         : { include_reasoning: false };
 
+    const providerOpts = {
+      ...reasoningOpts,
+      ...(max_tokens ? { max_tokens } : {}),
+    };
+
     if (stream === false) {
       const result = await generateText({
         model: hackclub(model),
         system: systemPrompt,
         messages: processedMessages,
         tools: availableTools,
-        maxTokens: max_tokens,
         providerOptions: {
-          openrouter: reasoningOpts,
+          openrouter: providerOpts,
         },
       });
 
@@ -321,10 +325,9 @@ export async function POST(req) {
               system: systemPrompt,
               messages: currentMessages,
               tools: availableTools,
-              maxTokens: max_tokens,
               stopWhen: stepCountIs(5),
               providerOptions: {
-                openrouter: reasoningOpts,
+                openrouter: providerOpts,
               },
             }),
             send,
