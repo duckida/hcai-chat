@@ -488,14 +488,11 @@ export default function ChatLayout({
                         <Button
                           variant="ghost"
                           size="icon"
-                          disabled={webSearchEnabled}
                           onClick={() => onArtifactsChange(!artifactsEnabled)}
                           className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
                             artifactsEnabled
                               ? "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950"
-                              : webSearchEnabled
-                                ? "text-muted-foreground/30 cursor-not-allowed"
-                                : "text-muted-foreground hover:text-foreground"
+                              : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -503,9 +500,7 @@ export default function ChatLayout({
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="text-xs">
-                          {webSearchEnabled
-                            ? "Disable web search to use artifacts"
-                            : `Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
+                          {`Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
                         </p>
                       </TooltipContent>
                     </Tooltip>
@@ -517,14 +512,11 @@ export default function ChatLayout({
                         <Button
                           variant="ghost"
                           size="icon"
-                          disabled={artifactsEnabled}
                           onClick={() => onWebSearchChange(!webSearchEnabled)}
                           className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
                             webSearchEnabled
                               ? "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950"
-                              : artifactsEnabled
-                                ? "text-muted-foreground/30 cursor-not-allowed"
-                                : "text-muted-foreground hover:text-foreground"
+                              : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -532,9 +524,7 @@ export default function ChatLayout({
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="text-xs">
-                          {artifactsEnabled
-                            ? "Disable artifacts to use web search"
-                            : `Toggle web search ${webSearchEnabled ? "off" : "on"}`}
+                          {`Toggle web search ${webSearchEnabled ? "off" : "on"}`}
                         </p>
                       </TooltipContent>
                     </Tooltip>
