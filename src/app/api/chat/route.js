@@ -1,5 +1,5 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText, jsonSchema, streamText, tool } from "ai";
+import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
@@ -325,7 +325,7 @@ export async function POST(req) {
               system: systemPrompt,
               messages: currentMessages,
               tools: availableTools,
-
+              stopWhen: stepCountIs(100),
               providerOptions: {
                 openrouter: providerOpts,
               },
