@@ -20,7 +20,7 @@ vi.mock("ai", async () => {
     streamText: vi.fn(),
     tool: vi.fn((config) => config),
     jsonSchema: vi.fn((s) => s),
-    stepCountIs: vi.fn((n) => n),
+
   };
 });
 
