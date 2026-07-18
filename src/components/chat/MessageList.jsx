@@ -574,8 +574,7 @@ export default function MessageList({
               Hack Club AI
             </h1>
             <p className="text-[12px] sm:text-[13px] font-medium text-muted-foreground max-w-[260px] sm:max-w-[280px] leading-relaxed">
-              Modern open source intelligence. Start a conversation to get
-              started.
+              What do you need help with?
             </p>
           </div>
         ) : (

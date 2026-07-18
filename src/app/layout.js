@@ -22,6 +22,7 @@ export default function RootLayout({ children }) {
       suppressHydrationWarning
     >
       <head>
+        <link rel="icon" href="https://hackclub.com/favicon.ico" />
         <script async src="https://scripts.simpleanalyticscdn.com/latest.js" />
         <script
           // biome-ignore lint/security/noDangerouslySetInnerHtml: FOUC prevention for dark mode
