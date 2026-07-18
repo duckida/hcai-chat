@@ -7,6 +7,15 @@ import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
 import SettingsModal from "@/components/chat/SettingsModal";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   generateTitle,
   getStoredApiKey,
@@ -36,6 +45,7 @@ export default function Home({
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [theme, setTheme] = useState("aurora");
@@ -43,6 +53,8 @@ export default function Home({
   const [showMetrics, setShowMetrics] = useState(true);
   const [maxTokens, setMaxTokens] = useState(32000);
   const [streamingError, setStreamingError] = useState(null);
+  const [contextUsage, setContextUsage] = useState(0);
+  const [contextWindowMap, setContextWindowMap] = useState({});
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -181,6 +193,22 @@ export default function Home({
     isFirstMount.current = false;
   }, [initialSearchEnabled]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("https://ai.hackclub.com/up");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (
+          typeof data?.balanceRemaining === "number" &&
+          data.balanceRemaining < 0
+        ) {
+          setIsBalanceModalOpen(true);
+        }
+      } catch {}
+    })();
+  }, []);
+
   const saveTimerRef = useRef(null);
 
   useEffect(() => {
@@ -297,6 +325,7 @@ export default function Home({
       setStreamingContent("");
       setStreamingThinking("");
       setStreamingError(null);
+      setContextUsage(0);
     },
     [conversations],
   );
@@ -576,6 +605,9 @@ export default function Home({
             },
             (metricsData) => {
               metrics = metricsData;
+              if (metricsData?.inputTokens) {
+                setContextUsage(metricsData.inputTokens);
+              }
             },
             maxTokens,
           );
@@ -594,6 +626,9 @@ export default function Home({
             null,
             (metricsData) => {
               metrics = metricsData;
+              if (metricsData?.inputTokens) {
+                setContextUsage(metricsData.inputTokens);
+              }
             },
             maxTokens,
           );
@@ -668,6 +703,9 @@ export default function Home({
         onWebSearchChange={setWebSearchEnabled}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         artifactFullscreen={artifactFullscreen}
+        contextUsage={contextUsage}
+        contextWindowMap={contextWindowMap}
+        onContextWindowMapChange={setContextWindowMap}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}
@@ -710,6 +748,34 @@ export default function Home({
         maxTokens={maxTokens}
         onMaxTokensChange={setMaxTokens}
       />
+      <Dialog open={isBalanceModalOpen} onOpenChange={setIsBalanceModalOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Hack Club AI is out of balance</DialogTitle>
+            <DialogDescription>
+              Hack Club AI is currently out of balance. Until then, you can use
+              openrouter/free which routes to an available free model
+              automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setIsBalanceModalOpen(false)}
+            >
+              Skip
+            </Button>
+            <Button
+              onClick={() => {
+                handleModelChange("openrouter/free");
+                setIsBalanceModalOpen(false);
+              }}
+            >
+              Use it
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Toaster position="top-center" richColors />
     </>
   );
