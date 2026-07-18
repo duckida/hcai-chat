@@ -17,7 +17,7 @@ export default function ContextUsage({ used, max }) {
   const ratio = Math.min(used / max, 1);
   const percent = Math.round(ratio * 100);
   const size = 20;
-  const strokeWidth = 2;
+  const strokeWidth = 3;
   const radius = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - ratio * circumference;
@@ -70,9 +70,12 @@ export default function ContextUsage({ used, max }) {
           </div>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs font-medium">
-          <span>
-            {formatNumber(used)}/{formatNumber(max)} {percent}%
-          </span>
+          <div className="flex flex-col gap-0.5">
+            <span>{percent}% used</span>
+            <span className="text-muted-foreground">
+              {formatNumber(used)} out of {formatNumber(max)}
+            </span>
+          </div>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -274,6 +274,16 @@ export default function Home({
     localStorage.setItem("max_tokens", JSON.stringify(maxTokens));
   }, [maxTokens]);
 
+  useEffect(() => {
+    if (activeConversation && contextUsage > 0) {
+      setConversations((prev) =>
+        prev.map((conv) =>
+          conv.id === activeConversation ? { ...conv, contextUsage } : conv,
+        ),
+      );
+    }
+  }, [contextUsage, activeConversation]);
+
   const handleModelChange = useCallback(
     (model) => {
       setSelectedModel(model);
@@ -325,7 +335,7 @@ export default function Home({
       setStreamingContent("");
       setStreamingThinking("");
       setStreamingError(null);
-      setContextUsage(0);
+      setContextUsage(conversation?.contextUsage ?? 0);
     },
     [conversations],
   );
