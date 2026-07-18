@@ -17,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import ContextUsage from "@/components/chat/ContextUsage";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -64,6 +65,9 @@ export default function ChatLayout({
   rightPanel,
   children,
   artifactFullscreen = false,
+  contextUsage = 0,
+  contextWindowMap = {},
+  onContextWindowMapChange,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -250,12 +254,18 @@ export default function ChatLayout({
               });
 
             setGroupedModels(sortedGrouped);
+
+            const ctxMap = {};
+            for (const m of uniqueModels) {
+              if (m.context_length) ctxMap[m.id] = m.context_length;
+            }
+            onContextWindowMapChange?.(ctxMap);
           }
         }
       } catch (_e) {}
     };
     fetchModels();
-  }, []);
+  }, [onContextWindowMapChange]);
 
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-muted">
@@ -633,6 +643,15 @@ export default function ChatLayout({
               </>
             )}
           </div>
+
+          {!artifactFullscreen && (
+            <div className="flex items-center">
+              <ContextUsage
+                used={contextUsage}
+                max={contextWindowMap[selectedModel] || 0}
+              />
+            </div>
+          )}
         </header>
 
         <main className="flex-1 overflow-hidden relative flex flex-col">
