@@ -289,6 +289,7 @@ export async function POST(req) {
         system: systemPrompt,
         messages: processedMessages,
         tools: availableTools,
+        ...(max_tokens ? { maxTokens: max_tokens } : {}),
         providerOptions: {
           openrouter: providerOpts,
         },

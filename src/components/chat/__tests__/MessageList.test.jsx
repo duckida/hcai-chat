@@ -7,7 +7,7 @@ describe("MessageList", () => {
     render(<MessageList messages={[]} />);
     expect(screen.getByText(/hack club ai/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/modern open source intelligence/i),
+      screen.getByText(/what do you need help with/i),
     ).toBeInTheDocument();
   });
 
