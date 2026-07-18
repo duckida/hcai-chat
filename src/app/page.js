@@ -196,7 +196,7 @@ export default function Home({
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch("https://ai.hackclub.com/up");
+        const res = await fetch("/api/balance");
         if (!res.ok) return;
         const data = await res.json();
         if (
