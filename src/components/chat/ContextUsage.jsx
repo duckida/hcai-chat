@@ -72,7 +72,7 @@ export default function ContextUsage({ used, max }) {
         <TooltipContent side="bottom" className="text-xs font-medium">
           <div className="flex flex-col gap-0.5">
             <span>{percent}% used</span>
-            <span className="text-foreground/80">
+            <span>
               {formatNumber(used)} out of {formatNumber(max)}
             </span>
           </div>
