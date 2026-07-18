@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  serverExternalPackages: [
+    "secure-exec",
+    "@secure-exec/core",
+    "@secure-exec/sidecar",
+  ],
 };
 
 export default nextConfig;

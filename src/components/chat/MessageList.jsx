@@ -8,18 +8,23 @@ import { motion } from "framer-motion";
 import {
   AlertTriangle,
   Brain,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Download,
   ExternalLink,
   FileText,
   Globe,
   ImageIcon,
   Sparkles,
+  Terminal,
   User,
+  XCircle,
 } from "lucide-react";
 import Image from "next/image";
 import {
   memo,
+  useCallback,
   useDeferredValue,
   useEffect,
   useMemo,
@@ -267,6 +272,89 @@ const FileBubble = ({ file }) => {
   return content;
 };
 
+const SandboxFiles = ({ conversationId }) => {
+  const [files, setFiles] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchFiles = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/sandbox?conversationId=${encodeURIComponent(conversationId)}`,
+      );
+      const data = await res.json();
+      setFiles(data.files || []);
+    } catch {
+      setFiles([]);
+    }
+    setLoading(false);
+  }, [conversationId]);
+
+  if (files === null) {
+    return (
+      <button
+        type="button"
+        onClick={fetchFiles}
+        className="w-full mt-0.5 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors py-1"
+      >
+        <Download className="w-3 h-3" />
+        Show generated files
+      </button>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="mt-0.5 text-[11px] text-muted-foreground/60 text-center py-1">
+        Loading files...
+      </div>
+    );
+  }
+
+  if (files.length === 0) return null;
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="border-t border-border mt-2 pt-2">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
+        Generated Files
+      </div>
+      <div className="space-y-1">
+        {files.map((file) => (
+          <a
+            key={file.path}
+            href={`/api/sandbox?conversationId=${encodeURIComponent(conversationId)}&action=download&file=${encodeURIComponent(file.path)}`}
+            download={file.name}
+            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded-lg hover:bg-muted/50"
+          >
+            <FileText className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate flex-1 font-mono">{file.path}</span>
+            <span className="text-[10px] text-muted-foreground/60 shrink-0">
+              {formatSize(file.size)}
+            </span>
+            <Download className="w-3 h-3 shrink-0" />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const AgentIndicator = () => (
+  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+    <Terminal className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
+    <span className="text-amber-600 dark:text-amber-400 font-medium">
+      Running code in sandbox
+    </span>
+    <ThinkingIndicator size="sm" className="text-muted-foreground" />
+  </div>
+);
+
 const ErrorMessage = ({ error }) => {
   if (!error) return null;
 
@@ -304,7 +392,7 @@ const ErrorMessage = ({ error }) => {
 const Message = memo(function Message({
   message,
   isStreaming = false,
-  thinkingDefaultView = "closed",
+  showThinking = false,
   showMetrics = true,
 }) {
   const isAssistant = message.role === "assistant";
@@ -355,7 +443,7 @@ const Message = memo(function Message({
           {isAssistant && (
             <ThinkingBlock
               thinking={message.thinking}
-              defaultView={thinkingDefaultView}
+              defaultView={showThinking ? "open" : "closed"}
             />
           )}
 
@@ -424,12 +512,90 @@ const STREAMDOWN_ANIMATED = {
   easing: "ease-out",
 };
 
+const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
+  const [isExpanded, setIsExpanded] = useState(true);
+
+  const isRunning = tool.status === "running" || tool.status === "writing";
+  const isComplete = tool.status === "complete";
+  const hasOutput = tool.stdout || tool.stderr;
+
+  return (
+    <div className="border border-border rounded-xl overflow-hidden bg-muted/50">
+      <button
+        type="button"
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors bg-muted/30"
+      >
+        <Terminal className="w-3.5 h-3.5 shrink-0" />
+        <span className="font-semibold">
+          {tool.tool === "run_command" ? "Command" : "Code"}
+        </span>
+        {isRunning && (
+          <ThinkingIndicator size="sm" className="text-muted-foreground ml-1" />
+        )}
+        {isComplete && tool.exitCode === 0 && (
+          <CheckCircle2 className="w-3.5 h-3.5 text-green-500 ml-1" />
+        )}
+        {isComplete && tool.exitCode !== 0 && (
+          <XCircle className="w-3.5 h-3.5 text-red-500 ml-1" />
+        )}
+        {hasOutput && (
+          <span className="text-[11px] text-muted-foreground/70 ml-auto">
+            {isExpanded ? "Hide" : "Show"} output
+          </span>
+        )}
+      </button>
+      {isExpanded && (
+        <div className="p-3 space-y-2 border-t border-border">
+          {showSandboxCode && (
+            <pre className="text-xs leading-relaxed bg-muted p-2.5 rounded-lg overflow-x-auto text-foreground/90 whitespace-pre-wrap font-mono">
+              {tool.code}
+            </pre>
+          )}
+          {isRunning && !tool.stdout && !tool.stderr && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>
+                {tool.status === "writing" ? "Writing code..." : "Running..."}
+              </span>
+              <ThinkingIndicator size="sm" className="text-muted-foreground" />
+            </div>
+          )}
+          {tool.stdout && (
+            <div>
+              <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                Output
+              </div>
+              <pre className="text-xs leading-relaxed bg-background p-2.5 rounded-lg overflow-x-auto text-foreground/80 whitespace-pre-wrap font-mono">
+                {tool.stdout}
+              </pre>
+            </div>
+          )}
+          {tool.stderr && (
+            <div>
+              <div className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider mb-1">
+                Error
+              </div>
+              <pre className="text-xs leading-relaxed bg-red-50 dark:bg-red-950/50 p-2.5 rounded-lg overflow-x-auto text-red-600 dark:text-red-400 whitespace-pre-wrap font-mono">
+                {tool.stderr}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+      {isComplete && tool.conversationId && (
+        <SandboxFiles conversationId={tool.conversationId} />
+      )}
+    </div>
+  );
+};
+
 const StreamingMessage = memo(function StreamingMessage({
   streamingContent,
   streamingThinking,
   thinkingEnabled,
   webSearchEnabled,
-  thinkingDefaultView,
+  agentModeEnabled,
+  showThinking,
 }) {
   const { cleanedText, hasArtifact } = useMemo(() => {
     const {
@@ -456,11 +622,12 @@ const StreamingMessage = memo(function StreamingMessage({
         </div>
         <div className="flex-1 space-y-4 overflow-hidden pt-1">
           {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
+          {agentModeEnabled && <AgentIndicator />}
           {streamingThinking && thinkingEnabled && (
             <ThinkingBlock
               thinking={streamingThinking}
               isStreaming={true}
-              defaultView={thinkingDefaultView}
+              defaultView={showThinking ? "open" : "closed"}
             />
           )}
           {streamingContent && (
@@ -524,7 +691,10 @@ export default function MessageList({
   streamingError,
   thinkingEnabled,
   webSearchEnabled,
-  thinkingDefaultView = "closed",
+  agentModeEnabled = false,
+  streamingSandboxTools = [],
+  showThinking = false,
+  showSandboxCode = true,
   showMetrics = true,
 }) {
   const scrollRef = useRef(null);
@@ -539,6 +709,7 @@ export default function MessageList({
         streamingContent ||
         streamingThinking ||
         streamingError ||
+        streamingSandboxTools.length > 0 ||
         isLoading)
     ) {
       scrollRef.current.scrollToBottom();
@@ -548,6 +719,7 @@ export default function MessageList({
     streamingContent,
     streamingThinking,
     streamingError,
+    streamingSandboxTools,
     isLoading,
   ]);
 
@@ -560,7 +732,8 @@ export default function MessageList({
     activeMessages.length > 0 ||
     streamingContent ||
     streamingThinking ||
-    streamingError;
+    streamingError ||
+    streamingSandboxTools.length > 0;
 
   return (
     <ScrollArea ref={scrollRef} className="flex-1 h-full selection:bg-accent">
@@ -593,11 +766,29 @@ export default function MessageList({
                   key={`${message.role}-${message.id || index}`}
                   message={message}
                   isStreaming={false}
-                  thinkingDefaultView={thinkingDefaultView}
+                  showThinking={showThinking}
                   showMetrics={showMetrics}
                 />
               );
             })}
+
+            {streamingSandboxTools.length > 0 && (
+              <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-3">
+                <div className="flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400 mb-2">
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Sandbox Results</span>
+                </div>
+                <div className="space-y-2">
+                  {streamingSandboxTools.map((tool) => (
+                    <StreamingSandboxBlock
+                      key={tool.index}
+                      tool={tool}
+                      showSandboxCode={showSandboxCode}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
 
             {(deferredStreamingContent || deferredStreamingThinking) && (
               <StreamingMessage
@@ -605,7 +796,8 @@ export default function MessageList({
                 streamingThinking={deferredStreamingThinking}
                 thinkingEnabled={thinkingEnabled}
                 webSearchEnabled={webSearchEnabled}
-                thinkingDefaultView={thinkingDefaultView}
+                agentModeEnabled={agentModeEnabled}
+                showThinking={showThinking}
               />
             )}
 
@@ -627,7 +819,7 @@ export default function MessageList({
                       <ThinkingBlock
                         thinking=""
                         isStreaming={true}
-                        defaultView={thinkingDefaultView}
+                        defaultView={showThinking ? "open" : "closed"}
                       />
                     </div>
                   </div>

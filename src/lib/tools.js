@@ -60,6 +60,44 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "execute_code",
+      description:
+        "Execute JavaScript code inside a secure sandbox. The sandbox has a dedicated filesystem (files persist in /workspace) and full network access. Supports all Node.js built-in modules (fs, path, child_process, http, fetch, etc.), top-level await, and ES modules. Use this for computation, data processing, file operations, API calls, or running scripts. Execution is limited to 30 seconds.",
+      parameters: {
+        type: "object",
+        properties: {
+          code: {
+            type: "string",
+            description:
+              "JavaScript code to execute. Supports ES modules, top-level await, and all Node.js built-in modules. Write code that produces useful console output.",
+          },
+        },
+        required: ["code"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "run_command",
+      description:
+        "Run a shell command inside the secure sandbox. Use this to install npm packages, run bash scripts, list files, or execute any command-line tool. The sandbox has network access so npm install works normally. Files written to /workspace persist across the conversation.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: {
+            type: "string",
+            description:
+              "Shell command to execute, e.g. 'ls -la /workspace', 'npm install lodash', or 'node script.js'.",
+          },
+        },
+        required: ["command"],
+      },
+    },
+  },
 ];
 
 function tokenizeExpression(expression) {
@@ -420,10 +458,14 @@ export async function executeTool(toolName, params, apiKey = null) {
  * @returns {Array} Array of tool objects ready for tool calling
  */
 export function getTools(options = {}) {
-  const { includeWebSearch = true } = options;
+  const { includeWebSearch = true, includeAgentTools = false } = options;
 
   return TOOLS.filter((tool) => {
     if (!includeWebSearch && tool.function.name === "web_search") {
+      return false;
+    }
+
+    if (!includeAgentTools && SANDBOX_TOOL_NAMES.includes(tool.function.name)) {
       return false;
     }
 
@@ -443,4 +485,12 @@ export function getToolExecutors() {
     parameters: tool.function.parameters,
     execute: async (params) => executeTool(tool.function.name, params),
   }));
+}
+
+export const SANDBOX_TOOL_NAMES = ["execute_code", "run_command"];
+
+export function getAgentTools() {
+  return TOOLS.filter((tool) =>
+    SANDBOX_TOOL_NAMES.includes(tool.function.name),
+  );
 }

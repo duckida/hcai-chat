@@ -47,6 +47,9 @@ export const streamChatCompletion = async (
   onSearchResult = null,
   onMetrics = null,
   maxTokens = null,
+  agentMode = false,
+  conversationId = null,
+  onSandboxResult = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -58,6 +61,10 @@ export const streamChatCompletion = async (
     const body = { model, messages, apiKey, think: !!includeThinking };
     body.artifacts = artifactsEnabled;
     if (maxTokens) body.max_tokens = maxTokens;
+    if (agentMode) {
+      body.agentMode = true;
+      if (conversationId) body.conversationId = conversationId;
+    }
 
     if (tools && Array.isArray(tools) && tools.length > 0) {
       body.tools = tools;
@@ -105,6 +112,12 @@ export const streamChatCompletion = async (
         // Search result metadata from server-side tool execution
         if (parsed.type === "search_result" && onSearchResult) {
           onSearchResult(parsed.sources || [], parsed.content || "");
+          return;
+        }
+
+        // Sandbox execution result
+        if (parsed.type === "sandbox_result" && onSandboxResult) {
+          onSandboxResult(parsed);
           return;
         }
 

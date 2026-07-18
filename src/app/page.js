@@ -24,7 +24,7 @@ import {
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
 import { getAllConversations, saveAllConversations } from "@/lib/db";
-import { getTools } from "@/lib/tools";
+import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 export default function Home({
   initialQuery = null,
@@ -43,18 +43,21 @@ export default function Home({
   const [thinkingEnabled, setThinkingEnabled] = useState(false);
   const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [agentModeEnabled, setAgentModeEnabled] = useState(false);
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [theme, setTheme] = useState("aurora");
-  const [thinkingDefaultView, setThinkingDefaultView] = useState("closed");
+  const [showThinking, setShowThinking] = useState(false);
+  const [showSandboxCode, setShowSandboxCode] = useState(true);
   const [showMetrics, setShowMetrics] = useState(true);
   const [maxTokens, setMaxTokens] = useState(32000);
   const [streamingError, setStreamingError] = useState(null);
   const [contextUsage, setContextUsage] = useState(0);
   const [contextWindowMap, setContextWindowMap] = useState({});
+  const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -163,8 +166,15 @@ export default function Home({
 
     if (initialSearchEnabled) setWebSearchEnabled(true);
 
-    const savedThinkingDefault = localStorage.getItem("thinking_default_view");
-    if (savedThinkingDefault) setThinkingDefaultView(savedThinkingDefault);
+    const savedAgentMode = localStorage.getItem("agent_mode_enabled");
+    if (savedAgentMode) setAgentModeEnabled(JSON.parse(savedAgentMode));
+
+    const savedShowThinking = localStorage.getItem("show_thinking");
+    if (savedShowThinking) setShowThinking(JSON.parse(savedShowThinking));
+
+    const savedShowSandboxCode = localStorage.getItem("show_sandbox_code");
+    if (savedShowSandboxCode !== null)
+      setShowSandboxCode(JSON.parse(savedShowSandboxCode));
 
     const savedShowMetrics = localStorage.getItem("show_metrics");
     if (savedShowMetrics) setShowMetrics(JSON.parse(savedShowMetrics));
@@ -250,8 +260,19 @@ export default function Home({
   }, [webSearchEnabled]);
 
   useEffect(() => {
-    localStorage.setItem("thinking_default_view", thinkingDefaultView);
-  }, [thinkingDefaultView]);
+    localStorage.setItem(
+      "agent_mode_enabled",
+      JSON.stringify(agentModeEnabled),
+    );
+  }, [agentModeEnabled]);
+
+  useEffect(() => {
+    localStorage.setItem("show_thinking", JSON.stringify(showThinking));
+  }, [showThinking]);
+
+  useEffect(() => {
+    localStorage.setItem("show_sandbox_code", JSON.stringify(showSandboxCode));
+  }, [showSandboxCode]);
 
   useEffect(() => {
     localStorage.setItem("show_metrics", JSON.stringify(showMetrics));
@@ -320,6 +341,7 @@ export default function Home({
     setStreamingContent("");
     setStreamingThinking("");
     setStreamingError(null);
+    setStreamingSandboxTools([]);
     setArtifactPanelOpen(shouldOpen);
   }, [artifactsEnabled, selectedModel]);
 
@@ -335,6 +357,7 @@ export default function Home({
       setStreamingContent("");
       setStreamingThinking("");
       setStreamingError(null);
+      setStreamingSandboxTools([]);
       setContextUsage(conversation?.contextUsage ?? 0);
     },
     [conversations],
@@ -342,9 +365,16 @@ export default function Home({
 
   const handleDeleteConversation = useCallback(
     (id) => {
+      fetch("/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "destroy", conversationId: id }),
+      }).catch(() => {});
+
       setConversations((prev) => {
         const filtered = prev.filter((c) => c.id !== id);
         if (activeConversation === id) {
+          setStreamingSandboxTools([]);
           if (filtered.length > 0) {
             setActiveConversation(filtered[0].id);
             setMessages(filtered[0].messages);
@@ -385,6 +415,8 @@ export default function Home({
       const needsWebSearch = isAutoSend
         ? initialSearchEnabledRef.current
         : webSearchEnabled;
+
+      const needsAgentMode = agentModeEnabled;
 
       let currentId = activeConversationRef.current;
       if (!currentId) {
@@ -479,6 +511,7 @@ export default function Home({
       setStreamingContent("");
       setStreamingThinking("");
       setStreamingError(null);
+      setStreamingSandboxTools([]);
       setIsLoading(true);
 
       setConversations((prev) =>
@@ -491,9 +524,13 @@ export default function Home({
       let fullThinking = "";
       let sources = [];
       let metrics = null;
+      const sandboxResults = [];
       isStreamingComplete.current = false;
       try {
-        const tools = getTools({ includeWebSearch: needsWebSearch });
+        const tools = getTools({
+          includeWebSearch: needsWebSearch,
+          includeAgentTools: needsAgentMode,
+        });
 
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
@@ -558,6 +595,7 @@ export default function Home({
                   webSearch: true,
                 }
               : {}),
+            ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
             metrics,
           };
           const finalMessages = [...updatedMessages, assistantMessage];
@@ -598,51 +636,114 @@ export default function Home({
           }
         };
 
-        if (needsWebSearch) {
-          await streamChatCompletion(
-            updatedMessages,
-            selectedModel,
-            onChunk,
-            makeOnError(),
-            makeOnComplete(true),
-            thinkingEnabled,
-            artifactsEnabled,
-            tools,
-            "auto",
-            null,
-            (searchSources) => {
-              sources = searchSources;
-            },
-            (metricsData) => {
-              metrics = metricsData;
-              if (metricsData?.inputTokens) {
-                setContextUsage(metricsData.inputTokens);
+        const onToolCall = (call) => {
+          if (!needsAgentMode) return;
+
+          if (call.name && SANDBOX_TOOL_NAMES.includes(call.name)) {
+            setStreamingSandboxTools((prev) => {
+              const exists = prev.find((t) => t.index === call.index);
+              if (exists) {
+                return prev.map((t) =>
+                  t.index === call.index
+                    ? {
+                        ...t,
+                        code: call.arguments || t.code,
+                        status: call.complete ? "running" : t.status,
+                      }
+                    : t,
+                );
               }
-            },
-            maxTokens,
-          );
-        } else {
-          await streamChatCompletion(
-            updatedMessages,
-            selectedModel,
-            onChunk,
-            makeOnError(),
-            makeOnComplete(false),
-            thinkingEnabled,
-            artifactsEnabled,
-            tools,
-            "auto",
-            null,
-            null,
-            (metricsData) => {
-              metrics = metricsData;
-              if (metricsData?.inputTokens) {
-                setContextUsage(metricsData.inputTokens);
+              return [
+                ...prev,
+                {
+                  index: call.index,
+                  tool: call.name,
+                  code: call.arguments || "",
+                  status: call.complete ? "running" : "writing",
+                  stdout: "",
+                  stderr: "",
+                  exitCode: null,
+                  conversationId: currentId,
+                },
+              ];
+            });
+          } else if (call.arguments) {
+            setStreamingSandboxTools((prev) =>
+              prev.map((t) =>
+                t.index === call.index
+                  ? { ...t, code: t.code + call.arguments }
+                  : t,
+              ),
+            );
+          }
+
+          if (call.complete) {
+            setStreamingSandboxTools((prev) => {
+              const existing = prev.find((t) => t.index === call.index);
+              if (!existing || !SANDBOX_TOOL_NAMES.includes(existing.tool))
+                return prev;
+              let code = existing.code;
+              try {
+                const parsed = JSON.parse(code);
+                code = parsed.code || parsed.command || code;
+              } catch {}
+              return prev.map((t) =>
+                t.index === call.index ? { ...t, code, status: "running" } : t,
+              );
+            });
+          }
+        };
+
+        const onSandboxResult = (result) => {
+          sandboxResults.push({ ...result, conversationId: currentId });
+          setStreamingSandboxTools((prev) => {
+            const lastRunning = [...prev]
+              .reverse()
+              .find((t) => t.status === "running" || t.status === "writing");
+            if (!lastRunning) return prev;
+            return prev.map((t) =>
+              t.index === lastRunning.index
+                ? {
+                    ...t,
+                    status: "complete",
+                    stdout: result.stdout || "",
+                    stderr: result.stderr || "",
+                    exitCode: result.exitCode,
+                  }
+                : t,
+            );
+          });
+        };
+
+        const commonArgs = [
+          updatedMessages,
+          selectedModel,
+          onChunk,
+          makeOnError(),
+          makeOnComplete(needsWebSearch),
+          thinkingEnabled,
+          artifactsEnabled,
+          tools,
+          "auto",
+          needsAgentMode ? onToolCall : null,
+          needsWebSearch
+            ? (searchSources) => {
+                sources = searchSources;
               }
-            },
-            maxTokens,
-          );
-        }
+            : null,
+          (metricsData) => {
+            metrics = metricsData;
+            if (metricsData?.inputTokens) {
+              setContextUsage(metricsData.inputTokens);
+            }
+          },
+          maxTokens,
+          needsAgentMode,
+          needsAgentMode ? currentId : null,
+          needsAgentMode ? onSandboxResult : null,
+        ];
+
+        await streamChatCompletion(...commonArgs);
       } catch (_error) {
         isStreamingComplete.current = true;
         const errorMsg = {
@@ -675,6 +776,7 @@ export default function Home({
       thinkingEnabled,
       artifactsEnabled,
       webSearchEnabled,
+      agentModeEnabled,
       titleGenerationModel,
       maxTokens,
     ],
@@ -711,6 +813,8 @@ export default function Home({
         onArtifactsChange={setArtifactsEnabled}
         webSearchEnabled={webSearchEnabled}
         onWebSearchChange={setWebSearchEnabled}
+        agentModeEnabled={agentModeEnabled}
+        onAgentModeChange={setAgentModeEnabled}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         artifactFullscreen={artifactFullscreen}
         contextUsage={contextUsage}
@@ -736,7 +840,10 @@ export default function Home({
             streamingError={streamingError}
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
-            thinkingDefaultView={thinkingDefaultView}
+            agentModeEnabled={agentModeEnabled}
+            streamingSandboxTools={streamingSandboxTools}
+            showThinking={showThinking}
+            showSandboxCode={showSandboxCode}
             showMetrics={showMetrics}
           />
           <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
@@ -751,8 +858,10 @@ export default function Home({
         onTitleGenerationModelChange={setTitleGenerationModel}
         theme={theme}
         onThemeChange={setTheme}
-        thinkingDefaultView={thinkingDefaultView}
-        onThinkingDefaultViewChange={setThinkingDefaultView}
+        showThinking={showThinking}
+        onShowThinkingChange={setShowThinking}
+        showSandboxCode={showSandboxCode}
+        onShowSandboxCodeChange={setShowSandboxCode}
         showMetrics={showMetrics}
         onShowMetricsChange={setShowMetrics}
         maxTokens={maxTokens}

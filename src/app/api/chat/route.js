@@ -2,10 +2,29 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
+import {
+  executeCodeInSandbox,
+  executeCommandInSandbox,
+} from "@/lib/sandbox-executor";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
-import { executeTool } from "@/lib/tools";
+import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
-function toSdkTools(clientTools, apiKey) {
+const AGENT_MODE_PROMPT = `
+
+You are running in Agent Mode with access to a secure JavaScript sandbox.
+The sandbox has its own dedicated filesystem (files persist in /workspace across the whole conversation) and full network access.
+
+Available tools:
+- execute_code: Run JavaScript code. Supports top-level await and all Node.js built-in modules (fs, path, child_process, http, fetch, etc.). Use this for computation, data processing, file operations, API calls, or running scripts.
+- run_command: Run shell commands. Use this to install npm packages, list files, run scripts, or use CLI tools.
+
+IMPORTANT RULES:
+- The sandbox has full network access - you can fetch APIs, download packages, etc.
+- Files written to /workspace persist across the entire conversation.
+- Each execution has a 30-second timeout.
+- Install packages with 'npm install <package>' via run_command first, then require them in execute_code.`;
+
+function toSdkTools(clientTools, apiKey, conversationId) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
     return undefined;
   }
@@ -15,17 +34,36 @@ function toSdkTools(clientTools, apiKey) {
       .filter(
         (toolDef) => toolDef?.type === "function" && toolDef.function?.name,
       )
-      .map((toolDef) => [
-        toolDef.function.name,
-        tool({
-          description: toolDef.function.description,
-          inputSchema: jsonSchema(
-            toolDef.function.parameters || { type: "object" },
-          ),
-          execute: async (args) =>
-            executeTool(toolDef.function.name, args || {}, apiKey),
-        }),
-      ]),
+      .map((toolDef) => {
+        const toolName = toolDef.function.name;
+        const isSandboxTool = SANDBOX_TOOL_NAMES.includes(toolName);
+
+        return [
+          toolName,
+          tool({
+            description: toolDef.function.description,
+            inputSchema: jsonSchema(
+              toolDef.function.parameters || { type: "object" },
+            ),
+            execute: async (args) => {
+              if (isSandboxTool) {
+                if (!conversationId) {
+                  throw new Error(
+                    "conversationId is required for sandbox tools",
+                  );
+                }
+                if (toolName === "execute_code") {
+                  return executeCodeInSandbox(args?.code, conversationId);
+                }
+                if (toolName === "run_command") {
+                  return executeCommandInSandbox(args?.command, conversationId);
+                }
+              }
+              return executeTool(toolName, args || {}, apiKey);
+            },
+          }),
+        ];
+      }),
   );
 }
 
@@ -163,6 +201,16 @@ async function emitStreamParts(
             content: res.answer || "",
           });
         }
+        if (SANDBOX_TOOL_NAMES.includes(part.toolName) && output) {
+          send({
+            type: "sandbox_result",
+            tool: part.toolName,
+            code: output.code || output.command || "",
+            stdout: output.stdout || "",
+            stderr: output.stderr || "",
+            exitCode: output.exitCode,
+          });
+        }
         break;
       }
 
@@ -243,6 +291,8 @@ export async function POST(req) {
       stream,
       think,
       max_tokens,
+      agentMode,
+      conversationId,
     } = body;
 
     const now = new Date();
@@ -266,7 +316,11 @@ export async function POST(req) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;
     }
 
-    const availableTools = toSdkTools(clientTools, apiKey);
+    if (agentMode) {
+      systemPrompt += AGENT_MODE_PROMPT;
+    }
+
+    const availableTools = toSdkTools(clientTools, apiKey, conversationId);
 
     const hackclub = createOpenRouter({
       apiKey: apiKey,

@@ -13,6 +13,7 @@ import {
   Plus,
   Puzzle,
   Search,
+  Terminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -61,6 +62,8 @@ export default function ChatLayout({
   onArtifactsChange,
   webSearchEnabled,
   onWebSearchChange,
+  agentModeEnabled,
+  onAgentModeChange,
   onApiKeyClick,
   rightPanel,
   children,
@@ -535,6 +538,30 @@ export default function ChatLayout({
                       <TooltipContent>
                         <p className="text-xs">
                           {`Toggle web search ${webSearchEnabled ? "off" : "on"}`}
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onAgentModeChange(!agentModeEnabled)}
+                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+                            agentModeEnabled
+                              ? "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950"
+                              : "text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="text-xs">
+                          {`Toggle agent mode ${agentModeEnabled ? "off" : "on"}`}
                         </p>
                       </TooltipContent>
                     </Tooltip>

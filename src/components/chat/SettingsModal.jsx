@@ -258,8 +258,10 @@ export default function SettingsModal({
   onTitleGenerationModelChange,
   theme: paletteTheme = "aurora",
   onThemeChange,
-  thinkingDefaultView = "closed",
-  onThinkingDefaultViewChange,
+  showThinking = false,
+  onShowThinkingChange,
+  showSandboxCode = true,
+  onShowSandboxCodeChange,
   showMetrics = true,
   onShowMetricsChange,
   maxTokens = 32000,
@@ -602,34 +604,34 @@ export default function SettingsModal({
                     description="Defaults and display preferences."
                   />
 
-                  <div className="space-y-3">
-                    <SectionLabel>Thinking Default View</SectionLabel>
-                    <Select
-                      value={thinkingDefaultView}
-                      onValueChange={onThinkingDefaultViewChange}
-                    >
-                      <SelectTrigger className="w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring">
-                        <SelectValue placeholder="Select Default View" />
-                      </SelectTrigger>
-                      <SelectContent
-                        position="popper"
-                        sideOffset={5}
-                        className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
-                      >
-                        <SelectItem
-                          value="closed"
-                          className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
-                        >
-                          Closed
-                        </SelectItem>
-                        <SelectItem
-                          value="open"
-                          className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
-                        >
-                          Open
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
+                    <div>
+                      <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
+                        Show Thinking
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-0.5 pl-1">
+                        Expand thinking blocks by default.
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={showThinking}
+                      onChange={onShowThinkingChange}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
+                    <div>
+                      <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
+                        Show Sandbox Code
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-0.5 pl-1">
+                        Display code blocks in agent mode.
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={showSandboxCode}
+                      onChange={onShowSandboxCodeChange}
+                    />
                   </div>
 
                   <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">

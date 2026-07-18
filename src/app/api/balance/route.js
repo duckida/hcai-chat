@@ -9,7 +9,7 @@ export async function GET() {
     return Response.json(data, {
       status: 200,
     });
-  } catch (error) {
+  } catch (_error) {
     return Response.json({ error: "Failed to fetch balance" }, { status: 500 });
   }
 }
