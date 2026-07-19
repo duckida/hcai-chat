@@ -61,122 +61,156 @@ export const streamChatCompletion = async (
     return;
   }
 
-  try {
-    const body = { model, messages, apiKey, think: !!includeThinking };
-    body.artifacts = artifactsEnabled;
-    if (maxTokens) body.max_tokens = maxTokens;
-    if (agentMode) {
-      body.agentMode = true;
-      if (conversationId) body.conversationId = conversationId;
-    }
-
-    if (tools && Array.isArray(tools) && tools.length > 0) {
-      body.tools = tools;
-      body.tool_choice = toolChoice;
-    }
-
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(
-        getErrorMessage(
-          errorData,
-          `Chat API Error (${response.status}) using model "${model}"`,
-        ),
-      );
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const processLine = (line) => {
-      if (!line.startsWith("data: ")) return;
-
-      const data = line.slice(6);
-      if (data === "[DONE]") return;
-
-      try {
-        const parsed = JSON.parse(data);
-
-        // Usage metrics from server
-        if (parsed.type === "usage" && onMetrics) {
-          onMetrics(parsed.usage);
-          return;
-        }
-
-        // Error event from server
-        if (parsed.type === "error") {
-          onError(
-            new Error(
-              parsed.error ||
-                `Server error during streaming with model "${model}"`,
-            ),
-          );
-          return;
-        }
-
-        // Search result metadata from server-side tool execution
-        if (parsed.type === "search_result" && onSearchResult) {
-          onSearchResult(parsed.sources || [], parsed.content || "");
-          return;
-        }
-
-        // Sandbox execution result
-        if (parsed.type === "sandbox_result" && onSandboxResult) {
-          onSandboxResult(parsed);
-          return;
-        }
-
-        const delta = parsed.choices?.[0]?.delta || {};
-        const content = delta.content || "";
-        const thinking = delta.thinking || "";
-
-        if (content) onChunk(content, "content");
-        if (thinking) onChunk(thinking, "thinking");
-
-        if (delta.tool_calls && onToolCall) {
-          for (const toolCall of delta.tool_calls) {
-            onToolCall({
-              index: toolCall.index,
-              id: toolCall.id,
-              name: toolCall.function?.name || "",
-              arguments: toolCall.function?.arguments || "",
-              complete: !!toolCall.id,
-            });
-          }
-        }
-      } catch (_error) {
-        // Ignore malformed or partial lines until more stream data arrives.
-      }
-    };
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        buffer += decoder.decode(undefined);
-        const remaining = buffer.trim();
-        if (remaining) processLine(remaining);
-        await onComplete?.();
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      for (const line of lines) {
-        processLine(line.trim());
-      }
-    }
-  } catch (error) {
-    onError(error);
+  const body = { model, messages, apiKey, think: !!includeThinking };
+  body.artifacts = artifactsEnabled;
+  if (maxTokens) body.max_tokens = maxTokens;
+  if (agentMode) {
+    body.agentMode = true;
+    if (conversationId) body.conversationId = conversationId;
   }
+
+  if (tools && Array.isArray(tools) && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = toolChoice;
+  }
+
+  const doStream = async () => {
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, stream: true }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          getErrorMessage(
+            errorData,
+            `Chat API Error (${response.status}) using model "${model}"`,
+          ),
+        );
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const processLine = (line) => {
+        if (!line.startsWith("data: ")) return;
+
+        const data = line.slice(6);
+        if (data === "[DONE]") return;
+
+        try {
+          const parsed = JSON.parse(data);
+
+          // Usage metrics from server
+          if (parsed.type === "usage" && onMetrics) {
+            onMetrics(parsed.usage);
+            return;
+          }
+
+          // Error event from server
+          if (parsed.type === "error") {
+            onError(
+              new Error(
+                parsed.error ||
+                  `Server error during streaming with model "${model}"`,
+              ),
+            );
+            return;
+          }
+
+          // Search result metadata from server-side tool execution
+          if (parsed.type === "search_result" && onSearchResult) {
+            onSearchResult(parsed.sources || [], parsed.content || "");
+            return;
+          }
+
+          // Sandbox execution result
+          if (parsed.type === "sandbox_result" && onSandboxResult) {
+            onSandboxResult(parsed);
+            return;
+          }
+
+          const delta = parsed.choices?.[0]?.delta || {};
+          const content = delta.content || "";
+          const thinking = delta.thinking || "";
+
+          if (content) onChunk(content, "content");
+          if (thinking) onChunk(thinking, "thinking");
+
+          if (delta.tool_calls && onToolCall) {
+            for (const toolCall of delta.tool_calls) {
+              onToolCall({
+                index: toolCall.index,
+                id: toolCall.id,
+                name: toolCall.function?.name || "",
+                arguments: toolCall.function?.arguments || "",
+                complete: !!toolCall.id,
+              });
+            }
+          }
+        } catch (_error) {
+          // Ignore malformed or partial lines until more stream data arrives.
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode(undefined);
+          const remaining = buffer.trim();
+          if (remaining) processLine(remaining);
+          await onComplete?.();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          processLine(line.trim());
+        }
+      }
+    } catch (error) {
+      // If streaming fails (e.g. QUIC protocol error), fall back to non-streaming
+      console.warn("[stream] Streaming failed, falling back to non-streaming:", error.message);
+      await doFallback();
+    }
+  };
+
+  const doFallback = async () => {
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, stream: false }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          getErrorMessage(
+            errorData,
+            `Chat API Error (${response.status}) using model "${model}"`,
+          ),
+        );
+      }
+
+      const data = await response.json();
+      if (data.text) {
+        onChunk(data.text, "content");
+      }
+      await onComplete?.();
+    } catch (error) {
+      onError(error);
+    }
+  };
+
+  doStream();
 };
 
 export const generateTitle = async (

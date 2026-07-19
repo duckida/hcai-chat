@@ -363,9 +363,13 @@ export async function POST(req) {
         const nextToolIndexRef = { current: 0 };
 
         const send = (payload) => {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-          );
+          try {
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+            );
+          } catch {
+            // stream closed
+          }
         };
 
         // Periodic keepalive to prevent proxy timeout during long tool execution
@@ -373,9 +377,9 @@ export async function POST(req) {
           try {
             controller.enqueue(encoder.encode(": keepalive\n\n"));
           } catch {
-            // stream already closed
+            clearInterval(keepalive);
           }
-        }, 10_000);
+        }, 5_000);
 
         try {
           const currentMessages = [...processedMessages];
@@ -453,7 +457,7 @@ export async function POST(req) {
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           clearInterval(keepalive);
-          controller.close();
+          try { controller.close(); } catch {}
         } catch (error) {
           console.error(
             `[stream error] model=${model} msgs=${messages.length}:`,
@@ -466,9 +470,7 @@ export async function POST(req) {
               `Stream failed for model "${model}" with ${messages.length} messages`,
           });
           clearInterval(keepalive);
-          // Yield control to let the enqueued error drain before closing
-          await new Promise((r) => queueMicrotask(r));
-          controller.close();
+          try { controller.close(); } catch {}
         }
       },
     });
