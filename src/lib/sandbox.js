@@ -4,7 +4,9 @@ import path from "node:path";
 import { NodeRuntime } from "secure-exec";
 
 const sandboxes = new Map();
-const EXECUTION_TIMEOUT = 30_000;
+const EXECUTION_TIMEOUT = 25_000;
+
+const KILL_TIMEOUT_ERR = "timed out waiting for sidecar protocol frame for kill_process";
 
 function getSandboxDir(conversationId) {
   return path.join(os.tmpdir(), "hcai-sandbox", conversationId);
@@ -90,7 +92,12 @@ export async function executeCode(conversationId, code, options = {}) {
       timeout: options.timeout ?? EXECUTION_TIMEOUT,
     });
   } catch (err) {
-    console.error("[sandbox] executeCode failed:", err.message);
+    const msg = err?.message || String(err);
+    console.error("[sandbox] executeCode failed:", msg);
+    if (msg.includes(KILL_TIMEOUT_ERR)) {
+      await destroySandbox(conversationId);
+      throw new Error("Sandbox execution timed out (CPU limit exceeded)");
+    }
     throw err;
   }
 }
@@ -116,7 +123,12 @@ try {
       timeout: (options.timeout ?? EXECUTION_TIMEOUT) + 5_000,
     });
   } catch (err) {
-    console.error("[sandbox] runCommand failed:", err.message);
+    const msg = err?.message || String(err);
+    console.error("[sandbox] runCommand failed:", msg);
+    if (msg.includes(KILL_TIMEOUT_ERR)) {
+      await destroySandbox(conversationId);
+      throw new Error("Sandbox command timed out (CPU limit exceeded)");
+    }
     throw err;
   }
 }
