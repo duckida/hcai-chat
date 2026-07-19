@@ -14,7 +14,9 @@ export function getSandboxPath(conversationId, relativePath) {
   const sandboxDir = getSandboxDir(conversationId);
   const resolved = path.resolve(sandboxDir, relativePath);
   if (!resolved.startsWith(sandboxDir)) {
-    throw new Error("Invalid path");
+    throw new Error(
+      `Invalid path: "${relativePath}" resolved to "${resolved}" which is outside the sandbox directory`,
+    );
   }
   return resolved;
 }
@@ -53,22 +55,28 @@ export async function getOrCreateSandbox(conversationId) {
   const sandboxDir = getSandboxDir(conversationId);
   fs.mkdirSync(sandboxDir, { recursive: true });
 
-  const runtime = await NodeRuntime.create({
-    permissions: {
-      fs: "allow",
-      childProcess: "allow",
-      network: "allow",
-      env: "deny",
-    },
-    cwd: "/workspace",
-    mounts: [
-      {
-        guestPath: "/workspace",
-        hostPath: sandboxDir,
-        readOnly: false,
+  let runtime;
+  try {
+    runtime = await NodeRuntime.create({
+      permissions: {
+        fs: "allow",
+        childProcess: "allow",
+        network: "allow",
+        env: "deny",
       },
-    ],
-  });
+      cwd: "/workspace",
+      mounts: [
+        {
+          guestPath: "/workspace",
+          hostPath: sandboxDir,
+          readOnly: false,
+        },
+      ],
+    });
+  } catch (err) {
+    console.error("[sandbox] NodeRuntime.create failed:", err);
+    throw err;
+  }
 
   sandboxes.set(conversationId, { runtime, createdAt: Date.now() });
 
@@ -77,9 +85,14 @@ export async function getOrCreateSandbox(conversationId) {
 
 export async function executeCode(conversationId, code, options = {}) {
   const runtime = await getOrCreateSandbox(conversationId);
-  return runtime.exec(code, {
-    timeout: options.timeout ?? EXECUTION_TIMEOUT,
-  });
+  try {
+    return await runtime.exec(code, {
+      timeout: options.timeout ?? EXECUTION_TIMEOUT,
+    });
+  } catch (err) {
+    console.error("[sandbox] executeCode failed:", err.message);
+    throw err;
+  }
 }
 
 export async function runCommand(conversationId, command, options = {}) {
@@ -98,9 +111,14 @@ try {
   process.exit(e.status ?? 1);
 }
 `;
-  return runtime.exec(wrapped, {
-    timeout: (options.timeout ?? EXECUTION_TIMEOUT) + 5_000,
-  });
+  try {
+    return await runtime.exec(wrapped, {
+      timeout: (options.timeout ?? EXECUTION_TIMEOUT) + 5_000,
+    });
+  } catch (err) {
+    console.error("[sandbox] runCommand failed:", err.message);
+    throw err;
+  }
 }
 
 export async function destroySandbox(conversationId) {
