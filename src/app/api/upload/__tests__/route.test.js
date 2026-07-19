@@ -61,7 +61,7 @@ describe("/api/upload POST", () => {
     const res = await POST({ formData: () => Promise.reject(new Error("oops")) });
     expect(res.status).toBe(500);
     const data = await res.json();
-    expect(data.error).toBe("Upload failed");
+    expect(data.error).toBe("Upload failed: oops");
   });
 
   it("trims whitespace from the returned URL", async () => {

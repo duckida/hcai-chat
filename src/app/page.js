@@ -551,7 +551,10 @@ export default function Home({
 
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
-          setStreamingError({ title: "API Error", details: error.message });
+          setStreamingError({
+            title: "API Error",
+            details: `[${selectedModel}] ${error.message}`,
+          });
           setIsLoading(false);
           setStreamingContent("");
           setStreamingThinking("");
@@ -579,7 +582,7 @@ export default function Home({
           if (!fullResponse && !fullThinking) {
             const errorMsg = {
               title: "API Error",
-              details: "No response received from the model.",
+              details: `No response received from model "${selectedModel}". The model may be overloaded or unavailable.`,
             };
             setStreamingError(errorMsg);
             const errorMessage = {

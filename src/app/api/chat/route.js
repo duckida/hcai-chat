@@ -449,7 +449,12 @@ export async function POST(req) {
             `[stream error] model=${model} msgs=${messages.length}:`,
             error,
           );
-          send({ type: "error", error: error.message || "Stream failed" });
+          send({
+            type: "error",
+            error:
+              error.message ||
+              `Stream failed for model "${model}" with ${messages.length} messages`,
+          });
           // Yield control to let the enqueued error drain before closing
           await new Promise((r) => queueMicrotask(r));
           controller.close();
@@ -466,6 +471,11 @@ export async function POST(req) {
     });
   } catch (error) {
     console.error(`[chat route error] model=${body?.model}:`, error);
-    return Response.json({ error: "Internal server error" }, { status: 500 });
+    return Response.json(
+      {
+        error: `Internal server error processing chat with model "${body?.model}"`,
+      },
+      { status: 500 },
+    );
   }
 }

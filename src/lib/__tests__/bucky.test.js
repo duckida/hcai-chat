@@ -48,7 +48,7 @@ describe("uploadFileToBucky", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(uploadFileToBucky(new File(["x"], "x.txt"))).rejects.toThrow(
-      "Upload failed: 500",
+      "Upload failed (500)",
     );
   });
 });

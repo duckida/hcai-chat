@@ -53,7 +53,11 @@ export const streamChatCompletion = async (
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    onError(new Error("API key not found"));
+    onError(
+      new Error(
+        "API key not found. Please set your Hack Club API key in Settings to start chatting.",
+      ),
+    );
     return;
   }
 
@@ -80,7 +84,10 @@ export const streamChatCompletion = async (
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(
-        getErrorMessage(errorData, `API Error: ${response.status}`),
+        getErrorMessage(
+          errorData,
+          `Chat API Error (${response.status}) using model "${model}"`,
+        ),
       );
     }
 
@@ -105,7 +112,12 @@ export const streamChatCompletion = async (
 
         // Error event from server
         if (parsed.type === "error") {
-          onError(new Error(parsed.error || "Server error"));
+          onError(
+            new Error(
+              parsed.error ||
+                `Server error during streaming with model "${model}"`,
+            ),
+          );
           return;
         }
 
@@ -211,7 +223,9 @@ export const generateTitle = async (
 export const exaSearch = async (query, options = {}) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("API key not found");
+    throw new Error(
+      "API key not found. Please set your Hack Club API key in Settings to search the web.",
+    );
   }
 
   const body = {
@@ -233,7 +247,10 @@ export const exaSearch = async (query, options = {}) => {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      getErrorMessage(errorData, `Exa API Error: ${response.status}`),
+      getErrorMessage(
+        errorData,
+        `Exa search failed (${response.status}) for query: "${query.slice(0, 100)}"`,
+      ),
     );
   }
 
@@ -243,7 +260,9 @@ export const exaSearch = async (query, options = {}) => {
 export const exaFindSimilar = async (url, options = {}) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("API key not found");
+    throw new Error(
+      "API key not found. Please set your Hack Club API key in Settings to find similar pages.",
+    );
   }
 
   const body = {
@@ -265,7 +284,10 @@ export const exaFindSimilar = async (url, options = {}) => {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      getErrorMessage(errorData, `Exa API Error: ${response.status}`),
+      getErrorMessage(
+        errorData,
+        `Exa findSimilar failed (${response.status}) for URL: "${url.slice(0, 100)}"`,
+      ),
     );
   }
 
@@ -275,7 +297,9 @@ export const exaFindSimilar = async (url, options = {}) => {
 export const exaContents = async (urls, options = {}) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("API key not found");
+    throw new Error(
+      "API key not found. Please set your Hack Club API key in Settings to retrieve page contents.",
+    );
   }
 
   const body = {
@@ -296,7 +320,10 @@ export const exaContents = async (urls, options = {}) => {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      getErrorMessage(errorData, `Exa API Error: ${response.status}`),
+      getErrorMessage(
+        errorData,
+        `Exa contents failed (${response.status}) for ${urls.length} URL(s)`,
+      ),
     );
   }
 
@@ -306,7 +333,9 @@ export const exaContents = async (urls, options = {}) => {
 export const exaAnswer = async (query, options = {}) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    throw new Error("API key not found");
+    throw new Error(
+      "API key not found. Please set your Hack Club API key in Settings to search the web.",
+    );
   }
 
   const body = {
@@ -328,7 +357,10 @@ export const exaAnswer = async (query, options = {}) => {
   if (!response.ok) {
     const errorData = await response.json();
     throw new Error(
-      getErrorMessage(errorData, `Exa API Error: ${response.status}`),
+      getErrorMessage(
+        errorData,
+        `Exa answer failed (${response.status}) for query: "${query.slice(0, 100)}"`,
+      ),
     );
   }
 
@@ -353,7 +385,11 @@ export const streamChatWithTools = async (
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    onError(new Error("API key not found"));
+    onError(
+      new Error(
+        "API key not found. Please set your Hack Club API key in Settings to chat with tools.",
+      ),
+    );
     return;
   }
 
@@ -386,7 +422,10 @@ export const streamChatWithTools = async (
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(
-        getErrorMessage(errorData, `API Error: ${response.status}`),
+        getErrorMessage(
+          errorData,
+          `Chat API Error (${response.status}) using model "${model}"`,
+        ),
       );
     }
 
@@ -456,7 +495,11 @@ export const streamExaAnswer = async (
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
-    onError(new Error("API key not found"));
+    onError(
+      new Error(
+        "API key not found. Please set your Hack Club API key in Settings for web search.",
+      ),
+    );
     return;
   }
 
@@ -481,7 +524,10 @@ export const streamExaAnswer = async (
     if (!response.ok) {
       const errorData = await response.json();
       throw new Error(
-        getErrorMessage(errorData, `API Error: ${response.status}`),
+        getErrorMessage(
+          errorData,
+          `Exa stream error (${response.status}) for query: "${query.slice(0, 100)}"`,
+        ),
       );
     }
 
@@ -554,7 +600,9 @@ export const executeToolCall = async (toolName, parameters, apiKey = null) => {
   // Use provided API key or fall back to stored key
   const key = apiKey || getStoredApiKey();
   if (!key) {
-    throw new Error("API key not found. Please set your API key in settings.");
+    throw new Error(
+      `API key not found. Please set your Hack Club API key in Settings to execute tool "${toolName}".`,
+    );
   }
 
   // For now, we proxy tool calls through /api/tools endpoint
@@ -572,7 +620,7 @@ export const executeToolCall = async (toolName, parameters, apiKey = null) => {
   if (!response.ok) {
     // Try to parse error JSON, but handle non-JSON responses gracefully
     const contentType = response.headers.get("content-type");
-    let errorMessage = `Tool execution failed: ${response.status}`;
+    let errorMessage = `Tool execution failed (${response.status}) for tool "${toolName}"`;
     try {
       if (contentType?.includes("application/json")) {
         const errorData = await response.json();
@@ -590,17 +638,21 @@ export const executeToolCall = async (toolName, parameters, apiKey = null) => {
   // Check if response is JSON before parsing
   const contentType = response.headers.get("content-type");
   if (!contentType?.includes("application/json")) {
-    throw new Error(`Invalid response type: ${contentType}`);
+    throw new Error(
+      `Invalid response type "${contentType}" from tool "${toolName}"`,
+    );
   }
 
   const text = await response.text();
   if (!text.trim()) {
-    throw new Error("Empty response from tool execution");
+    throw new Error(`Empty response from tool "${toolName}" execution`);
   }
 
   try {
     return JSON.parse(text);
   } catch (e) {
-    throw new Error(`Failed to parse tool response: ${e.message}`);
+    throw new Error(
+      `Failed to parse tool response for "${toolName}": ${e.message}`,
+    );
   }
 };

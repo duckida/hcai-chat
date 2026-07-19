@@ -6,7 +6,10 @@ export async function uploadFileToBucky(file) {
   const response = await fetch(PROXY_URL, { method: "POST", body: formData });
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Upload failed: ${response.status}`);
+    throw new Error(
+      error.error ||
+        `Upload failed (${response.status}) for file "${file.name}" (${(file.size / 1024).toFixed(1)} KB)`,
+    );
   }
   return (await response.text()).trim();
 }

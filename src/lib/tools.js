@@ -334,7 +334,9 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
   // Use provided API key or fall back to stored key
   const key = apiKey || getStoredApiKey();
   if (!key) {
-    throw new Error("API key not found. Please set your API key in settings.");
+    throw new Error(
+      "API key not found. Please set your Hack Club API key in Settings to search the web.",
+    );
   }
 
   // Validate query
@@ -364,7 +366,7 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
     if (!response.ok) {
       // Handle non-JSON error responses gracefully
       const contentType = response.headers.get("content-type");
-      let errorMessage = `Exa API error: ${response.status}`;
+      let errorMessage = `Exa API error (${response.status}) for web search query: "${query.slice(0, 100)}"`;
       try {
         if (contentType?.includes("application/json")) {
           const errorData = await response.json();
@@ -401,7 +403,9 @@ export async function executeWebSearch(query, numResults = 5, apiKey = null) {
     };
   } catch (error) {
     console.error("Error executing web_search:", error);
-    throw new Error(`Web search failed: ${error.message}`);
+    throw new Error(
+      `Web search failed for "${query.slice(0, 100)}": ${error.message}`,
+    );
   }
 }
 
