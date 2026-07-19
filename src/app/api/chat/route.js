@@ -368,6 +368,15 @@ export async function POST(req) {
           );
         };
 
+        // Periodic keepalive to prevent proxy timeout during long tool execution
+        const keepalive = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          } catch {
+            // stream already closed
+          }
+        }, 10_000);
+
         try {
           const currentMessages = [...processedMessages];
           const totalUsage = { inputTokens: 0, outputTokens: 0 };
@@ -443,6 +452,7 @@ export async function POST(req) {
           });
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          clearInterval(keepalive);
           controller.close();
         } catch (error) {
           console.error(
@@ -455,6 +465,7 @@ export async function POST(req) {
               error.message ||
               `Stream failed for model "${model}" with ${messages.length} messages`,
           });
+          clearInterval(keepalive);
           // Yield control to let the enqueued error drain before closing
           await new Promise((r) => queueMicrotask(r));
           controller.close();
@@ -466,7 +477,8 @@ export async function POST(req) {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Alt-Svc": 'clear',
       },
     });
   } catch (error) {
