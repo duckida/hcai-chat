@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -12,6 +13,8 @@ function formatNumber(n) {
 }
 
 export default function ContextUsage({ used, max }) {
+  const [isOpen, setIsOpen] = useState(false);
+
   if (!max || max <= 0) return null;
 
   const ratio = Math.min(used / max, 1);
@@ -34,9 +37,21 @@ export default function ContextUsage({ used, max }) {
 
   return (
     <TooltipProvider>
-      <Tooltip>
+      <Tooltip open={isOpen} onOpenChange={setIsOpen}>
         <TooltipTrigger asChild>
-          <div className="flex items-center justify-center cursor-default shrink-0">
+          <div
+            className="flex items-center justify-center cursor-default shrink-0"
+            onClick={(e) => {
+              e.preventDefault();
+              setIsOpen((prev) => !prev);
+            }}
+            onPointerEnter={(e) => {
+              if (e.pointerType === "mouse") setIsOpen(true);
+            }}
+            onPointerLeave={(e) => {
+              if (e.pointerType === "mouse") setIsOpen(false);
+            }}
+          >
             <svg
               width={size}
               height={size}
