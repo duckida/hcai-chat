@@ -1,1 +1,1 @@
-export const AGENT_MODE_ENABLED = false;
+export const AGENT_MODE_ENABLED = true;
