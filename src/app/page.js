@@ -334,6 +334,7 @@ export default function Home({
       messages: [],
       artifactPanelOpen: shouldOpen,
       model: selectedModel,
+      contextUsage: 0,
     };
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newId);
@@ -342,6 +343,7 @@ export default function Home({
     setStreamingThinking("");
     setStreamingError(null);
     setStreamingSandboxTools([]);
+    setContextUsage(0);
     setArtifactPanelOpen(shouldOpen);
   }, [artifactsEnabled, selectedModel]);
 
@@ -358,7 +360,11 @@ export default function Home({
       setStreamingThinking("");
       setStreamingError(null);
       setStreamingSandboxTools([]);
-      setContextUsage(conversation?.contextUsage ?? 0);
+      setContextUsage(
+        conversation?.messages?.length
+          ? conversation?.contextUsage ?? 0
+          : 0,
+      );
     },
     [conversations],
   );
@@ -435,9 +441,11 @@ export default function Home({
           messages: [],
           artifactPanelOpen: shouldOpen,
           model: selectedModel,
+          contextUsage: 0,
         };
         setConversations((prev) => [newConversation, ...prev]);
         setActiveConversation(newId);
+        setContextUsage(0);
         setArtifactPanelOpen(shouldOpen);
         currentId = newId;
       }

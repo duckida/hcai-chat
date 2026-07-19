@@ -71,6 +71,8 @@ export default function ChatLayout({
   contextUsage = 0,
   contextWindowMap = {},
   onContextWindowMapChange,
+  toolsSupported = true,
+  onToolsSupportedMapChange,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -260,7 +262,7 @@ export default function ChatLayout({
 
             const ctxMap = {};
             for (const m of uniqueModels) {
-              if (m.context_length) ctxMap[m.id] = m.context_length;
+              ctxMap[m.id] = m.context_length || 128000;
             }
             onContextWindowMapChange?.(ctxMap);
           }
