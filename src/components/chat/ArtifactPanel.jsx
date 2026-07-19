@@ -19,7 +19,7 @@ import {
   Share2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import ThinkingIndicator from "./ThinkingIndicator";
@@ -45,8 +45,8 @@ const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
 
 const MIN_WIDTH = 320;
-const MAX_WIDTH = 600;
 const DEFAULT_WIDTH = 480;
+const STORAGE_KEY = "hcai_artifact_panel_width";
 
 export default function ArtifactPanel({
   artifacts = [],
@@ -59,11 +59,42 @@ export default function ArtifactPanel({
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
+  const [panelWidth, setPanelWidth] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_WIDTH;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+    } catch {
+      return DEFAULT_WIDTH;
+    }
+  });
   const [isResizing, setIsResizing] = useState(false);
   const iframeRef = useRef(null);
+  const handleRef = useRef(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
+
+  const [vw, setVw] = useState(0);
+
+  useEffect(() => {
+    const update = () => setVw(window.innerWidth);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  const maxWidth = useMemo(
+    () => Math.round(Math.min(vw * 0.85, 1400, Math.max(vw - 320, 480))),
+    [vw],
+  );
+
+  useEffect(() => {
+    if (panelWidth !== DEFAULT_WIDTH) {
+      try {
+        localStorage.setItem(STORAGE_KEY, String(panelWidth));
+      } catch {}
+    }
+  }, [panelWidth]);
 
   const handleFullscreenToggle = () => {
     if (onFullscreenToggle) onFullscreenToggle();
@@ -78,47 +109,46 @@ export default function ArtifactPanel({
   const activeArtifact =
     allArtifacts.length > 0 ? allArtifacts[allArtifacts.length - 1] : null;
 
-  // Handle mouse move for resizing
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (!isResizing) return;
+  const clampWidth = useCallback(
+    (w) => Math.min(Math.max(w, MIN_WIDTH), maxWidth),
+    [maxWidth],
+  );
 
-      const deltaX = resizeStartX.current - e.clientX;
-      const newWidth = Math.min(
-        Math.max(resizeStartWidth.current + deltaX, MIN_WIDTH),
-        MAX_WIDTH,
-      );
-      setPanelWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      setIsResizing(false);
-    };
-
-    if (isResizing) {
-      document.addEventListener("mousemove", handleMouseMove);
-      document.addEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    }
-
-    return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-    };
-  }, [isResizing]);
+  const computeWidth = useCallback(
+    (clientX) => {
+      if (clientX == null) return;
+      const deltaX = resizeStartX.current - clientX;
+      setPanelWidth(clampWidth(resizeStartWidth.current + deltaX));
+    },
+    [clampWidth],
+  );
 
   const startResize = useCallback(
     (e) => {
-      e.preventDefault();
-      resizeStartX.current = e.clientX;
+      const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
+      resizeStartX.current = clientX;
       resizeStartWidth.current = panelWidth;
       setIsResizing(true);
+      handleRef.current?.setPointerCapture(e.pointerId);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
     },
     [panelWidth],
   );
+
+  const onPointerMove = useCallback(
+    (e) => {
+      if (!isResizing) return;
+      computeWidth(e.clientX ?? e.touches?.[0]?.clientX);
+    },
+    [isResizing, computeWidth],
+  );
+
+  const onPointerUp = useCallback(() => {
+    setIsResizing(false);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
 
   const handleCopy = () => {
     if (!activeArtifact) return;
@@ -197,16 +227,38 @@ export default function ArtifactPanel({
           }}
         >
           {/* Resize handle - desktop only */}
-          <hr
+          {/* biome-ignore lint/a11y/useSemanticElements: div needed for resize handle */}
+          <div
+            ref={handleRef}
+            role="separator"
             aria-orientation="vertical"
             aria-valuenow={panelWidth}
+            aria-label="Resize artifact panel"
             tabIndex={0}
-            className={`hidden md:flex w-1 shrink-0 cursor-col-resize items-center justify-center hover:bg-primary/30 transition-colors border-none ${isResizing ? "bg-primary" : ""}`}
-            onMouseDown={startResize}
-          />
+            className="hidden md:flex w-4 shrink-0 cursor-col-resize items-center justify-end border-none outline-none group"
+            onPointerDown={startResize}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                const step = e.shiftKey ? 50 : 10;
+                const dir = e.key === "ArrowLeft" ? 1 : -1;
+                setPanelWidth((w) => clampWidth(w + dir * step));
+              }
+            }}
+          >
+            <div
+              className={`w-px h-full transition-all duration-150 ${
+                isResizing
+                  ? "w-[3px] bg-primary"
+                  : "bg-border group-hover:w-[3px] group-hover:bg-primary/60"
+              }`}
+            />
+          </div>
 
           {/* Panel content */}
-          <div className="flex flex-col flex-1 min-w-0 border-l border-border">
+          <div className="flex flex-col flex-1 min-w-0">
             {/* Header */}
             <div className="flex items-center justify-between px-3 sm:px-4 py-2.5 sm:py-3 border-b border-border bg-background shrink-0">
               <div className="flex items-center gap-1 sm:gap-2">
