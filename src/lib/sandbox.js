@@ -1,14 +1,45 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execSync } from "node:child_process";
 import { NodeRuntime } from "secure-exec";
 
 const sandboxes = new Map();
 const EXECUTION_TIMEOUT = 25_000;
 const MAX_SANDBOXES = 3;
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 min
+const DISPOSE_TIMEOUT = 5_000;
 
 const KILL_TIMEOUT_ERR = "timed out waiting for sidecar protocol frame for kill_process";
+
+function getSidecarPids() {
+  try {
+    const out = execSync(
+      "ps aux | grep secure-exec-sidecar | grep -v grep | awk '{print $2}'",
+      { encoding: "utf-8", timeout: 3000 },
+    );
+    return out.trim().split("\n").filter(Boolean).map(Number);
+  } catch {
+    return [];
+  }
+}
+
+function killSidecarPids(pids) {
+  if (pids.length === 0) return;
+  try {
+    execSync(`kill -9 ${pids.join(" ")} 2>/dev/null`, {
+      stdio: "ignore",
+      timeout: 3000,
+    });
+  } catch {}
+}
+
+// Kill any orphaned sidecar processes on module load
+const orphanPids = getSidecarPids();
+if (orphanPids.length > 0) {
+  console.warn(`[sandbox] cleaning up ${orphanPids.length} orphaned sidecar process(es)`);
+  killSidecarPids(orphanPids);
+}
 
 function getSandboxDir(conversationId) {
   return path.join(os.tmpdir(), "hcai-sandbox", conversationId);
@@ -171,9 +202,24 @@ export async function destroySandbox(conversationId) {
   const entry = sandboxes.get(conversationId);
   if (!entry) return;
 
+  const pidsBefore = getSidecarPids();
+
   try {
-    await entry.runtime.dispose();
-  } catch {}
+    await Promise.race([
+      entry.runtime.dispose(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("dispose timed out")), DISPOSE_TIMEOUT),
+      ),
+    ]);
+  } catch (err) {
+    console.error(`[sandbox] dispose failed for ${conversationId}:`, err.message);
+    // Kill only the sidecar PIDs that appeared while this sandbox was alive
+    const newPids = getSidecarPids().filter((p) => !pidsBefore.includes(p));
+    if (newPids.length > 0) {
+      console.error(`[sandbox] force-killing ${newPids.length} orphaned sidecar PID(s):`, newPids);
+      killSidecarPids(newPids);
+    }
+  }
 
   sandboxes.delete(conversationId);
 }
