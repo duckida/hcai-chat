@@ -363,13 +363,10 @@ export async function POST(req) {
         const nextToolIndexRef = { current: 0 };
 
         const send = (payload) => {
-          try {
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
-            );
-          } catch {
-            // stream closed
-          }
+          if (controller.desiredSize === null) return;
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify(payload)}\n\n`),
+          );
         };
 
         // Periodic keepalive to prevent proxy timeout during long tool execution
