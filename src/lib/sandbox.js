@@ -1,44 +1,57 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
-import { NodeRuntime } from "secure-exec";
 
 const sandboxes = new Map();
 const EXECUTION_TIMEOUT = 25_000;
 const MAX_SANDBOXES = 3;
 const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 min
 const DISPOSE_TIMEOUT = 5_000;
-
 const KILL_TIMEOUT_ERR = "timed out waiting for sidecar protocol frame for kill_process";
 
-function getSidecarPids() {
-  try {
-    const out = execSync(
-      "ps aux | grep secure-exec-sidecar | grep -v grep | awk '{print $2}'",
-      { encoding: "utf-8", timeout: 3000 },
-    );
-    return out.trim().split("\n").filter(Boolean).map(Number);
-  } catch {
-    return [];
+let NodeRuntime;
+let cleanupInit;
+
+async function ensureLoaded() {
+  if (NodeRuntime) return;
+  const [seMod, cpMod] = await Promise.all([
+    import("secure-exec"),
+    import("node:child_process"),
+  ]);
+  NodeRuntime = seMod.NodeRuntime;
+  const { execSync } = cpMod;
+
+  const getSidecarPids = () => {
+    try {
+      const out = execSync(
+        "ps aux | grep secure-exec-sidecar | grep -v grep | awk '{print $2}'",
+        { encoding: "utf-8", timeout: 3000 },
+      );
+      return out.trim().split("\n").filter(Boolean).map(Number);
+    } catch {
+      return [];
+    }
+  };
+
+  const killPids = (pids) => {
+    if (pids.length === 0) return;
+    try {
+      execSync(`kill -9 ${pids.join(" ")} 2>/dev/null`, {
+        stdio: "ignore",
+        timeout: 3000,
+      });
+    } catch {}
+  };
+
+  // Clean up orphaned sidecars from previous crashes
+  const orphanPids = getSidecarPids();
+  if (orphanPids.length > 0) {
+    console.warn(`[sandbox] cleaning up ${orphanPids.length} orphaned sidecar process(es)`);
+    killPids(orphanPids);
   }
-}
 
-function killSidecarPids(pids) {
-  if (pids.length === 0) return;
-  try {
-    execSync(`kill -9 ${pids.join(" ")} 2>/dev/null`, {
-      stdio: "ignore",
-      timeout: 3000,
-    });
-  } catch {}
-}
-
-// Kill any orphaned sidecar processes on module load
-const orphanPids = getSidecarPids();
-if (orphanPids.length > 0) {
-  console.warn(`[sandbox] cleaning up ${orphanPids.length} orphaned sidecar process(es)`);
-  killSidecarPids(orphanPids);
+  // Update destroySandbox with kill-sidecar fallback
+  cleanupInit = { getSidecarPids, killPids };
 }
 
 function getSandboxDir(conversationId) {
@@ -95,18 +108,24 @@ function evictOldestIfNeeded() {
   }
 }
 
-// Periodic cleanup of idle sandboxes
-setInterval(() => {
-  const now = Date.now();
-  for (const [id, entry] of sandboxes) {
-    if (now - (entry.lastUsedAt ?? entry.createdAt) > IDLE_TIMEOUT) {
-      console.warn(`[sandbox] cleaning up idle sandbox ${id}`);
-      destroySandbox(id).catch(() => {});
-    }
-  }
-}, 60_000);
+// Periodic cleanup of idle sandboxes — starts lazily on first sandbox creation
+let cleanupTimer;
 
 export async function getOrCreateSandbox(conversationId) {
+  await ensureLoaded();
+
+  if (!cleanupTimer) {
+    cleanupTimer = setInterval(() => {
+      const now = Date.now();
+      for (const [id, entry] of sandboxes) {
+        if (now - (entry.lastUsedAt ?? entry.createdAt) > IDLE_TIMEOUT) {
+          console.warn(`[sandbox] cleaning up idle sandbox ${id}`);
+          destroySandbox(id).catch(() => {});
+        }
+      }
+    }, 60_000);
+  }
+
   if (sandboxes.has(conversationId)) {
     const entry = sandboxes.get(conversationId);
     entry.lastUsedAt = Date.now();
@@ -202,6 +221,12 @@ export async function destroySandbox(conversationId) {
   const entry = sandboxes.get(conversationId);
   if (!entry) return;
 
+  if (!cleanupInit) {
+    sandboxes.delete(conversationId);
+    return;
+  }
+
+  const { getSidecarPids, killPids } = cleanupInit;
   const pidsBefore = getSidecarPids();
 
   try {
@@ -213,11 +238,10 @@ export async function destroySandbox(conversationId) {
     ]);
   } catch (err) {
     console.error(`[sandbox] dispose failed for ${conversationId}:`, err.message);
-    // Kill only the sidecar PIDs that appeared while this sandbox was alive
     const newPids = getSidecarPids().filter((p) => !pidsBefore.includes(p));
     if (newPids.length > 0) {
       console.error(`[sandbox] force-killing ${newPids.length} orphaned sidecar PID(s):`, newPids);
-      killSidecarPids(newPids);
+      killPids(newPids);
     }
   }
 

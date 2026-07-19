@@ -23,6 +23,7 @@ import {
 } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
+import { AGENT_MODE_ENABLED } from "@/lib/config";
 import { getAllConversations, saveAllConversations } from "@/lib/db";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
@@ -44,6 +45,7 @@ export default function Home({
   const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [agentModeEnabled, setAgentModeEnabled] = useState(false);
+  const agentModeGated = AGENT_MODE_ENABLED && agentModeEnabled;
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
@@ -430,7 +432,7 @@ export default function Home({
         ? initialSearchEnabledRef.current
         : webSearchEnabled;
 
-      const needsAgentMode = agentModeEnabled;
+      const needsAgentMode = agentModeGated;
 
       let currentId = activeConversationRef.current;
       if (!currentId) {
@@ -834,7 +836,7 @@ export default function Home({
         onArtifactsChange={setArtifactsEnabled}
         webSearchEnabled={webSearchEnabled}
         onWebSearchChange={setWebSearchEnabled}
-        agentModeEnabled={agentModeEnabled}
+        agentModeEnabled={agentModeGated}
         onAgentModeChange={setAgentModeEnabled}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         artifactFullscreen={artifactFullscreen}
@@ -863,7 +865,7 @@ export default function Home({
             streamingError={streamingError}
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
-            agentModeEnabled={agentModeEnabled}
+            agentModeEnabled={agentModeGated}
             streamingSandboxTools={streamingSandboxTools}
             showThinking={showThinking}
             showSandboxCode={showSandboxCode}

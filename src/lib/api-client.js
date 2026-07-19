@@ -1,3 +1,5 @@
+import { AGENT_MODE_ENABLED } from "./config";
+
 const API_KEY_STORAGE_KEY = "hack_club_ai_key";
 
 // Helper function to extract error message from API response
@@ -64,7 +66,7 @@ export const streamChatCompletion = async (
   const body = { model, messages, apiKey, think: !!includeThinking };
   body.artifacts = artifactsEnabled;
   if (maxTokens) body.max_tokens = maxTokens;
-  if (agentMode) {
+  if (agentMode && AGENT_MODE_ENABLED) {
     body.agentMode = true;
     if (conversationId) body.conversationId = conversationId;
   }

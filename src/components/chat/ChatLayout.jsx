@@ -20,6 +20,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import ContextUsage from "@/components/chat/ContextUsage";
 import { Button } from "@/components/ui/button";
+import { AGENT_MODE_ENABLED } from "@/lib/config";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -554,34 +555,36 @@ export default function ChatLayout({
                     </Tooltip>
                   </TooltipProvider>
 
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={!toolsSupported}
-                          onClick={() => onAgentModeChange(!agentModeEnabled)}
-                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            !toolsSupported
-                              ? "opacity-40 cursor-not-allowed text-muted-foreground"
-                              : agentModeEnabled
-                                ? "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950"
-                                : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          {toolsSupported
-                            ? `Toggle agent mode ${agentModeEnabled ? "off" : "on"}`
-                            : "Not supported by current model"}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  {AGENT_MODE_ENABLED && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={!toolsSupported}
+                            onClick={() => onAgentModeChange(!agentModeEnabled)}
+                            className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+                              !toolsSupported
+                                ? "opacity-40 cursor-not-allowed text-muted-foreground"
+                                : agentModeEnabled
+                                  ? "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950"
+                                  : "text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">
+                            {toolsSupported
+                              ? `Toggle agent mode ${agentModeEnabled ? "off" : "on"}`
+                              : "Not supported by current model"}
+                          </p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
                 </div>
 
                 <DropdownMenu>

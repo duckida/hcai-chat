@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { AGENT_MODE_ENABLED } from "@/lib/config";
 import {
   destroySandbox,
   executeCode,
@@ -11,6 +12,9 @@ import {
 } from "@/lib/sandbox";
 
 export async function POST(req) {
+  if (!AGENT_MODE_ENABLED) {
+    return Response.json({ error: "Agent mode is disabled" }, { status: 404 });
+  }
   let body;
   try {
     body = await req.json();
@@ -80,6 +84,9 @@ export async function POST(req) {
 }
 
 export async function GET(req) {
+  if (!AGENT_MODE_ENABLED) {
+    return Response.json({ error: "Agent mode is disabled" }, { status: 404 });
+  }
   const { searchParams } = new URL(req.url);
   const conversationId = searchParams.get("conversationId");
   const file = searchParams.get("file");

@@ -1,11 +1,8 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
 import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
+import { AGENT_MODE_ENABLED } from "@/lib/config";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
-import {
-  executeCodeInSandbox,
-  executeCommandInSandbox,
-} from "@/lib/sandbox-executor";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
 import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
@@ -47,11 +44,18 @@ function toSdkTools(clientTools, apiKey, conversationId) {
             ),
             execute: async (args) => {
               if (isSandboxTool) {
+                if (!AGENT_MODE_ENABLED) {
+                  throw new Error("Agent mode is disabled");
+                }
                 if (!conversationId) {
                   throw new Error(
                     "conversationId is required for sandbox tools",
                   );
                 }
+                const {
+                  executeCodeInSandbox,
+                  executeCommandInSandbox,
+                } = await import("@/lib/sandbox-executor");
                 if (toolName === "execute_code") {
                   return executeCodeInSandbox(args?.code, conversationId);
                 }
