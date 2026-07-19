@@ -5,6 +5,8 @@ import { NodeRuntime } from "secure-exec";
 
 const sandboxes = new Map();
 const EXECUTION_TIMEOUT = 25_000;
+const MAX_SANDBOXES = 3;
+const IDLE_TIMEOUT = 5 * 60 * 1000; // 5 min
 
 const KILL_TIMEOUT_ERR = "timed out waiting for sidecar protocol frame for kill_process";
 
@@ -49,10 +51,38 @@ function listFilesRecursive(dir, rootDir) {
   return entries.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+function evictOldestIfNeeded() {
+  if (sandboxes.size < MAX_SANDBOXES) return;
+
+  const entries = Array.from(sandboxes.entries()).sort(
+    (a, b) => (a[1].lastUsedAt ?? 0) - (b[1].lastUsedAt ?? 0),
+  );
+  const [id] = entries[0];
+  if (id) {
+    console.warn(`[sandbox] evicting idle sandbox ${id} (limit ${MAX_SANDBOXES})`);
+    destroySandbox(id).catch(() => {});
+  }
+}
+
+// Periodic cleanup of idle sandboxes
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, entry] of sandboxes) {
+    if (now - (entry.lastUsedAt ?? entry.createdAt) > IDLE_TIMEOUT) {
+      console.warn(`[sandbox] cleaning up idle sandbox ${id}`);
+      destroySandbox(id).catch(() => {});
+    }
+  }
+}, 60_000);
+
 export async function getOrCreateSandbox(conversationId) {
   if (sandboxes.has(conversationId)) {
-    return sandboxes.get(conversationId).runtime;
+    const entry = sandboxes.get(conversationId);
+    entry.lastUsedAt = Date.now();
+    return entry.runtime;
   }
+
+  evictOldestIfNeeded();
 
   const sandboxDir = getSandboxDir(conversationId);
   fs.mkdirSync(sandboxDir, { recursive: true });
@@ -80,7 +110,11 @@ export async function getOrCreateSandbox(conversationId) {
     throw err;
   }
 
-  sandboxes.set(conversationId, { runtime, createdAt: Date.now() });
+  sandboxes.set(conversationId, {
+    runtime,
+    createdAt: Date.now(),
+    lastUsedAt: Date.now(),
+  });
 
   return runtime;
 }
@@ -159,5 +193,6 @@ export function listSandboxes() {
     conversationId: id,
     createdAt: entry.createdAt,
     age: Date.now() - entry.createdAt,
+    idle: Date.now() - (entry.lastUsedAt ?? entry.createdAt),
   }));
 }
