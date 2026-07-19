@@ -458,10 +458,18 @@ export async function executeTool(toolName, params, apiKey = null) {
  * @returns {Array} Array of tool objects ready for tool calling
  */
 export function getTools(options = {}) {
-  const { includeWebSearch = true, includeAgentTools = false } = options;
+  const {
+    includeWebSearch = true,
+    includeAgentTools = false,
+    includeCalculator = true,
+  } = options;
 
   return TOOLS.filter((tool) => {
     if (!includeWebSearch && tool.function.name === "web_search") {
+      return false;
+    }
+
+    if (!includeCalculator && tool.function.name === "javascript_calculator") {
       return false;
     }
 

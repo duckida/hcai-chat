@@ -261,16 +261,20 @@ export default function ChatLayout({
             setGroupedModels(sortedGrouped);
 
             const ctxMap = {};
+            const toolsMap = {};
             for (const m of uniqueModels) {
               ctxMap[m.id] = m.context_length || 128000;
+              toolsMap[m.id] =
+                m.supported_parameters?.includes("tools") ?? false;
             }
             onContextWindowMapChange?.(ctxMap);
+            onToolsSupportedMapChange?.(toolsMap);
           }
         }
       } catch (_e) {}
     };
     fetchModels();
-  }, [onContextWindowMapChange]);
+  }, [onContextWindowMapChange, onToolsSupportedMapChange]);
 
   const renderSidebarContent = () => (
     <div className="flex flex-col h-full bg-muted">
@@ -527,11 +531,14 @@ export default function ChatLayout({
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={!toolsSupported}
                           onClick={() => onWebSearchChange(!webSearchEnabled)}
                           className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            webSearchEnabled
-                              ? "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950"
-                              : "text-muted-foreground hover:text-foreground"
+                            !toolsSupported
+                              ? "opacity-40 cursor-not-allowed text-muted-foreground"
+                              : webSearchEnabled
+                                ? "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950"
+                                : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -539,7 +546,9 @@ export default function ChatLayout({
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="text-xs">
-                          {`Toggle web search ${webSearchEnabled ? "off" : "on"}`}
+                          {toolsSupported
+                            ? `Toggle web search ${webSearchEnabled ? "off" : "on"}`
+                            : "Not supported by current model"}
                         </p>
                       </TooltipContent>
                     </Tooltip>
@@ -551,11 +560,14 @@ export default function ChatLayout({
                         <Button
                           variant="ghost"
                           size="icon"
+                          disabled={!toolsSupported}
                           onClick={() => onAgentModeChange(!agentModeEnabled)}
                           className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            agentModeEnabled
-                              ? "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950"
-                              : "text-muted-foreground hover:text-foreground"
+                            !toolsSupported
+                              ? "opacity-40 cursor-not-allowed text-muted-foreground"
+                              : agentModeEnabled
+                                ? "text-amber-600 bg-amber-50 dark:text-amber-400 dark:bg-amber-950"
+                                : "text-muted-foreground hover:text-foreground"
                           }`}
                         >
                           <Terminal className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -563,7 +575,9 @@ export default function ChatLayout({
                       </TooltipTrigger>
                       <TooltipContent>
                         <p className="text-xs">
-                          {`Toggle agent mode ${agentModeEnabled ? "off" : "on"}`}
+                          {toolsSupported
+                            ? `Toggle agent mode ${agentModeEnabled ? "off" : "on"}`
+                            : "Not supported by current model"}
                         </p>
                       </TooltipContent>
                     </Tooltip>

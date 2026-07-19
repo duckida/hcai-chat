@@ -57,6 +57,7 @@ export default function Home({
   const [streamingError, setStreamingError] = useState(null);
   const [contextUsage, setContextUsage] = useState(0);
   const [contextWindowMap, setContextWindowMap] = useState({});
+  const [toolsSupportedMap, setToolsSupportedMap] = useState({});
   const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
 
   const isFirstMount = useRef(true);
@@ -266,6 +267,15 @@ export default function Home({
     );
   }, [agentModeEnabled]);
 
+  const toolsSupported = toolsSupportedMap[selectedModel] ?? true;
+
+  useEffect(() => {
+    if (!toolsSupported) {
+      if (webSearchEnabled) setWebSearchEnabled(false);
+      if (agentModeEnabled) setAgentModeEnabled(false);
+    }
+  }, [toolsSupported, webSearchEnabled, agentModeEnabled]);
+
   useEffect(() => {
     localStorage.setItem("show_thinking", JSON.stringify(showThinking));
   }, [showThinking]);
@@ -361,9 +371,7 @@ export default function Home({
       setStreamingError(null);
       setStreamingSandboxTools([]);
       setContextUsage(
-        conversation?.messages?.length
-          ? conversation?.contextUsage ?? 0
-          : 0,
+        conversation?.messages?.length ? (conversation?.contextUsage ?? 0) : 0,
       );
     },
     [conversations],
@@ -538,6 +546,7 @@ export default function Home({
         const tools = getTools({
           includeWebSearch: needsWebSearch,
           includeAgentTools: needsAgentMode,
+          includeCalculator: toolsSupported,
         });
 
         const makeOnError = () => (error) => {
@@ -785,6 +794,7 @@ export default function Home({
       artifactsEnabled,
       webSearchEnabled,
       agentModeEnabled,
+      toolsSupported,
       titleGenerationModel,
       maxTokens,
     ],
@@ -828,6 +838,8 @@ export default function Home({
         contextUsage={contextUsage}
         contextWindowMap={contextWindowMap}
         onContextWindowMapChange={setContextWindowMap}
+        toolsSupported={toolsSupported}
+        onToolsSupportedMapChange={setToolsSupportedMap}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}

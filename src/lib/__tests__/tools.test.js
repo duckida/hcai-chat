@@ -306,8 +306,17 @@ describe("executeTool dispatcher", () => {
 });
 
 describe("getTools", () => {
-  it("returns all tools by default", () => {
+  it("returns non-agent tools by default", () => {
     const all = getTools();
+    const names = all.map((t) => t.function.name);
+    expect(names).toContain("web_search");
+    expect(names).toContain("javascript_calculator");
+    expect(names).not.toContain("execute_code");
+    expect(names).not.toContain("run_command");
+  });
+
+  it("returns all tools when includeAgentTools is true", () => {
+    const all = getTools({ includeAgentTools: true });
     expect(all.length).toBe(TOOLS.length);
   });
 
@@ -316,6 +325,13 @@ describe("getTools", () => {
     const names = filtered.map((t) => t.function.name);
     expect(names).not.toContain("web_search");
     expect(names).toContain("javascript_calculator");
+  });
+
+  it("excludes javascript_calculator when includeCalculator=false", () => {
+    const filtered = getTools({ includeCalculator: false });
+    const names = filtered.map((t) => t.function.name);
+    expect(names).not.toContain("javascript_calculator");
+    expect(names).toContain("web_search");
   });
 });
 
