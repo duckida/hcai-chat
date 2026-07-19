@@ -242,6 +242,78 @@ const ImageAttachment = ({ src, alt }) => {
   return content;
 };
 
+const SandboxFilePills = ({ conversationId }) => {
+  const [files, setFiles] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const fetchFiles = useCallback(async () => {
+    if (files !== null) return;
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `/api/sandbox?conversationId=${encodeURIComponent(conversationId)}`,
+      );
+      const data = await res.json();
+      setFiles(data.files || []);
+    } catch {
+      setFiles([]);
+    }
+    setLoading(false);
+  }, [conversationId, files]);
+
+  useEffect(() => {
+    fetchFiles();
+  }, [fetchFiles]);
+
+  if (loading || !files || files.length === 0) return null;
+
+  return (
+    <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-3">
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 pl-1">
+        Generated Files
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {files.map((file) => (
+          <a
+            key={file.path}
+            href={`/api/sandbox?conversationId=${encodeURIComponent(conversationId)}&action=download&file=${encodeURIComponent(file.path)}`}
+            download={file.name}
+          >
+            <FileBubble
+              file={{
+                name: file.name,
+                size: file.size,
+                url: null,
+              }}
+            />
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const CompletedSandboxFiles = ({
+  streamingSandboxTools,
+  isLoading,
+  streamingContent,
+  streamingThinking,
+}) => {
+  if (isLoading || streamingContent || streamingThinking) return null;
+
+  const completedTool = streamingSandboxTools.find(
+    (t) => t.status === "complete",
+  );
+  if (!completedTool?.conversationId) return null;
+
+  return (
+    <SandboxFilePills
+      key={completedTool.conversationId}
+      conversationId={completedTool.conversationId}
+    />
+  );
+};
+
 const FileBubble = ({ file }) => {
   const content = (
     <div className="inline-flex items-center gap-2.5 bg-background border border-border rounded-xl px-3.5 py-2.5 shadow-sm cursor-default transition-shadow hover:shadow-md">
@@ -393,6 +465,7 @@ const Message = memo(function Message({
   message,
   isStreaming = false,
   showThinking = false,
+  showSandboxCode = true,
   showMetrics = true,
 }) {
   const isAssistant = message.role === "assistant";
@@ -494,6 +567,27 @@ const Message = memo(function Message({
             <SourcesBlock sources={message.sources} />
           )}
 
+          {isAssistant && message.sandboxResults?.length > 0 && (
+            <div className="space-y-2">
+              {message.sandboxResults.map((result, i) => (
+                <StreamingSandboxBlock
+                  key={`${result.tool}-${result.code || result.command || i}`}
+                  tool={{
+                    index: i,
+                    tool: result.tool,
+                    code: result.code || result.command || "",
+                    status: "complete",
+                    stdout: result.stdout || "",
+                    stderr: result.stderr || "",
+                    exitCode: result.exitCode,
+                    conversationId: result.conversationId,
+                  }}
+                  showSandboxCode={showSandboxCode}
+                />
+              ))}
+            </div>
+          )}
+
           {isAssistant && showMetrics && message.metrics && (
             <ResponseMetrics
               usage={message.metrics}
@@ -512,12 +606,22 @@ const STREAMDOWN_ANIMATED = {
   easing: "ease-out",
 };
 
+const LINE_LIMIT = 4;
+
 const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [showFullCode, setShowFullCode] = useState(false);
 
   const isRunning = tool.status === "running" || tool.status === "writing";
   const isComplete = tool.status === "complete";
   const hasOutput = tool.stdout || tool.stderr;
+
+  const codeLines = (tool.code || "").split("\n");
+  const isLongCode = codeLines.length > LINE_LIMIT;
+  const displayCode =
+    showFullCode || !isLongCode
+      ? tool.code
+      : `${codeLines.slice(0, LINE_LIMIT).join("\n")}\n···`;
 
   return (
     <div className="border border-border rounded-xl overflow-hidden bg-muted/50">
@@ -527,9 +631,7 @@ const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors bg-muted/30"
       >
         <Terminal className="w-3.5 h-3.5 shrink-0" />
-        <span className="font-semibold">
-          {tool.tool === "run_command" ? "Command" : "Code"}
-        </span>
+        <span className="font-semibold">Sandbox</span>
         {isRunning && (
           <ThinkingIndicator size="sm" className="text-muted-foreground ml-1" />
         )}
@@ -548,9 +650,22 @@ const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
       {isExpanded && (
         <div className="p-3 space-y-2 border-t border-border">
           {showSandboxCode && (
-            <pre className="text-xs leading-relaxed bg-muted p-2.5 rounded-lg overflow-x-auto text-foreground/90 whitespace-pre-wrap font-mono">
-              {tool.code}
-            </pre>
+            <>
+              <pre className="text-xs leading-relaxed bg-muted p-2.5 rounded-lg overflow-x-auto text-foreground/90 whitespace-pre-wrap font-mono">
+                {displayCode}
+              </pre>
+              {isLongCode && (
+                <button
+                  type="button"
+                  onClick={() => setShowFullCode(!showFullCode)}
+                  className="text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {showFullCode
+                    ? "Show less"
+                    : `Show all (${codeLines.length} lines)`}
+                </button>
+              )}
+            </>
           )}
           {isRunning && !tool.stdout && !tool.stderr && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -595,6 +710,8 @@ const StreamingMessage = memo(function StreamingMessage({
   thinkingEnabled,
   webSearchEnabled,
   agentModeEnabled,
+  streamingSandboxTools,
+  showSandboxCode,
   showThinking,
 }) {
   const { cleanedText, hasArtifact } = useMemo(() => {
@@ -623,6 +740,13 @@ const StreamingMessage = memo(function StreamingMessage({
         <div className="flex-1 space-y-4 overflow-hidden pt-1">
           {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
           {agentModeEnabled && <AgentIndicator />}
+          {streamingSandboxTools?.map((tool) => (
+            <StreamingSandboxBlock
+              key={tool.index}
+              tool={tool}
+              showSandboxCode={showSandboxCode}
+            />
+          ))}
           {streamingThinking && thinkingEnabled && (
             <ThinkingBlock
               thinking={streamingThinking}
@@ -767,28 +891,11 @@ export default function MessageList({
                   message={message}
                   isStreaming={false}
                   showThinking={showThinking}
+                  showSandboxCode={showSandboxCode}
                   showMetrics={showMetrics}
                 />
               );
             })}
-
-            {streamingSandboxTools.length > 0 && (
-              <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-3">
-                <div className="flex items-center gap-2 text-xs font-medium text-amber-600 dark:text-amber-400 mb-2">
-                  <Terminal className="w-3.5 h-3.5" />
-                  <span>Sandbox Results</span>
-                </div>
-                <div className="space-y-2">
-                  {streamingSandboxTools.map((tool) => (
-                    <StreamingSandboxBlock
-                      key={tool.index}
-                      tool={tool}
-                      showSandboxCode={showSandboxCode}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
 
             {(deferredStreamingContent || deferredStreamingThinking) && (
               <StreamingMessage
@@ -797,6 +904,8 @@ export default function MessageList({
                 thinkingEnabled={thinkingEnabled}
                 webSearchEnabled={webSearchEnabled}
                 agentModeEnabled={agentModeEnabled}
+                streamingSandboxTools={streamingSandboxTools}
+                showSandboxCode={showSandboxCode}
                 showThinking={showThinking}
               />
             )}
@@ -825,6 +934,13 @@ export default function MessageList({
                   </div>
                 </motion.div>
               )}
+
+            <CompletedSandboxFiles
+              streamingSandboxTools={streamingSandboxTools}
+              isLoading={isLoading}
+              streamingContent={streamingContent}
+              streamingThinking={streamingThinking}
+            />
           </>
         )}
       </div>
