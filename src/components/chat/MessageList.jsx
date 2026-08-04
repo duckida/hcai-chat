@@ -1,9 +1,5 @@
 "use client";
 
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { createMathPlugin } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -38,12 +34,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { normalizeLatexDelimiters } from "@/lib/latex";
+import { useStreamdownPlugins } from "@/lib/streamdown";
 import CustomLink from "./CustomLink";
 import ResponseMetrics from "./ResponseMetrics";
 import ThinkingIndicator from "./ThinkingIndicator";
 
-const math = createMathPlugin({ singleDollarTextMath: true });
-const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
 
 async function fetchSandboxFiles(conversationId, sandboxId) {
@@ -84,6 +79,7 @@ const ThinkingBlock = ({
   isStreaming = false,
   defaultView = "closed",
 }) => {
+  const streamdownPlugins = useStreamdownPlugins();
   const [isExpanded, setIsExpanded] = useState(defaultView === "open");
 
   useEffect(() => {
@@ -521,6 +517,7 @@ const Message = memo(function Message({
   showSandboxOutput = true,
   showMetrics = true,
 }) {
+  const streamdownPlugins = useStreamdownPlugins();
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
@@ -777,6 +774,7 @@ const StreamingMessage = memo(function StreamingMessage({
   showSandboxOutput,
   showThinking,
 }) {
+  const streamdownPlugins = useStreamdownPlugins();
   const { cleanedText, hasArtifact } = useMemo(() => {
     const {
       cleanedText: cleaned,

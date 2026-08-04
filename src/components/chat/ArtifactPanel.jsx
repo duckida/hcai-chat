@@ -1,9 +1,5 @@
 "use client";
 
-import { cjk } from "@streamdown/cjk";
-import { code } from "@streamdown/code";
-import { createMathPlugin } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
@@ -22,9 +18,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
+import { useStreamdownPlugins } from "@/lib/streamdown";
 import ThinkingIndicator from "./ThinkingIndicator";
-
-const math = createMathPlugin({ singleDollarTextMath: true });
 
 const CustomLink = ({ href, children }) => {
   const isExternal = href.startsWith("http");
@@ -41,7 +36,6 @@ const CustomLink = ({ href, children }) => {
   );
 };
 
-const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
 
 const MIN_WIDTH = 320;
@@ -56,6 +50,7 @@ export default function ArtifactPanel({
   fullscreen = false,
   onFullscreenToggle,
 }) {
+  const streamdownPlugins = useStreamdownPlugins();
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
