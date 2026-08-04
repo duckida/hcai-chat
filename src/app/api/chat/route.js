@@ -1,15 +1,17 @@
 import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
-import { ARTIFACT_INSTRUCTIONS } from "@/lib/artifacts";
-import { AGENT_MODE_ENABLED } from "@/lib/config";
+import {
+  ARTIFACT_AGENT_MODE_INSTRUCTIONS,
+  ARTIFACT_INSTRUCTIONS,
+} from "@/lib/artifacts";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
 import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 const AGENT_MODE_PROMPT = `
 
-You are running in Agent Mode with access to a secure JavaScript sandbox.
-The sandbox has its own dedicated filesystem (files persist in /workspace across the whole conversation) and full network access.
+You are running in Agent Mode with access to a secure cloud sandbox (E2B).
+The sandbox has its own dedicated filesystem (files persist in /workspace across the whole conversation while the sandbox is running) and full network access.
 
 Available tools:
 - execute_code: Run JavaScript code. Supports top-level await and all Node.js built-in modules (fs, path, child_process, http, fetch, etc.). Use this for computation, data processing, file operations, API calls, or running scripts.
@@ -17,11 +19,11 @@ Available tools:
 
 IMPORTANT RULES:
 - The sandbox has full network access - you can fetch APIs, download packages, etc.
-- Files written to /workspace persist across the entire conversation.
-- Each execution has a 30-second timeout.
-- Install packages with 'npm install <package>' via run_command first, then require them in execute_code.`;
+- Files written to /workspace persist across the entire conversation while the sandbox is alive.
+- execute_code has a 30-second timeout; run_command has a 120-second timeout (enough for npm install).
+- Install packages with 'npm install <package>' via run_command first, then import them in execute_code.`;
 
-function toSdkTools(clientTools, apiKey, conversationId) {
+function toSdkTools(clientTools, apiKey, conversationId, e2bApiKey, sandboxId) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
     return undefined;
   }
@@ -44,23 +46,27 @@ function toSdkTools(clientTools, apiKey, conversationId) {
             ),
             execute: async (args) => {
               if (isSandboxTool) {
-                if (!AGENT_MODE_ENABLED) {
-                  throw new Error("Agent mode is disabled");
-                }
                 if (!conversationId) {
                   throw new Error(
                     "conversationId is required for sandbox tools",
                   );
                 }
-                const {
-                  executeCodeInSandbox,
-                  executeCommandInSandbox,
-                } = await import("@/lib/sandbox-executor");
+                const { executeCodeInSandbox, executeCommandInSandbox } =
+                  await import("@/lib/sandbox-executor");
+                const sandboxOptions = { apiKey: e2bApiKey, sandboxId };
                 if (toolName === "execute_code") {
-                  return executeCodeInSandbox(args?.code, conversationId);
+                  return executeCodeInSandbox(
+                    args?.code,
+                    conversationId,
+                    sandboxOptions,
+                  );
                 }
                 if (toolName === "run_command") {
-                  return executeCommandInSandbox(args?.command, conversationId);
+                  return executeCommandInSandbox(
+                    args?.command,
+                    conversationId,
+                    sandboxOptions,
+                  );
                 }
               }
               return executeTool(toolName, args || {}, apiKey);
@@ -213,6 +219,7 @@ async function emitStreamParts(
             stdout: output.stdout || "",
             stderr: output.stderr || "",
             exitCode: output.exitCode,
+            sandboxId: output.sandboxId || null,
           });
         }
         break;
@@ -297,6 +304,8 @@ export async function POST(req) {
       max_tokens,
       agentMode,
       conversationId,
+      e2bApiKey,
+      sandboxId,
     } = body;
 
     const now = new Date();
@@ -322,9 +331,18 @@ export async function POST(req) {
 
     if (agentMode) {
       systemPrompt += AGENT_MODE_PROMPT;
+      if (artifacts) {
+        systemPrompt += `\n\n${ARTIFACT_AGENT_MODE_INSTRUCTIONS}`;
+      }
     }
 
-    const availableTools = toSdkTools(clientTools, apiKey, conversationId);
+    const availableTools = toSdkTools(
+      clientTools,
+      apiKey,
+      conversationId,
+      agentMode ? e2bApiKey : null,
+      agentMode ? sandboxId : null,
+    );
 
     const hackclub = createOpenRouter({
       apiKey: apiKey,
@@ -353,9 +371,26 @@ export async function POST(req) {
         },
       });
 
+      const sandboxResults = (result.toolResults || [])
+        .filter(
+          (toolResult) =>
+            SANDBOX_TOOL_NAMES.includes(toolResult.toolName) &&
+            toolResult.result,
+        )
+        .map((toolResult) => ({
+          type: "sandbox_result",
+          tool: toolResult.toolName,
+          code: toolResult.args?.code || toolResult.args?.command || "",
+          stdout: toolResult.result?.stdout || "",
+          stderr: toolResult.result?.stderr || "",
+          exitCode: toolResult.result?.exitCode,
+          sandboxId: toolResult.result?.sandboxId || null,
+        }));
+
       return Response.json({
         text: result.text,
         finishReason: result.finishReason,
+        ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
       });
     }
 
@@ -458,7 +493,9 @@ export async function POST(req) {
 
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           clearInterval(keepalive);
-          try { controller.close(); } catch {}
+          try {
+            controller.close();
+          } catch {}
         } catch (error) {
           console.error(
             `[stream error] model=${model} msgs=${messages.length}:`,
@@ -471,7 +508,9 @@ export async function POST(req) {
               `Stream failed for model "${model}" with ${messages.length} messages`,
           });
           clearInterval(keepalive);
-          try { controller.close(); } catch {}
+          try {
+            controller.close();
+          } catch {}
         }
       },
     });
@@ -481,7 +520,7 @@ export async function POST(req) {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
         "X-Accel-Buffering": "no",
-        "Alt-Svc": 'clear',
+        "Alt-Svc": "clear",
       },
     });
   } catch (error) {

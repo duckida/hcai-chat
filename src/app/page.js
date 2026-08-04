@@ -19,11 +19,11 @@ import {
 import {
   generateTitle,
   getStoredApiKey,
+  getStoredE2bApiKey,
   streamChatCompletion,
 } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
-import { AGENT_MODE_ENABLED } from "@/lib/config";
 import { getAllConversations, saveAllConversations } from "@/lib/db";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
@@ -37,15 +37,14 @@ export default function Home({
   const [isLoading, setIsLoading] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const [streamingThinking, setStreamingThinking] = useState("");
-  const [selectedModel, setSelectedModel] = useState("qwen/qwen3.6-flash");
+  const [selectedModel, setSelectedModel] = useState("xiaomi/mimo-v2.5");
   const [titleGenerationModel, setTitleGenerationModel] = useState(
     "qwen/qwen3-next-80b-a3b-instruct",
   );
-  const [thinkingEnabled, setThinkingEnabled] = useState(false);
+  const [thinkingEnabled, setThinkingEnabled] = useState(true);
   const [artifactsEnabled, setArtifactsEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [agentModeEnabled, setAgentModeEnabled] = useState(false);
-  const agentModeGated = AGENT_MODE_ENABLED && agentModeEnabled;
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
@@ -54,6 +53,7 @@ export default function Home({
   const [theme, setTheme] = useState("aurora");
   const [showThinking, setShowThinking] = useState(false);
   const [showSandboxCode, setShowSandboxCode] = useState(true);
+  const [showSandboxOutput, setShowSandboxOutput] = useState(true);
   const [showMetrics, setShowMetrics] = useState(true);
   const [maxTokens, setMaxTokens] = useState(32000);
   const [streamingError, setStreamingError] = useState(null);
@@ -61,6 +61,7 @@ export default function Home({
   const [contextWindowMap, setContextWindowMap] = useState({});
   const [toolsSupportedMap, setToolsSupportedMap] = useState({});
   const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
+  const [hasE2bKey, setHasE2bKey] = useState(false);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -155,6 +156,8 @@ export default function Home({
     const savedModel = localStorage.getItem("selected_model");
     if (savedModel) setSelectedModel(savedModel);
 
+    setHasE2bKey(!!getStoredE2bApiKey());
+
     const savedTitleModel = localStorage.getItem("title_generation_model");
     if (savedTitleModel) setTitleGenerationModel(savedTitleModel);
 
@@ -178,6 +181,10 @@ export default function Home({
     const savedShowSandboxCode = localStorage.getItem("show_sandbox_code");
     if (savedShowSandboxCode !== null)
       setShowSandboxCode(JSON.parse(savedShowSandboxCode));
+
+    const savedShowSandboxOutput = localStorage.getItem("show_sandbox_output");
+    if (savedShowSandboxOutput !== null)
+      setShowSandboxOutput(JSON.parse(savedShowSandboxOutput));
 
     const savedShowMetrics = localStorage.getItem("show_metrics");
     if (savedShowMetrics) setShowMetrics(JSON.parse(savedShowMetrics));
@@ -287,6 +294,13 @@ export default function Home({
   }, [showSandboxCode]);
 
   useEffect(() => {
+    localStorage.setItem(
+      "show_sandbox_output",
+      JSON.stringify(showSandboxOutput),
+    );
+  }, [showSandboxOutput]);
+
+  useEffect(() => {
     localStorage.setItem("show_metrics", JSON.stringify(showMetrics));
   }, [showMetrics]);
 
@@ -381,10 +395,16 @@ export default function Home({
 
   const handleDeleteConversation = useCallback(
     (id) => {
+      const sandboxId =
+        conversationsRef.current.find((c) => c.id === id)?.sandboxId || null;
       fetch("/api/sandbox", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "destroy", conversationId: id }),
+        body: JSON.stringify({
+          action: "destroy",
+          conversationId: id,
+          ...(sandboxId ? { sandboxId } : {}),
+        }),
       }).catch(() => {});
 
       setConversations((prev) => {
@@ -432,7 +452,13 @@ export default function Home({
         ? initialSearchEnabledRef.current
         : webSearchEnabled;
 
-      const needsAgentMode = agentModeGated;
+      const needsAgentMode = agentModeEnabled;
+
+      if (needsAgentMode && !getStoredE2bApiKey()) {
+        isSubmittingRef.current = false;
+        toast.error("Add your E2B API key in Settings to use cloud sandbox.");
+        return;
+      }
 
       let currentId = activeConversationRef.current;
       if (!currentId) {
@@ -459,6 +485,11 @@ export default function Home({
         setArtifactPanelOpen(shouldOpen);
         currentId = newId;
       }
+
+      const e2bApiKey = getStoredE2bApiKey();
+      const sandboxId =
+        conversationsRef.current.find((c) => c.id === currentId)?.sandboxId ||
+        null;
 
       // Upload files to bucky
       let fileUrls = [];
@@ -717,6 +748,15 @@ export default function Home({
         };
 
         const onSandboxResult = (result) => {
+          if (result.sandboxId) {
+            setConversations((prev) =>
+              prev.map((conv) =>
+                conv.id === currentId
+                  ? { ...conv, sandboxId: result.sandboxId }
+                  : conv,
+              ),
+            );
+          }
           sandboxResults.push({ ...result, conversationId: currentId });
           setStreamingSandboxTools((prev) => {
             const lastRunning = [...prev]
@@ -731,6 +771,7 @@ export default function Home({
                     stdout: result.stdout || "",
                     stderr: result.stderr || "",
                     exitCode: result.exitCode,
+                    sandboxId: result.sandboxId,
                   }
                 : t,
             );
@@ -762,6 +803,8 @@ export default function Home({
           maxTokens,
           needsAgentMode,
           needsAgentMode ? currentId : null,
+          needsAgentMode ? e2bApiKey : null,
+          needsAgentMode ? sandboxId : null,
           needsAgentMode ? onSandboxResult : null,
         ];
 
@@ -836,9 +879,10 @@ export default function Home({
         onArtifactsChange={setArtifactsEnabled}
         webSearchEnabled={webSearchEnabled}
         onWebSearchChange={setWebSearchEnabled}
-        agentModeEnabled={agentModeGated}
+        agentModeEnabled={agentModeEnabled}
         onAgentModeChange={setAgentModeEnabled}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
+        hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         contextUsage={contextUsage}
         contextWindowMap={contextWindowMap}
@@ -865,10 +909,11 @@ export default function Home({
             streamingError={streamingError}
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
-            agentModeEnabled={agentModeGated}
+            agentModeEnabled={agentModeEnabled}
             streamingSandboxTools={streamingSandboxTools}
             showThinking={showThinking}
             showSandboxCode={showSandboxCode}
+            showSandboxOutput={showSandboxOutput}
             showMetrics={showMetrics}
           />
           <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
@@ -878,7 +923,10 @@ export default function Home({
       <SettingsModal
         isOpen={isApiKeyModalOpen}
         onClose={() => setIsApiKeyModalOpen(false)}
-        onSave={() => toast.success("Settings updated")}
+        onSave={() => {
+          setHasE2bKey(!!getStoredE2bApiKey());
+          toast.success("Settings updated");
+        }}
         titleGenerationModel={titleGenerationModel}
         onTitleGenerationModelChange={setTitleGenerationModel}
         theme={theme}
@@ -887,6 +935,8 @@ export default function Home({
         onShowThinkingChange={setShowThinking}
         showSandboxCode={showSandboxCode}
         onShowSandboxCodeChange={setShowSandboxCode}
+        showSandboxOutput={showSandboxOutput}
+        onShowSandboxOutputChange={setShowSandboxOutput}
         showMetrics={showMetrics}
         onShowMetricsChange={setShowMetrics}
         maxTokens={maxTokens}

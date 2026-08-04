@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Cloud,
   Download,
   ExternalLink,
   FileText,
@@ -34,6 +35,7 @@ import {
 import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { normalizeLatexDelimiters } from "@/lib/latex";
 import CustomLink from "./CustomLink";
@@ -43,6 +45,39 @@ import ThinkingIndicator from "./ThinkingIndicator";
 const math = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { code, math, mermaid, cjk };
 const streamdownComponents = { a: CustomLink };
+
+async function fetchSandboxFiles(conversationId, sandboxId) {
+  const res = await fetch("/api/sandbox", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "list",
+      conversationId,
+      sandboxId: sandboxId || null,
+      e2bApiKey: getStoredE2bApiKey(),
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to list files");
+  return data.files || [];
+}
+
+async function downloadSandboxFile(conversationId, file, sandboxId) {
+  const res = await fetch("/api/sandbox", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "download_token",
+      conversationId,
+      file: file.path,
+      sandboxId: sandboxId || null,
+      e2bApiKey: getStoredE2bApiKey(),
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to start download");
+  window.location.href = `/api/sandbox?conversationId=${encodeURIComponent(conversationId)}&action=download&token=${encodeURIComponent(data.token)}`;
+}
 
 const ThinkingBlock = ({
   thinking,
@@ -242,24 +277,23 @@ const ImageAttachment = ({ src, alt }) => {
   return content;
 };
 
-const SandboxFilePills = ({ conversationId }) => {
+const SandboxFilePills = ({ conversationId, sandboxId }) => {
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const fetchFiles = useCallback(async () => {
     if (files !== null) return;
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(
-        `/api/sandbox?conversationId=${encodeURIComponent(conversationId)}`,
-      );
-      const data = await res.json();
-      setFiles(data.files || []);
-    } catch {
+      setFiles(await fetchSandboxFiles(conversationId, sandboxId));
+    } catch (err) {
+      setError(err.message);
       setFiles([]);
     }
     setLoading(false);
-  }, [conversationId, files]);
+  }, [conversationId, sandboxId, files]);
 
   useEffect(() => {
     fetchFiles();
@@ -272,12 +306,17 @@ const SandboxFilePills = ({ conversationId }) => {
       <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 pl-1">
         Generated Files
       </p>
+      {error && <p className="text-[11px] text-red-500 mb-2 pl-1">{error}</p>}
       <div className="flex flex-wrap gap-2">
         {files.map((file) => (
-          <a
+          <button
             key={file.path}
-            href={`/api/sandbox?conversationId=${encodeURIComponent(conversationId)}&action=download&file=${encodeURIComponent(file.path)}`}
-            download={file.name}
+            type="button"
+            onClick={() =>
+              downloadSandboxFile(conversationId, file, sandboxId).catch(
+                (err) => setError(err.message),
+              )
+            }
           >
             <FileBubble
               file={{
@@ -286,7 +325,7 @@ const SandboxFilePills = ({ conversationId }) => {
                 url: null,
               }}
             />
-          </a>
+          </button>
         ))}
       </div>
     </div>
@@ -310,6 +349,7 @@ const CompletedSandboxFiles = ({
     <SandboxFilePills
       key={completedTool.conversationId}
       conversationId={completedTool.conversationId}
+      sandboxId={completedTool.sandboxId}
     />
   );
 };
@@ -344,23 +384,22 @@ const FileBubble = ({ file }) => {
   return content;
 };
 
-const SandboxFiles = ({ conversationId }) => {
+const SandboxFiles = ({ conversationId, sandboxId }) => {
   const [files, setFiles] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
   const fetchFiles = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(
-        `/api/sandbox?conversationId=${encodeURIComponent(conversationId)}`,
-      );
-      const data = await res.json();
-      setFiles(data.files || []);
-    } catch {
+      setFiles(await fetchSandboxFiles(conversationId, sandboxId));
+    } catch (err) {
+      setError(err.message);
       setFiles([]);
     }
     setLoading(false);
-  }, [conversationId]);
+  }, [conversationId, sandboxId]);
 
   if (files === null) {
     return (
@@ -383,7 +422,13 @@ const SandboxFiles = ({ conversationId }) => {
     );
   }
 
-  if (files.length === 0) return null;
+  if (files.length === 0) {
+    return error ? (
+      <div className="mt-0.5 text-[11px] text-red-500/80 text-center py-1">
+        {error}
+      </div>
+    ) : null;
+  }
 
   const formatSize = (bytes) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -396,13 +441,20 @@ const SandboxFiles = ({ conversationId }) => {
       <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
         Generated Files
       </div>
+      {error && (
+        <div className="text-[11px] text-red-500/80 mb-1.5">{error}</div>
+      )}
       <div className="space-y-1">
         {files.map((file) => (
-          <a
+          <button
             key={file.path}
-            href={`/api/sandbox?conversationId=${encodeURIComponent(conversationId)}&action=download&file=${encodeURIComponent(file.path)}`}
-            download={file.name}
-            className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded-lg hover:bg-muted/50"
+            type="button"
+            onClick={() =>
+              downloadSandboxFile(conversationId, file, sandboxId).catch(
+                (err) => setError(err.message),
+              )
+            }
+            className="w-full flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-1 px-2 rounded-lg hover:bg-muted/50 text-left"
           >
             <FileText className="w-3.5 h-3.5 shrink-0" />
             <span className="truncate flex-1 font-mono">{file.path}</span>
@@ -410,7 +462,7 @@ const SandboxFiles = ({ conversationId }) => {
               {formatSize(file.size)}
             </span>
             <Download className="w-3 h-3 shrink-0" />
-          </a>
+          </button>
         ))}
       </div>
     </div>
@@ -419,8 +471,8 @@ const SandboxFiles = ({ conversationId }) => {
 
 const AgentIndicator = () => (
   <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-    <Terminal className="w-4 h-4 text-amber-600 dark:text-amber-400 animate-pulse" />
-    <span className="text-amber-600 dark:text-amber-400 font-medium">
+    <Cloud className="w-4 h-4 text-sky-500 dark:text-sky-400 animate-pulse" />
+    <span className="text-sky-500 dark:text-sky-400 font-medium">
       Running code in sandbox
     </span>
     <ThinkingIndicator size="sm" className="text-muted-foreground" />
@@ -466,6 +518,7 @@ const Message = memo(function Message({
   isStreaming = false,
   showThinking = false,
   showSandboxCode = true,
+  showSandboxOutput = true,
   showMetrics = true,
 }) {
   const isAssistant = message.role === "assistant";
@@ -581,8 +634,10 @@ const Message = memo(function Message({
                     stderr: result.stderr || "",
                     exitCode: result.exitCode,
                     conversationId: result.conversationId,
+                    sandboxId: result.sandboxId,
                   }}
                   showSandboxCode={showSandboxCode}
+                  showSandboxOutput={showSandboxOutput}
                 />
               ))}
             </div>
@@ -608,7 +663,11 @@ const STREAMDOWN_ANIMATED = {
 
 const LINE_LIMIT = 4;
 
-const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
+const StreamingSandboxBlock = ({
+  tool,
+  showSandboxCode = true,
+  showSandboxOutput = true,
+}) => {
   const [isExpanded, setIsExpanded] = useState(true);
   const [showFullCode, setShowFullCode] = useState(false);
 
@@ -675,7 +734,7 @@ const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
               <ThinkingIndicator size="sm" className="text-muted-foreground" />
             </div>
           )}
-          {tool.stdout && (
+          {showSandboxOutput && tool.stdout && (
             <div>
               <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                 Output
@@ -685,7 +744,7 @@ const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
               </pre>
             </div>
           )}
-          {tool.stderr && (
+          {showSandboxOutput && tool.stderr && (
             <div>
               <div className="text-[10px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wider mb-1">
                 Error
@@ -698,7 +757,10 @@ const StreamingSandboxBlock = ({ tool, showSandboxCode = true }) => {
         </div>
       )}
       {isComplete && tool.conversationId && (
-        <SandboxFiles conversationId={tool.conversationId} />
+        <SandboxFiles
+          conversationId={tool.conversationId}
+          sandboxId={tool.sandboxId}
+        />
       )}
     </div>
   );
@@ -712,6 +774,7 @@ const StreamingMessage = memo(function StreamingMessage({
   agentModeEnabled,
   streamingSandboxTools,
   showSandboxCode,
+  showSandboxOutput,
   showThinking,
 }) {
   const { cleanedText, hasArtifact } = useMemo(() => {
@@ -745,6 +808,7 @@ const StreamingMessage = memo(function StreamingMessage({
               key={tool.index}
               tool={tool}
               showSandboxCode={showSandboxCode}
+              showSandboxOutput={showSandboxOutput}
             />
           ))}
           {streamingThinking && thinkingEnabled && (
@@ -819,6 +883,7 @@ export default function MessageList({
   streamingSandboxTools = [],
   showThinking = false,
   showSandboxCode = true,
+  showSandboxOutput = true,
   showMetrics = true,
 }) {
   const scrollRef = useRef(null);
@@ -892,6 +957,7 @@ export default function MessageList({
                   isStreaming={false}
                   showThinking={showThinking}
                   showSandboxCode={showSandboxCode}
+                  showSandboxOutput={showSandboxOutput}
                   showMetrics={showMetrics}
                 />
               );
@@ -906,6 +972,7 @@ export default function MessageList({
                 agentModeEnabled={agentModeEnabled}
                 streamingSandboxTools={streamingSandboxTools}
                 showSandboxCode={showSandboxCode}
+                showSandboxOutput={showSandboxOutput}
                 showThinking={showThinking}
               />
             )}

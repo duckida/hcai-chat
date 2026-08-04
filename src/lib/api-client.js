@@ -1,6 +1,5 @@
-import { AGENT_MODE_ENABLED } from "./config";
-
 const API_KEY_STORAGE_KEY = "hack_club_ai_key";
+const E2B_API_KEY_STORAGE_KEY = "e2b_api_key";
 
 // Helper function to extract error message from API response
 export const getErrorMessage = (errorData, defaultMessage) => {
@@ -35,6 +34,22 @@ export const setStoredApiKey = (apiKey) => {
   localStorage.setItem(API_KEY_STORAGE_KEY, apiKey);
 };
 
+export const getStoredE2bApiKey = () => {
+  if (typeof window === "undefined") return null;
+  const key = localStorage.getItem(E2B_API_KEY_STORAGE_KEY);
+  if (!key) return null;
+  if (key.startsWith("{") || key.startsWith("[")) {
+    localStorage.removeItem(E2B_API_KEY_STORAGE_KEY);
+    return null;
+  }
+  return key;
+};
+
+export const setStoredE2bApiKey = (apiKey) => {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(E2B_API_KEY_STORAGE_KEY, apiKey);
+};
+
 export const streamChatCompletion = async (
   messages,
   model = "gpt-4o-mini",
@@ -51,6 +66,8 @@ export const streamChatCompletion = async (
   maxTokens = null,
   agentMode = false,
   conversationId = null,
+  e2bApiKey = null,
+  sandboxId = null,
   onSandboxResult = null,
 ) => {
   const apiKey = getStoredApiKey();
@@ -66,9 +83,11 @@ export const streamChatCompletion = async (
   const body = { model, messages, apiKey, think: !!includeThinking };
   body.artifacts = artifactsEnabled;
   if (maxTokens) body.max_tokens = maxTokens;
-  if (agentMode && AGENT_MODE_ENABLED) {
+  if (agentMode) {
     body.agentMode = true;
     if (conversationId) body.conversationId = conversationId;
+    if (e2bApiKey) body.e2bApiKey = e2bApiKey;
+    if (sandboxId) body.sandboxId = sandboxId;
   }
 
   if (tools && Array.isArray(tools) && tools.length > 0) {
@@ -179,7 +198,10 @@ export const streamChatCompletion = async (
       }
     } catch (error) {
       // If streaming fails (e.g. QUIC protocol error), fall back to non-streaming
-      console.warn("[stream] Streaming failed, falling back to non-streaming:", error.message);
+      console.warn(
+        "[stream] Streaming failed, falling back to non-streaming:",
+        error.message,
+      );
       await doFallback();
     }
   };
@@ -205,6 +227,11 @@ export const streamChatCompletion = async (
       const data = await response.json();
       if (data.text) {
         onChunk(data.text, "content");
+      }
+      if (Array.isArray(data.sandboxResults) && onSandboxResult) {
+        for (const sandboxResult of data.sandboxResults) {
+          onSandboxResult(sandboxResult);
+        }
       }
       await onComplete?.();
     } catch (error) {

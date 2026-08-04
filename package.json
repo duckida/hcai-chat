@@ -24,6 +24,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "e2b": "2.37.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.14.0",
     "next": "^16.2.6",
@@ -32,7 +33,6 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "react-konva": "^19.2.4",
-    "secure-exec": "^0.3.3",
     "server-only": "^0.0.1",
     "shadcn-ui": "^0.9.5",
     "sonner": "^2.0.7",
@@ -54,11 +54,5 @@
     "shadcn": "^4.6.0",
     "tailwindcss": "^4",
     "vitest": "^4.1.8"
-  },
-  "optionalDependencies": {
-    "@secure-exec/sidecar-darwin-arm64": "0.3.3",
-    "@secure-exec/sidecar-darwin-x64": "0.3.3",
-    "@secure-exec/sidecar-linux-arm64-gnu": "0.3.3",
-    "@secure-exec/sidecar-linux-x64-gnu": "0.3.3"
   }
 }

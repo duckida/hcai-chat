@@ -4,6 +4,7 @@ import {
   Brain,
   Check,
   ChevronDown,
+  Cloud,
   Eye,
   EyeOff,
   Key,
@@ -43,7 +44,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getStoredApiKey, setStoredApiKey } from "@/lib/api-client";
+import {
+  getStoredApiKey,
+  getStoredE2bApiKey,
+  setStoredApiKey,
+  setStoredE2bApiKey,
+} from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 const Toggle = ({ checked, onChange }) => (
@@ -68,6 +74,12 @@ const SECTIONS = [
     label: "Connection",
     description: "API key & security",
     icon: Key,
+  },
+  {
+    id: "sandbox",
+    label: "Sandbox",
+    description: "Cloud Sandbox & E2B",
+    icon: Cloud,
   },
   {
     id: "models",
@@ -262,6 +274,8 @@ export default function SettingsModal({
   onShowThinkingChange,
   showSandboxCode = true,
   onShowSandboxCodeChange,
+  showSandboxOutput = true,
+  onShowSandboxOutputChange,
   showMetrics = true,
   onShowMetricsChange,
   maxTokens = 32000,
@@ -269,6 +283,8 @@ export default function SettingsModal({
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [e2bApiKey, setE2bApiKey] = useState("");
+  const [showE2bKey, setShowE2bKey] = useState(false);
   const [error, setError] = useState("");
   const [groupedModels, setGroupedModels] = useState({});
   const [expandedProvider, setExpandedProvider] = useState(null);
@@ -322,6 +338,8 @@ export default function SettingsModal({
     if (isOpen) {
       const stored = getStoredApiKey();
       setApiKey(stored || "");
+      const storedE2b = getStoredE2bApiKey();
+      setE2bApiKey(storedE2b || "");
       setError("");
       fetchModels.current();
     }
@@ -333,6 +351,7 @@ export default function SettingsModal({
       return;
     }
     setStoredApiKey(apiKey.trim());
+    setStoredE2bApiKey(e2bApiKey.trim());
     onSave?.(apiKey.trim());
     onClose?.();
   };
@@ -403,6 +422,85 @@ export default function SettingsModal({
                       Your key is stored only on your local device and never
                       sent to our servers.
                     </p>
+                  </div>
+                </div>
+              )}
+
+              {activeSection === "sandbox" && (
+                <div className="space-y-6">
+                  <SectionHeading
+                    title="Sandbox"
+                    description="Connect E2B to run code in a secure cloud sandbox."
+                  />
+
+                  <div className="space-y-3">
+                    <SectionLabel
+                      htmlFor="e2bApiKey"
+                      description="Get your key at e2b.dev/dashboard?tab=keys. Sandbox usage is billed to your E2B account."
+                    >
+                      E2B API Key (optional)
+                    </SectionLabel>
+                    <div className="relative group">
+                      <Input
+                        id="e2bApiKey"
+                        type={showE2bKey ? "text" : "password"}
+                        value={e2bApiKey}
+                        onChange={(e) => setE2bApiKey(e.target.value)}
+                        placeholder="e2b_..."
+                        className="h-12 border-border bg-muted rounded-xl px-5 transition-all focus:bg-background focus:ring-4 focus:ring-ring placeholder:text-muted-foreground font-medium"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowE2bKey(!showE2bKey)}
+                        className="absolute right-2 top-0 h-full px-3 text-muted-foreground hover:text-foreground hover:bg-transparent transition-colors"
+                      >
+                        {showE2bKey ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 bg-muted p-4 rounded-xl border border-border">
+                    <ShieldCheck className="w-5 h-5 text-green-500 shrink-0" />
+                    <p className="text-[12px] text-muted-foreground font-medium leading-normal">
+                      Agent mode runs code in an isolated E2B cloud VM. Files
+                      written to /workspace persist for the conversation while
+                      the sandbox is running.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
+                    <div>
+                      <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
+                        Show Sandbox Input
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-0.5 pl-1">
+                        Display code and commands sent to the sandbox.
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={showSandboxCode}
+                      onChange={onShowSandboxCodeChange}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
+                    <div>
+                      <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
+                        Show Sandbox Output
+                      </Label>
+                      <p className="text-xs text-muted-foreground mt-0.5 pl-1">
+                        Display stdout and stderr from sandbox execution.
+                      </p>
+                    </div>
+                    <Toggle
+                      checked={showSandboxOutput}
+                      onChange={onShowSandboxOutputChange}
+                    />
                   </div>
                 </div>
               )}
@@ -616,21 +714,6 @@ export default function SettingsModal({
                     <Toggle
                       checked={showThinking}
                       onChange={onShowThinkingChange}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
-                    <div>
-                      <Label className="text-[13px] font-bold text-foreground uppercase tracking-widest">
-                        Show Sandbox Code
-                      </Label>
-                      <p className="text-xs text-muted-foreground mt-0.5 pl-1">
-                        Display code blocks in agent mode.
-                      </p>
-                    </div>
-                    <Toggle
-                      checked={showSandboxCode}
-                      onChange={onShowSandboxCodeChange}
                     />
                   </div>
 

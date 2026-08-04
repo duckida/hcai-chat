@@ -73,3 +73,13 @@ Rules:
 - Keep explanations brief — the artifact itself is the deliverable.
 - Make the artifact responsive — it should work well on both mobile and desktop. Use relative units, flexible layouts, and media queries as needed.
 `.trim();
+
+/**
+ * Additional instructions appended when both artifacts mode and agent mode
+ * are enabled: artifacts should be delivered as text, not written to the sandbox.
+ */
+export const ARTIFACT_AGENT_MODE_INSTRUCTIONS = `
+## Artifact Delivery with Agent Mode
+
+When artifacts mode is enabled together with agent mode, still output the complete HTML artifact inside a fenced \`\`\`html code block as text in the chat. Do NOT write the artifact to a file in the sandbox (do not use execute_code or run_command to create or save the HTML file). The sandbox is only for computation, data processing, file manipulation the user explicitly asked for, and command execution. If you already wrote an artifact file to the sandbox in an earlier step, still output the final version as a text artifact.
+`.trim();

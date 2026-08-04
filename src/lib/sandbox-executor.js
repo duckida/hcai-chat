@@ -1,7 +1,7 @@
 import "server-only";
 import { executeCode, runCommand } from "./sandbox";
 
-export async function executeCodeInSandbox(code, conversationId) {
+export async function executeCodeInSandbox(code, conversationId, options = {}) {
   if (!code || typeof code !== "string") {
     throw new Error("Code must be a non-empty string");
   }
@@ -10,7 +10,7 @@ export async function executeCodeInSandbox(code, conversationId) {
     throw new Error("conversationId is required");
   }
 
-  const result = await executeCode(conversationId, code);
+  const result = await executeCode(conversationId, code, options);
 
   return {
     code,
@@ -18,10 +18,15 @@ export async function executeCodeInSandbox(code, conversationId) {
     stderr: result.stderr || "",
     exitCode: result.exitCode,
     success: result.exitCode === 0,
+    sandboxId: result.sandboxId,
   };
 }
 
-export async function executeCommandInSandbox(command, conversationId) {
+export async function executeCommandInSandbox(
+  command,
+  conversationId,
+  options = {},
+) {
   if (!command || typeof command !== "string") {
     throw new Error("Command must be a non-empty string");
   }
@@ -30,7 +35,7 @@ export async function executeCommandInSandbox(command, conversationId) {
     throw new Error("conversationId is required");
   }
 
-  const result = await runCommand(conversationId, command);
+  const result = await runCommand(conversationId, command, options);
 
   return {
     command,
@@ -38,5 +43,6 @@ export async function executeCommandInSandbox(command, conversationId) {
     stderr: result.stderr || "",
     exitCode: result.exitCode,
     success: result.exitCode === 0,
+    sandboxId: result.sandboxId,
   };
 }
