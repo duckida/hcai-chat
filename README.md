@@ -3,7 +3,7 @@
 A (vibe-coded) chat interface for Hack Club AI. 
 
 ## Features
-- Agent Mode - executes JavaScript and shell commands in a per-conversation secure sandbox (V8 isolates), with inline code blocks, live output, and file downloads
+- Agent Mode - executes JavaScript and shell commands in a per-conversation secure sandbox (e2b), with inline code blocks, live output, and file downloads
 - Web search
 - HTML artifacts
 - File uploads (images, PDFs, text)
@@ -34,4 +34,4 @@ You need an API key from ai.hackclub.com.
 
 ## Tech Stack
 
-Next.js (App Router), Tailwind CSS v4, Shadcn UI, AI SDK v6, Streamdown, Framer Motion, secure-exec, Biome, Vitest.
+Next.js (App Router), Tailwind CSS v4, Shadcn UI, AI SDK v6, Streamdown, Framer Motion, e2b, Biome, Vitest.
