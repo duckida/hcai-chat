@@ -323,7 +323,18 @@ export async function POST(req) {
     });
 
     let systemPrompt = `Current date: ${dateStr}. Current time: ${timeStr} UTC.`;
-    const processedMessages = messages;
+    const processedMessages = messages.map((msg) => {
+      if (msg.role === "assistant" && msg.thinking) {
+        return {
+          ...msg,
+          content: [
+            { type: "reasoning", text: msg.thinking },
+            { type: "text", text: msg.content || "" },
+          ],
+        };
+      }
+      return msg;
+    });
 
     if (artifacts) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;

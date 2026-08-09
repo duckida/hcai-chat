@@ -308,8 +308,8 @@ li > ol {
   --primary-foreground: #ffffff;
   --secondary: #e0e6ed;
   --secondary-foreground: #3c4858;
-  --muted: #f9fafc;
-  --muted-foreground: #5b6b80;
+  --muted: #f1f4f8;
+  --muted-foreground: #8492a6;
   --accent: #338eda;
   --accent-foreground: #ffffff;
   --destructive: #ec3750;
@@ -318,6 +318,19 @@ li > ol {
   --input: #e0e6ed;
   --ring: #ec3750;
   --radius: 0.75rem;
+  --chart-1: #ec3750;
+  --chart-2: #338eda;
+  --chart-3: #33d6a6;
+  --chart-4: #f1c40f;
+  --chart-5: #a633d6;
+  --sidebar: #f6f8fa;
+  --sidebar-foreground: #1f2d3d;
+  --sidebar-primary: #ec3750;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e0e6ed;
+  --sidebar-accent-foreground: #1f2d3d;
+  --sidebar-border: #e0e6ed;
+  --sidebar-ring: #ec3750;
 }
 
 .theme-hackclub.dark {
@@ -341,4 +354,17 @@ li > ol {
   --input: #252429;
   --ring: #ec3750;
   --radius: 0.75rem;
+  --chart-1: #ec3750;
+  --chart-2: #5bc0de;
+  --chart-3: #33d6a6;
+  --chart-4: #f1c40f;
+  --chart-5: #a633d6;
+  --sidebar: #17171d;
+  --sidebar-foreground: #ffffff;
+  --sidebar-primary: #ec3750;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #252429;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #252429;
+  --sidebar-ring: #ec3750;
 }
