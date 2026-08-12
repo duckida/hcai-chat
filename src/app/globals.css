@@ -27,41 +27,54 @@
   font-display: swap;
 }
 
+/* Phantom Sans has a smaller x-height / cap height than Inter, so text
+   looks visually smaller at the same px size. The size-adjust /
+   ascent-override / descent-override descriptors below scale the glyphs
+   up and pad the em box so Phantom Sans occupies the same visual space
+   as the system sans-serif. */
 @font-face {
   font-family: "Phantom Sans";
   src:
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Regular.woff2")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Regular.woff2")
     format("woff2"),
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Regular.woff")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Regular.woff")
     format("woff");
-  font-weight: normal;
   font-weight: normal;
   font-style: normal;
   font-display: swap;
+  size-adjust: 110%;
+  ascent-override: 95%;
+  descent-override: 25%;
 }
 
 @font-face {
   font-family: "Phantom Sans";
   src:
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Bold.woff2")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Bold.woff2")
     format("woff2"),
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Bold.woff")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Bold.woff")
     format("woff");
   font-weight: bold;
   font-style: normal;
   font-display: swap;
+  size-adjust: 110%;
+  ascent-override: 95%;
+  descent-override: 25%;
 }
 
 @font-face {
   font-family: "Phantom Sans";
   src:
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Italic.woff2")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Italic.woff2")
     format("woff2"),
-    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.7/Italic.woff")
+    url("https://assets.hackclub.com/fonts/Phantom_Sans_0.8/Italic.woff")
     format("woff");
   font-weight: normal;
   font-style: italic;
   font-display: swap;
+  size-adjust: 110%;
+  ascent-override: 95%;
+  descent-override: 25%;
 }
 
 @source "../node_modules/streamdown/dist/*.js";
