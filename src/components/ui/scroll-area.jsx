@@ -6,7 +6,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const ScrollArea = React.forwardRef(
-  ({ className, children, ...props }, ref) => {
+  ({ className, children, onScroll, ...props }, ref) => {
     const viewportRef = React.useRef(null);
 
     React.useImperativeHandle(ref, () => ({
@@ -18,6 +18,9 @@ const ScrollArea = React.forwardRef(
       },
       get scrollHeight() {
         return viewportRef.current?.scrollHeight || 0;
+      },
+      get clientHeight() {
+        return viewportRef.current?.clientHeight || 0;
       },
       // Helper to scroll to the bottom of the viewport
       scrollToBottom() {
@@ -37,6 +40,7 @@ const ScrollArea = React.forwardRef(
           ref={viewportRef}
           data-slot="scroll-area-viewport"
           className="h-full w-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+          onScroll={onScroll}
         >
           {children}
         </ScrollAreaPrimitive.Viewport>

@@ -885,13 +885,25 @@ export default function MessageList({
   showMetrics = true,
 }) {
   const scrollRef = useRef(null);
+  const [userScrolledAway, setUserScrolledAway] = useState(false);
+  const isStreaming = !!(streamingContent || streamingThinking || isLoading);
 
   const deferredStreamingContent = useDeferredValue(streamingContent);
   const deferredStreamingThinking = useDeferredValue(streamingThinking);
 
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollHeight, scrollTop, clientHeight } = scrollRef.current;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const wasAway = distanceFromBottom > 100;
+    setUserScrolledAway((prev) => (prev !== wasAway ? wasAway : prev));
+  }, []);
+
+  // Auto-scroll only when user hasn't scrolled away
   useEffect(() => {
     if (
       scrollRef.current &&
+      !userScrolledAway &&
       (messages.length > 0 ||
         streamingContent ||
         streamingThinking ||
@@ -908,7 +920,17 @@ export default function MessageList({
     streamingError,
     streamingSandboxTools,
     isLoading,
+    userScrolledAway,
   ]);
+
+  // Reset scroll-away state when streaming ends
+  const prevIsStreaming = useRef(false);
+  useEffect(() => {
+    if (prevIsStreaming.current && !isStreaming) {
+      setUserScrolledAway(false);
+    }
+    prevIsStreaming.current = isStreaming;
+  }, [isStreaming]);
 
   const activeMessages = useMemo(
     () => (messages || []).filter(hasRenderableContent),
@@ -923,8 +945,13 @@ export default function MessageList({
     streamingSandboxTools.length > 0;
 
   return (
-    <ScrollArea ref={scrollRef} className="flex-1 h-full selection:bg-accent">
-      <div className="py-4">
+    <div className="flex-1 h-full relative min-h-0">
+      <ScrollArea
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="h-full selection:bg-accent"
+      >
+        <div className="py-4">
         {!hasContent ? (
           <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
             <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-foreground text-background flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
@@ -1010,5 +1037,18 @@ export default function MessageList({
         )}
       </div>
     </ScrollArea>
+      {userScrolledAway && isStreaming && (
+        <button
+          onClick={() => {
+            scrollRef.current?.scrollToBottom();
+            setUserScrolledAway(false);
+          }}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-full bg-background border border-border shadow-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+        >
+          <ChevronDown className="h-3.5 w-3.5" />
+          Scroll to bottom
+        </button>
+      )}
+    </div>
   );
 }
