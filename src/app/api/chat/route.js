@@ -110,7 +110,7 @@ async function emitStreamParts(
       }
 
       case "finish": {
-        finalUsage = part.usage;
+        finalUsage = part.totalUsage || part.usage;
         finalCost = part.providerMetadata?.openrouter?.usage?.cost ?? null;
         break;
       }
@@ -231,7 +231,10 @@ async function emitStreamParts(
   }
 
   return {
-    usage: finalUsage || (await result.usage.catch(() => null)),
+    usage:
+      finalUsage ||
+      (await result.totalUsage?.catch(() => null)) ||
+      (await result.usage.catch(() => null)),
     cost: finalCost,
   };
 }
@@ -430,7 +433,11 @@ export async function POST(req) {
 
         try {
           const currentMessages = [...processedMessages];
-          const totalUsage = { inputTokens: 0, outputTokens: 0 };
+          const totalUsage = {
+            inputTokens: 0,
+            outputTokens: 0,
+            reasoningTokens: 0,
+          };
           const startTime = Date.now();
           const generationTiming = { startTime: null, endTime: null };
 
@@ -457,6 +464,10 @@ export async function POST(req) {
               usage.promptTokens || usage.inputTokens || 0;
             totalUsage.outputTokens +=
               usage.completionTokens || usage.outputTokens || 0;
+            totalUsage.reasoningTokens +=
+              usage.outputTokenDetails?.reasoningTokens ||
+              usage.reasoningTokens ||
+              0;
           }
 
           const endTime = Date.now();
@@ -494,6 +505,7 @@ export async function POST(req) {
               model,
               inputTokens: totalUsage.inputTokens,
               outputTokens: totalUsage.outputTokens,
+              reasoningTokens: totalUsage.reasoningTokens,
               totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
               duration: totalDuration,
               generationDuration,

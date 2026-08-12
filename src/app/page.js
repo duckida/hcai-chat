@@ -66,6 +66,9 @@ export default function Home({
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
   const isSubmittingRef = useRef(false);
+  const activeUsageConversationRef = useRef(null);
+  const lastUsageRef = useRef(null);
+  const predictedOutputTokensRef = useRef(0);
   const conversationsRef = useRef(conversations);
   const messagesRef = useRef(messages);
   const activeConversationRef = useRef(activeConversation);
@@ -150,6 +153,11 @@ export default function Home({
         if (convs[0].model) {
           setSelectedModel(convs[0].model);
         }
+        setContextUsage(convs[0].contextUsage || 0);
+        lastUsageRef.current = {
+          inputTokens: convs[0].contextUsage || 0,
+          outputTokens: 0,
+        };
       }
     })();
 
@@ -321,16 +329,6 @@ export default function Home({
     localStorage.setItem("max_tokens", JSON.stringify(maxTokens));
   }, [maxTokens]);
 
-  useEffect(() => {
-    if (activeConversation && contextUsage > 0) {
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === activeConversation ? { ...conv, contextUsage } : conv,
-        ),
-      );
-    }
-  }, [contextUsage, activeConversation]);
-
   const handleModelChange = useCallback(
     (model) => {
       setSelectedModel(model);
@@ -370,6 +368,8 @@ export default function Home({
     setStreamingError(null);
     setStreamingSandboxTools([]);
     setContextUsage(0);
+    lastUsageRef.current = null;
+    predictedOutputTokensRef.current = 0;
     setArtifactPanelOpen(shouldOpen);
   }, [artifactsEnabled, selectedModel]);
 
@@ -386,9 +386,15 @@ export default function Home({
       setStreamingThinking("");
       setStreamingError(null);
       setStreamingSandboxTools([]);
+      lastUsageRef.current = null;
+      predictedOutputTokensRef.current = 0;
       setContextUsage(
         conversation?.messages?.length ? (conversation?.contextUsage ?? 0) : 0,
       );
+      lastUsageRef.current = {
+        inputTokens: conversation?.contextUsage || 0,
+        outputTokens: 0,
+      };
     },
     [conversations],
   );
@@ -486,6 +492,11 @@ export default function Home({
         currentId = newId;
       }
 
+      // Track usage against the conversation this message belongs to, so
+      // switching chats mid-stream doesn't attribute tokens to the wrong one.
+      activeUsageConversationRef.current = currentId;
+      predictedOutputTokensRef.current = 0;
+
       const e2bApiKey = getStoredE2bApiKey();
       const sandboxId =
         conversationsRef.current.find((c) => c.id === currentId)?.sandboxId ||
@@ -582,8 +593,44 @@ export default function Home({
           includeCalculator: toolsSupported,
         });
 
+        const snapToActualUsage = () => {
+          const actual = lastUsageRef.current;
+          predictedOutputTokensRef.current = 0;
+          if (!actual) return;
+          const total = (actual.inputTokens || 0) + (actual.outputTokens || 0);
+          if (activeConversationRef.current === currentId) {
+            setContextUsage(total);
+          }
+          const usageFor = activeUsageConversationRef.current || currentId;
+          if (usageFor) {
+            setConversations((prev) =>
+              prev.map((conv) =>
+                conv.id === usageFor ? { ...conv, contextUsage: total } : conv,
+              ),
+            );
+          }
+        };
+
+        const predictOutputTokens = (chars) => {
+          // Rough heuristic: ~4 characters per token on average.
+          return Math.max(0, Math.round((chars || 0) / 4));
+        };
+
+        const bumpPredictedUsage = (chars) => {
+          if (chars <= 0) return;
+          predictedOutputTokensRef.current += predictOutputTokens(chars);
+          const inputBase = lastUsageRef.current?.inputTokens || 0;
+          const outputBase = lastUsageRef.current?.outputTokens || 0;
+          const total =
+            inputBase + outputBase + predictedOutputTokensRef.current;
+          if (activeConversationRef.current === currentId) {
+            setContextUsage(total);
+          }
+        };
+
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
+          snapToActualUsage();
           setStreamingError({
             title: "API Error",
             details: `[${selectedModel}] ${error.message}`,
@@ -677,9 +724,11 @@ export default function Home({
                 : conv,
             ),
           );
+          snapToActualUsage();
         };
 
         const onChunk = (chunk, type) => {
+          bumpPredictedUsage(chunk.length);
           if (type === "thinking") {
             fullThinking += chunk;
             setStreamingThinking(fullThinking);
@@ -690,6 +739,10 @@ export default function Home({
         };
 
         const onToolCall = (call) => {
+          if (call.arguments && !call.complete) {
+            bumpPredictedUsage(call.arguments.length);
+          }
+
           if (!needsAgentMode) return;
 
           if (call.name && SANDBOX_TOOL_NAMES.includes(call.name)) {
@@ -788,7 +841,7 @@ export default function Home({
           artifactsEnabled,
           tools,
           "auto",
-          needsAgentMode ? onToolCall : null,
+          onToolCall,
           needsWebSearch
             ? (searchSources) => {
                 sources = searchSources;
@@ -796,8 +849,22 @@ export default function Home({
             : null,
           (metricsData) => {
             metrics = metricsData;
-            if (metricsData?.inputTokens) {
-              setContextUsage(metricsData.inputTokens);
+            if (!metricsData) return;
+            lastUsageRef.current = metricsData;
+            predictedOutputTokensRef.current = 0;
+            const total =
+              (metricsData.inputTokens || 0) + (metricsData.outputTokens || 0);
+            if (activeUsageConversationRef.current) {
+              setConversations((prev) =>
+                prev.map((conv) =>
+                  conv.id === activeUsageConversationRef.current
+                    ? { ...conv, contextUsage: total }
+                    : conv,
+                ),
+              );
+            }
+            if (activeConversationRef.current === currentId) {
+              setContextUsage(total);
             }
           },
           maxTokens,

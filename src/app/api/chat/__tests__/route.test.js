@@ -377,6 +377,44 @@ describe("/api/chat POST", () => {
     expect(out).toContain('"cost":0.001');
   });
 
+  it("uses cumulative totalUsage from the finish part and reports reasoning tokens", async () => {
+    const { streamText } = await import("ai");
+    streamText.mockReturnValue({
+      fullStream: (async function* () {
+        yield { type: "text-delta", text: "x" };
+        yield {
+          type: "finish",
+          totalUsage: {
+            promptTokens: 12,
+            completionTokens: 8,
+            outputTokenDetails: { reasoningTokens: 3 },
+          },
+          providerMetadata: {
+            openrouter: { usage: { cost: 0.002 } },
+          },
+        };
+      })(),
+      usage: Promise.resolve({ promptTokens: 99, completionTokens: 99 }),
+    });
+
+    const res = await POST(
+      makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }),
+    );
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    expect(out).toContain('"inputTokens":12');
+    expect(out).toContain('"outputTokens":8');
+    expect(out).toContain('"reasoningTokens":3');
+    expect(out).toContain('"cost":0.002');
+  });
+
   it("emits an error event and closes the stream on failure", async () => {
     const { streamText } = await import("ai");
     streamText.mockReturnValue({
