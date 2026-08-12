@@ -147,7 +147,7 @@ The project uses **Vitest** and **React Testing Library** with jsdom environment
 - **Mocks**: Global mocks in `vitest.setup.jsx` for fetch, localStorage, navigation, theming, animation.
 - **Isolation**: Use `vi.resetModules()` and `vi.useFakeTimers()` for tests relying on stateful module variables.
 - **Sandbox tests** (`src/lib/__tests__/sandbox.test.js`, 21 tests): mock the `e2b` module with a static `vi.mock("e2b", ...)` factory, use static `import * as sandbox from "@/lib/sandbox"`, and reset state in `beforeEach` with `await sandbox.destroyAllSandboxes()` + `vi.clearAllMocks()` + re-setting `Sandbox.create/connect/kill` mock implementations. Do NOT use `vi.resetModules()` with mocked `e2b` — dynamic re-evaluation of a mocked module fails ("Cannot destructure property 'Sandbox'..."). Note `vi.clearAllMocks()` keeps `mockResolvedValue`/`mockImplementation` settings.
-- **Known failures**: 8 `streamChatCompletion` tests in `src/lib/__tests__/api-client.test.js` fail (`describe.sequential` describe block) — pre-existing, unrelated to the sandbox work.
+- **Known failures**: None.
 
 ## Development Workflow
 

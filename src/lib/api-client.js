@@ -239,7 +239,7 @@ export const streamChatCompletion = async (
     }
   };
 
-  doStream();
+  return doStream();
 };
 
 export const generateTitle = async (
