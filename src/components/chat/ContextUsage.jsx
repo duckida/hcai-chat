@@ -7,12 +7,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { formatPrice } from "@/lib/pricing";
 
 function formatNumber(n) {
   return n.toLocaleString();
 }
 
-export default function ContextUsage({ used, max }) {
+export default function ContextUsage({ used, max, totalCost }) {
   const [isOpen, setIsOpen] = useState(false);
 
   if (!max || max <= 0) return null;
@@ -90,6 +91,9 @@ export default function ContextUsage({ used, max }) {
             <span>
               {formatNumber(used)} out of {formatNumber(max)}
             </span>
+            {totalCost != null && totalCost > 0 && (
+              <span>Cost: {formatPrice(totalCost)}</span>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>

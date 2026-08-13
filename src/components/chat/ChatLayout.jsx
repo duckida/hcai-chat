@@ -74,6 +74,7 @@ export default function ChatLayout({
   toolsSupported = true,
   onToolsSupportedMapChange,
   hasE2bKey = false,
+  totalCost = 0,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -695,6 +696,7 @@ export default function ChatLayout({
               <ContextUsage
                 used={contextUsage}
                 max={contextWindowMap[selectedModel] || 0}
+                totalCost={totalCost}
               />
             </div>
           )}

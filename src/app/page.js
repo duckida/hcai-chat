@@ -62,6 +62,7 @@ export default function Home({
   const [toolsSupportedMap, setToolsSupportedMap] = useState({});
   const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
   const [hasE2bKey, setHasE2bKey] = useState(false);
+  const [totalCost, setTotalCost] = useState(0);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -98,6 +99,22 @@ export default function Home({
     }
     return allArtifacts;
   }, [messages]);
+
+  // Derive total cost from persisted messages
+  const computedTotalCost = useMemo(() => {
+    let total = 0;
+    for (const msg of messages) {
+      if (msg.role === "assistant" && msg.metrics?.cost) {
+        total += msg.metrics.cost;
+      }
+    }
+    return total;
+  }, [messages]);
+
+  // Update total cost when messages change
+  useEffect(() => {
+    setTotalCost(computedTotalCost);
+  }, [computedTotalCost]);
 
   // Derive streaming artifact from live streaming content
   const { streamingArtifact } = useMemo(() => {
@@ -865,6 +882,9 @@ export default function Home({
             }
             if (activeConversationRef.current === currentId) {
               setContextUsage(total);
+              if (metricsData.cost != null) {
+                setTotalCost((prev) => prev + metricsData.cost);
+              }
             }
           },
           maxTokens,
@@ -956,6 +976,7 @@ export default function Home({
         onContextWindowMapChange={setContextWindowMap}
         toolsSupported={toolsSupported}
         onToolsSupportedMapChange={setToolsSupportedMap}
+        totalCost={totalCost}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}
