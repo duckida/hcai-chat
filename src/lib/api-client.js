@@ -1,3 +1,5 @@
+import { sanitizeMessages } from "./messages";
+
 const API_KEY_STORAGE_KEY = "hack_club_ai_key";
 const E2B_API_KEY_STORAGE_KEY = "e2b_api_key";
 
@@ -80,7 +82,17 @@ export const streamChatCompletion = async (
     return;
   }
 
-  const body = { model, messages, apiKey, think: !!includeThinking };
+  // Drop any records that would break a request (e.g. assistant error
+  // placeholders saved into history). These stay visible in the UI but must
+  // never be replayed to the model.
+  const cleanMessages = sanitizeMessages(messages);
+
+  const body = {
+    model,
+    messages: cleanMessages,
+    apiKey,
+    think: !!includeThinking,
+  };
   body.artifacts = artifactsEnabled;
   if (maxTokens) body.max_tokens = maxTokens;
   if (agentMode) {

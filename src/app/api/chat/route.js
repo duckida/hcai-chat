@@ -4,6 +4,7 @@ import {
   ARTIFACT_AGENT_MODE_INSTRUCTIONS,
   ARTIFACT_INSTRUCTIONS,
 } from "@/lib/artifacts";
+import { sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
 import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
@@ -326,7 +327,11 @@ export async function POST(req) {
     });
 
     let systemPrompt = `Current date: ${dateStr}. Current time: ${timeStr} UTC.`;
-    const processedMessages = messages.map((msg) => {
+    // Never forward corrupt history records (error placeholders, empty
+    // assistant turns) to the model — belt-and-suspenders on top of the
+    // client-side sanitization.
+    const sanitizedMessages = sanitizeMessages(messages);
+    const processedMessages = sanitizedMessages.map((msg) => {
       if (msg.role === "assistant" && msg.thinking) {
         return {
           ...msg,

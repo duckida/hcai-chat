@@ -133,6 +133,62 @@ describe("streamChatCompletion", () => {
     expect(body.think).toBe(false);
   });
 
+  it("strips error placeholders and empty assistant records from the POSTed messages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const messages = [
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: "",
+        error: { title: "API Error", details: "boom" },
+      },
+      { role: "assistant", content: "" },
+      { role: "user", content: "still here" },
+    ];
+    await streamChatCompletion(messages, TEST_MODEL, vi.fn(), vi.fn());
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "user", content: "still here" },
+    ]);
+  });
+
+  it("uses the sanitized messages for the non-streaming fallback too", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "stream failed" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: "fallback ok" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    const messages = [
+      { role: "user", content: "hi" },
+      {
+        role: "assistant",
+        content: "",
+        error: { title: "API Error", details: "boom" },
+      },
+    ];
+    await streamChatCompletion(messages, TEST_MODEL, onChunk, vi.fn());
+
+    expect(onChunk).toHaveBeenCalledWith("fallback ok", "content");
+    const fallbackBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(fallbackBody.messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
   it("forwards content chunks via onChunk", async () => {
     const lines = [
       'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
