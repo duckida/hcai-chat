@@ -79,10 +79,50 @@ describe("MessageList", () => {
 
   it("renders an assistant message containing HTML artifacts", () => {
     const content = "Here:\n```html\n<div>hi</div>\n```";
-    render(<MessageList messages={[{ role: "assistant", content }]} />);
+    render(
+      <MessageList
+        messages={[{ role: "assistant", content }]}
+        artifactsEnabled={true}
+      />,
+    );
     // The HTML block is removed from visible text
     expect(screen.queryByText("<div>hi</div>")).not.toBeInTheDocument();
     expect(screen.getByText("Here:")).toBeInTheDocument();
+  });
+
+  it("does not strip HTML fences when artifacts are disabled", () => {
+    const content = "Here:\n```html\n<div>hi</div>\n```";
+    render(
+      <MessageList messages={[{ role: "assistant", content }]} />,
+    );
+    // With artifacts off, the raw HTML block (including fences) is shown as text
+    const matcher = (_text, node) =>
+      node.children.length === 0 && node.textContent.includes("```html");
+    expect(screen.getByText(matcher)).toBeInTheDocument();
+  });
+
+  it("renders streaming content with HTML fences as plain text when artifacts are disabled", () => {
+    render(
+      <MessageList
+        messages={[]}
+        streamingContent={"Here:\n```html\n<div>hi</div>"}
+      />,
+    );
+    const matcher = (_text, node) =>
+      node.children.length === 0 && node.textContent.includes("```html");
+    expect(screen.getByText(matcher)).toBeInTheDocument();
+    expect(screen.queryByText("Generating artifact...")).not.toBeInTheDocument();
+  });
+
+  it("shows the generating artifact state only when artifacts are enabled", () => {
+    render(
+      <MessageList
+        messages={[]}
+        streamingContent={"```html\n<div>partial</div>"}
+        artifactsEnabled={true}
+      />,
+    );
+    expect(screen.getByText("Generating artifact...")).toBeInTheDocument();
   });
 
   it("shows the Web Search indicator when webSearchEnabled is set during streaming", () => {

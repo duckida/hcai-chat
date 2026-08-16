@@ -88,8 +88,9 @@ export default function Home({
     activeConversationRef.current = activeConversation;
   }, [activeConversation]);
 
-  // Derive artifacts from persisted messages
+  // Derive artifacts from persisted messages (only when artifacts mode is on)
   const messageArtifacts = useMemo(() => {
+    if (!artifactsEnabled) return [];
     const allArtifacts = [];
     for (const msg of messages) {
       if (msg.role === "assistant") {
@@ -98,7 +99,7 @@ export default function Home({
       }
     }
     return allArtifacts;
-  }, [messages]);
+  }, [messages, artifactsEnabled]);
 
   // Derive total cost from persisted messages
   const computedTotalCost = useMemo(() => {
@@ -116,11 +117,13 @@ export default function Home({
     setTotalCost(computedTotalCost);
   }, [computedTotalCost]);
 
-  // Derive streaming artifact from live streaming content
+  // Derive streaming artifact from live streaming content (only when artifacts
+  // mode is on — otherwise HTML fences are treated as plain chat text)
   const { streamingArtifact } = useMemo(() => {
-    if (!streamingContent) return { streamingArtifact: null };
+    if (!artifactsEnabled || !streamingContent)
+      return { streamingArtifact: null };
     return extractHtmlArtifacts(streamingContent);
-  }, [streamingContent]);
+  }, [streamingContent, artifactsEnabled]);
 
   // Save artifactPanelOpen to active conversation
   const saveArtifactPanelOpen = useCallback(
@@ -998,6 +1001,7 @@ export default function Home({
             thinkingEnabled={thinkingEnabled}
             webSearchEnabled={webSearchEnabled}
             agentModeEnabled={agentModeEnabled}
+            artifactsEnabled={artifactsEnabled}
             streamingSandboxTools={streamingSandboxTools}
             showThinking={showThinking}
             showSandboxCode={showSandboxCode}

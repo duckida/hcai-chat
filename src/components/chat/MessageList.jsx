@@ -512,6 +512,7 @@ const ErrorMessage = ({ error }) => {
 const Message = memo(function Message({
   message,
   isStreaming = false,
+  artifactsEnabled = false,
   showThinking = false,
   showSandboxCode = true,
   showSandboxOutput = true,
@@ -523,10 +524,12 @@ const Message = memo(function Message({
   const attachments = message._files;
   const text = attachments ? getUserText(content) : getMessageText(content);
 
-  const { cleanedText, artifacts } = useMemo(
-    () => extractHtmlArtifacts(text),
-    [text],
-  );
+  const { cleanedText, artifacts } = useMemo(() => {
+    // Only strip ```html fences into artifacts when artifacts mode is on;
+    // otherwise render them as plain chat text.
+    if (!artifactsEnabled) return { cleanedText: text, artifacts: [] };
+    return extractHtmlArtifacts(text);
+  }, [text, artifactsEnabled]);
   const renderedText = useMemo(
     () => normalizeLatexDelimiters(cleanedText),
     [cleanedText],
@@ -769,6 +772,7 @@ const StreamingMessage = memo(function StreamingMessage({
   thinkingEnabled,
   webSearchEnabled,
   agentModeEnabled,
+  artifactsEnabled,
   streamingSandboxTools,
   showSandboxCode,
   showSandboxOutput,
@@ -776,6 +780,14 @@ const StreamingMessage = memo(function StreamingMessage({
 }) {
   const streamdownPlugins = useStreamdownPlugins();
   const { cleanedText, hasArtifact } = useMemo(() => {
+    // Only treat ```html fences as artifacts when artifacts mode is on;
+    // otherwise stream them as plain chat text.
+    if (!artifactsEnabled) {
+      return {
+        cleanedText: normalizeLatexDelimiters(streamingContent || ""),
+        hasArtifact: false,
+      };
+    }
     const {
       cleanedText: cleaned,
       artifacts,
@@ -785,7 +797,7 @@ const StreamingMessage = memo(function StreamingMessage({
       cleanedText: normalizeLatexDelimiters(cleaned),
       hasArtifact: artifacts.length > 0 || !!streamingArtifact,
     };
-  }, [streamingContent]);
+  }, [streamingContent, artifactsEnabled]);
 
   return (
     <motion.div
@@ -878,6 +890,7 @@ export default function MessageList({
   thinkingEnabled,
   webSearchEnabled,
   agentModeEnabled = false,
+  artifactsEnabled = false,
   streamingSandboxTools = [],
   showThinking = false,
   showSandboxCode = true,
@@ -980,6 +993,7 @@ export default function MessageList({
                   key={`${message.role}-${message.id || index}`}
                   message={message}
                   isStreaming={false}
+                  artifactsEnabled={artifactsEnabled}
                   showThinking={showThinking}
                   showSandboxCode={showSandboxCode}
                   showSandboxOutput={showSandboxOutput}
@@ -995,6 +1009,7 @@ export default function MessageList({
                 thinkingEnabled={thinkingEnabled}
                 webSearchEnabled={webSearchEnabled}
                 agentModeEnabled={agentModeEnabled}
+                artifactsEnabled={artifactsEnabled}
                 streamingSandboxTools={streamingSandboxTools}
                 showSandboxCode={showSandboxCode}
                 showSandboxOutput={showSandboxOutput}
