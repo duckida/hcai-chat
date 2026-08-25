@@ -1025,8 +1025,6 @@ export default function Home({
         toolsSupported={toolsSupported}
         onToolsSupportedMapChange={setToolsSupportedMap}
         totalCost={totalCost}
-        onImport={handleImport}
-        onExportAll={handleExportAll}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}
