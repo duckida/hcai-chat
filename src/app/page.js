@@ -5,6 +5,7 @@ import { Toaster, toast } from "sonner";
 import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
+import ImportDialog from "@/components/chat/ImportDialog";
 import MessageList from "@/components/chat/MessageList";
 import SettingsModal from "@/components/chat/SettingsModal";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,11 @@ import {
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
 import { getAllConversations, saveAllConversations } from "@/lib/db";
+import {
+  exportAllToZip,
+  generateExportFilename,
+  triggerDownload,
+} from "@/lib/import-export";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 export default function Home({
@@ -63,6 +69,7 @@ export default function Home({
   const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
   const [hasE2bKey, setHasE2bKey] = useState(false);
   const [totalCost, setTotalCost] = useState(0);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
 
   const isFirstMount = useRef(true);
   const isStreamingComplete = useRef(false);
@@ -457,6 +464,44 @@ export default function Home({
         conv.id === id ? { ...conv, title: newTitle } : conv,
       ),
     );
+  }, []);
+
+  const handleImport = useCallback(() => {
+    setIsImportDialogOpen(true);
+  }, []);
+
+  const handleExportAll = useCallback(async () => {
+    try {
+      const blob = await exportAllToZip({
+        includeChats: true,
+        includeSettings: true,
+      });
+      triggerDownload(blob, generateExportFilename());
+      toast.success("Export complete");
+    } catch (error) {
+      toast.error(`Export failed: ${error.message || "Unknown error"}`);
+    }
+  }, []);
+
+  const handleImportComplete = useCallback(async (result) => {
+    toast.success(
+      `Imported ${result.chats.imported} conversation(s)` +
+        (result.chats.replaced > 0
+          ? `, replaced ${result.chats.replaced}`
+          : "") +
+        (result.settings ? " (settings imported)" : ""),
+    );
+    // Refresh conversations from DB
+    try {
+      const convs = await getAllConversations();
+      setConversations(convs);
+      if (convs.length > 0 && !activeConversationRef.current) {
+        setActiveConversation(convs[0].id);
+        setMessages(convs[0].messages);
+      }
+    } catch (error) {
+      console.error("Failed to refresh conversations after import:", error);
+    }
   }, []);
 
   const handleSendMessage = useCallback(
@@ -980,6 +1025,8 @@ export default function Home({
         toolsSupported={toolsSupported}
         onToolsSupportedMapChange={setToolsSupportedMap}
         totalCost={totalCost}
+        onImport={handleImport}
+        onExportAll={handleExportAll}
         rightPanel={
           <ArtifactPanel
             artifacts={messageArtifacts}
@@ -1033,6 +1080,13 @@ export default function Home({
         onShowMetricsChange={setShowMetrics}
         maxTokens={maxTokens}
         onMaxTokensChange={setMaxTokens}
+        onImport={handleImport}
+        onExportAll={handleExportAll}
+      />
+      <ImportDialog
+        isOpen={isImportDialogOpen}
+        onClose={() => setIsImportDialogOpen(false)}
+        onImportComplete={handleImportComplete}
       />
       <Dialog open={isBalanceModalOpen} onOpenChange={setIsBalanceModalOpen}>
         <DialogContent showCloseButton={false}>

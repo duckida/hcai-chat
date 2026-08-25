@@ -7,6 +7,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Cloud,
+  Download,
   Globe,
   Key,
   Menu,
@@ -15,6 +16,7 @@ import {
   Puzzle,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -75,6 +77,8 @@ export default function ChatLayout({
   onToolsSupportedMapChange,
   hasE2bKey = false,
   totalCost = 0,
+  onImport,
+  onExportAll,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -291,6 +295,31 @@ export default function ChatLayout({
         >
           <Plus className="w-4 h-4" />
           <span className="text-[14px]">New Chat</span>
+        </Button>
+      </div>
+
+      <div className="px-3 mb-2 flex gap-2">
+        <Button
+          onClick={() => {
+            onImport?.();
+            setMobileSheetOpen(false);
+          }}
+          className="flex-1 justify-start gap-2 bg-background hover:bg-accent text-foreground border-none shadow-sm h-9 px-3 rounded-lg transition-all font-medium text-[13px]"
+          variant="outline"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          <span>Import</span>
+        </Button>
+        <Button
+          onClick={() => {
+            onExportAll?.();
+            setMobileSheetOpen(false);
+          }}
+          className="flex-1 justify-start gap-2 bg-background hover:bg-accent text-foreground border-none shadow-sm h-9 px-3 rounded-lg transition-all font-medium text-[13px]"
+          variant="outline"
+        >
+          <Download className="w-3.5 h-3.5" />
+          <span>Export</span>
         </Button>
       </div>
 
