@@ -3,6 +3,7 @@ import { getAllConversations, putConversation } from "./db";
 
 const EXPORT_FORMAT = "hcai-chat-export";
 const EXPORT_FORMAT_VERSION = 1;
+const LIBRE_EXPORT_FORMAT = "libre-assistant-export";
 const CHATS_DIR = "chats";
 const MANIFEST_FILE = "manifest.json";
 const SETTINGS_FILE = "settings.json";
@@ -450,7 +451,27 @@ export function parseImportArchive(buffer) {
     }
   }
 
-  if (manifest && manifest.format === EXPORT_FORMAT) {
+  if (manifest && manifest.format === LIBRE_EXPORT_FORMAT) {
+    // LibreAssistant export — parse chat files, skip settings (incompatible)
+    if (manifest.includes?.chats) {
+      for (const [name, content] of Object.entries(records)) {
+        if (name.startsWith(`${CHATS_DIR}/`) && name.endsWith(".json")) {
+          try {
+            const raw = JSON.parse(content);
+            const normalized = normalizeLibreChat(raw);
+            if (normalized && normalized.messages.length > 0) {
+              chats.push(normalized);
+            }
+          } catch {
+            console.warn(
+              `[importExport] Could not parse Libre chat file: ${name}`,
+            );
+          }
+        }
+      }
+    }
+    // Settings intentionally skipped — LibreAssistant settings are incompatible
+  } else if (manifest && manifest.format === EXPORT_FORMAT) {
     const manifestValidation = validateManifest(manifest);
     if (!manifestValidation.valid) throw new Error(manifestValidation.error);
 
@@ -484,9 +505,8 @@ export function parseImportArchive(buffer) {
         }
       }
     }
-  }
-
-  if (!manifest || manifest.format !== EXPORT_FORMAT) {
+  } else {
+    // No recognized manifest — try fallback detection
     if (records[SINGLE_CHAT_FILE]) {
       try {
         const chat = JSON.parse(records[SINGLE_CHAT_FILE]);

@@ -234,7 +234,10 @@ describe("import-export", () => {
 
   describe("export/import roundtrip", () => {
     it("exportAllToZip produces a blob", async () => {
-      const blob = await exportAllToZip({ includeChats: false, includeSettings: false });
+      const blob = await exportAllToZip({
+        includeChats: false,
+        includeSettings: false,
+      });
       expect(blob).toBeInstanceOf(Blob);
       expect(blob.type).toBe("application/zip");
       expect(blob.size).toBeGreaterThan(0);
@@ -251,7 +254,7 @@ describe("import-export", () => {
       expect(blob.size).toBeGreaterThan(0);
     });
 
-    it("parseImportArchive parses a valid zip", async () => {
+    it("parseImportArchive parses a valid HCAI zip", async () => {
       const conv = {
         id: "import-test",
         title: "Import Test",
@@ -263,6 +266,117 @@ describe("import-export", () => {
       expect(archive.chats).toHaveLength(1);
       expect(archive.chats[0].id).toBe("import-test");
       expect(archive.manifest).toBeTruthy();
+    });
+  });
+
+  describe("LibreAssistant format parsing", () => {
+    it("parses LibreAssistant zip with chats", async () => {
+      const { zipSync } = await import("fflate");
+      const libreChat = {
+        id: "libre-123",
+        title: "Libre Chat",
+        lastUpdated: "2025-06-01T00:00:00Z",
+        messages: [
+          {
+            id: "msg1",
+            role: "user",
+            parts: [{ type: "content", content: "Hello from Libre" }],
+          },
+        ],
+      };
+      const manifest = {
+        format: "libre-assistant-export",
+        formatVersion: 1,
+        includes: { chats: true, settings: true },
+        counts: { chats: 1 },
+      };
+      const records = {
+        "manifest.json": JSON.stringify(manifest),
+        "chats/libre-123.json": JSON.stringify(libreChat),
+        "settings.json": JSON.stringify({ notepad_enabled: true }),
+      };
+      const input = {};
+      for (const [k, v] of Object.entries(records)) {
+        input[k] = new TextEncoder().encode(v);
+      }
+      const buf = zipSync(input, { level: 0 });
+      const archive = parseImportArchive(new Uint8Array(buf));
+
+      expect(archive.chats).toHaveLength(1);
+      expect(archive.chats[0].id).toBe("libre-123");
+      expect(archive.chats[0].title).toBe("Libre Chat");
+      expect(archive.chats[0].messages[0].content).toBe("Hello from Libre");
+      expect(archive.settings).toBeNull();
+    });
+
+    it("normalizes LibreAssistant parts-based messages", async () => {
+      const { zipSync } = await import("fflate");
+      const libreChat = {
+        id: "libre-parts",
+        title: "Parts Chat",
+        lastUpdated: "2025-06-01T00:00:00Z",
+        messages: [
+          {
+            id: "msg1",
+            role: "user",
+            parts: [{ type: "content", content: "Question" }],
+          },
+          {
+            id: "msg2",
+            role: "assistant",
+            parts: [
+              { type: "reasoning", content: "Thinking..." },
+              { type: "content", content: "Answer" },
+            ],
+          },
+        ],
+      };
+      const manifest = {
+        format: "libre-assistant-export",
+        formatVersion: 1,
+        includes: { chats: true },
+        counts: { chats: 1 },
+      };
+      const records = {
+        "manifest.json": JSON.stringify(manifest),
+        "chats/libre-parts.json": JSON.stringify(libreChat),
+      };
+      const input = {};
+      for (const [k, v] of Object.entries(records)) {
+        input[k] = new TextEncoder().encode(v);
+      }
+      const buf = zipSync(input, { level: 0 });
+      const archive = parseImportArchive(new Uint8Array(buf));
+
+      expect(archive.chats[0].messages).toHaveLength(2);
+      expect(archive.chats[0].messages[1].content).toBe("Answer");
+      expect(archive.chats[0].messages[1].thinking).toBe("Thinking...");
+    });
+
+    it("skips LibreAssistant settings (incompatible format)", async () => {
+      const { zipSync } = await import("fflate");
+      const manifest = {
+        format: "libre-assistant-export",
+        formatVersion: 1,
+        includes: { chats: true, settings: true },
+        counts: { chats: 0 },
+      };
+      const records = {
+        "manifest.json": JSON.stringify(manifest),
+        "settings.json": JSON.stringify({
+          notepad_enabled: true,
+          custom_api_key: "sk-test",
+        }),
+      };
+      const input = {};
+      for (const [k, v] of Object.entries(records)) {
+        input[k] = new TextEncoder().encode(v);
+      }
+      const buf = zipSync(input, { level: 0 });
+      const archive = parseImportArchive(new Uint8Array(buf));
+
+      expect(archive.settings).toBeNull();
+      expect(archive.chats).toHaveLength(0);
     });
   });
 });
