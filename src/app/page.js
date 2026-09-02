@@ -1036,7 +1036,7 @@ export default function Home({
           />
         }
       >
-        <div className="flex flex-col h-full bg-background relative min-h-0">
+        <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList
             messages={messages}
             isLoading={isLoading}

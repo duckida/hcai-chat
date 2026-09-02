@@ -201,12 +201,15 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
+    box-sizing: border-box;
   }
   html {
     @apply font-sans;
+    overflow-x: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    overflow-x: hidden;
   }
 }
 
@@ -255,14 +258,34 @@ li > ol {
 }
 
 /* Prevent Streamdown content from causing horizontal page overflow on mobile */
+[data-streamdown] {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
 [data-streamdown="table-wrapper"] {
   max-width: 100%;
+  overflow-x: auto;
 }
-[data-streamdown="code-block"] {
+[data-streamdown="table"] {
   max-width: 100%;
 }
-[data-streamdown="code-block-body"] {
+[data-streamdown="code-block"],
+[data-streamdown="code-block-body"],
+[data-streamdown="mermaid-block"] {
   max-width: 100%;
+  overflow-x: auto;
+}
+[data-streamdown="image"] {
+  max-width: 100%;
+  height: auto;
+}
+[data-streamdown="image-wrapper"] {
+  max-width: 100%;
+}
+[data-streamdown="table-cell"],
+[data-streamdown="table-header-cell"] {
+  max-width: 0;
+  overflow-wrap: break-word;
 }
 
 /* Prevent code overflow in Streamdown / artifact panels */

@@ -702,7 +702,7 @@ export default function ChatLayout({
           )}
         </header>
 
-        <main className="flex-1 overflow-hidden relative flex flex-col">
+        <main className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
           {children}
         </main>
       </div>

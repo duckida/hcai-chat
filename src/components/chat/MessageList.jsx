@@ -958,13 +958,13 @@ export default function MessageList({
     streamingSandboxTools.length > 0;
 
   return (
-    <div className="flex-1 h-full relative min-h-0">
+    <div className="flex-1 h-full relative min-h-0 min-w-0">
       <ScrollArea
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full selection:bg-accent"
+        className="h-full min-w-0 selection:bg-accent"
       >
-        <div className="py-4">
+        <div className="py-4 min-w-0">
           {!hasContent ? (
             <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
               <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-foreground text-background flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
