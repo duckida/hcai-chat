@@ -489,7 +489,7 @@ const ErrorMessage = ({ error }) => {
         <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-red-500 text-white shadow-lg">
           <AlertTriangle className="h-4.5 w-4.5" />
         </div>
-        <div className="flex-1 space-y-4 overflow-hidden pt-1">
+        <div className="flex-1 min-w-0 space-y-4 overflow-hidden pt-1">
           <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400" />
@@ -565,7 +565,7 @@ const Message = memo(function Message({
             <User className="h-4.5 w-4.5" />
           )}
         </div>
-        <div className="flex-1 space-y-4 overflow-hidden pt-1">
+        <div className="flex-1 min-w-0 space-y-4 overflow-hidden pt-1">
           {isAssistant && (
             <ThinkingBlock
               thinking={message.thinking}
@@ -810,7 +810,7 @@ const StreamingMessage = memo(function StreamingMessage({
         <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
           <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
         </div>
-        <div className="flex-1 space-y-4 overflow-hidden pt-1">
+        <div className="flex-1 min-w-0 space-y-4 overflow-hidden pt-1">
           {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
           {agentModeEnabled && <AgentIndicator />}
           {streamingSandboxTools?.map((tool) => (
@@ -965,93 +965,93 @@ export default function MessageList({
         className="h-full selection:bg-accent"
       >
         <div className="py-4">
-        {!hasContent ? (
-          <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-foreground text-background flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
-              <Sparkles className="h-7 w-7 sm:h-8 sm:w-8" />
+          {!hasContent ? (
+            <div className="flex flex-col items-center justify-center min-h-[65vh] text-center opacity-40 select-none px-4 sm:px-6">
+              <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-[2rem] bg-foreground text-background flex items-center justify-center shadow-2xl mb-6 sm:mb-8 transform hover:scale-110 transition-transform duration-500">
+                <Sparkles className="h-7 w-7 sm:h-8 sm:w-8" />
+              </div>
+              <h1 className="text-xl sm:text-2xl font-[800] tracking-[-0.03em] text-foreground mb-2 uppercase">
+                Hack Club AI
+              </h1>
+              <p className="text-[12px] sm:text-[13px] font-medium text-muted-foreground max-w-[260px] sm:max-w-[280px] leading-relaxed">
+                What do you need help with?
+              </p>
             </div>
-            <h1 className="text-xl sm:text-2xl font-[800] tracking-[-0.03em] text-foreground mb-2 uppercase">
-              Hack Club AI
-            </h1>
-            <p className="text-[12px] sm:text-[13px] font-medium text-muted-foreground max-w-[260px] sm:max-w-[280px] leading-relaxed">
-              What do you need help with?
-            </p>
-          </div>
-        ) : (
-          <>
-            {activeMessages.map((message, index) => {
-              if (message.error) {
+          ) : (
+            <>
+              {activeMessages.map((message, index) => {
+                if (message.error) {
+                  return (
+                    <ErrorMessage
+                      key={`error-${message.id || index}`}
+                      error={message.error}
+                    />
+                  );
+                }
                 return (
-                  <ErrorMessage
-                    key={`error-${message.id || index}`}
-                    error={message.error}
+                  <Message
+                    key={`${message.role}-${message.id || index}`}
+                    message={message}
+                    isStreaming={false}
+                    artifactsEnabled={artifactsEnabled}
+                    showThinking={showThinking}
+                    showSandboxCode={showSandboxCode}
+                    showSandboxOutput={showSandboxOutput}
+                    showMetrics={showMetrics}
                   />
                 );
-              }
-              return (
-                <Message
-                  key={`${message.role}-${message.id || index}`}
-                  message={message}
-                  isStreaming={false}
+              })}
+
+              {(deferredStreamingContent || deferredStreamingThinking) && (
+                <StreamingMessage
+                  streamingContent={deferredStreamingContent}
+                  streamingThinking={deferredStreamingThinking}
+                  thinkingEnabled={thinkingEnabled}
+                  webSearchEnabled={webSearchEnabled}
+                  agentModeEnabled={agentModeEnabled}
                   artifactsEnabled={artifactsEnabled}
-                  showThinking={showThinking}
+                  streamingSandboxTools={streamingSandboxTools}
                   showSandboxCode={showSandboxCode}
                   showSandboxOutput={showSandboxOutput}
-                  showMetrics={showMetrics}
+                  showThinking={showThinking}
                 />
-              );
-            })}
-
-            {(deferredStreamingContent || deferredStreamingThinking) && (
-              <StreamingMessage
-                streamingContent={deferredStreamingContent}
-                streamingThinking={deferredStreamingThinking}
-                thinkingEnabled={thinkingEnabled}
-                webSearchEnabled={webSearchEnabled}
-                agentModeEnabled={agentModeEnabled}
-                artifactsEnabled={artifactsEnabled}
-                streamingSandboxTools={streamingSandboxTools}
-                showSandboxCode={showSandboxCode}
-                showSandboxOutput={showSandboxOutput}
-                showThinking={showThinking}
-              />
-            )}
-
-            {isLoading &&
-              !streamingContent &&
-              !streamingThinking &&
-              thinkingEnabled && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="w-full"
-                >
-                  <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
-                    <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
-                      <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
-                    </div>
-                    <div className="flex-1 space-y-4 overflow-hidden pt-1">
-                      <ThinkingBlock
-                        thinking=""
-                        isStreaming={true}
-                        defaultView={showThinking ? "open" : "closed"}
-                      />
-                    </div>
-                  </div>
-                </motion.div>
               )}
 
-            <CompletedSandboxFiles
-              streamingSandboxTools={streamingSandboxTools}
-              isLoading={isLoading}
-              streamingContent={streamingContent}
-              streamingThinking={streamingThinking}
-            />
-          </>
-        )}
-      </div>
-    </ScrollArea>
+              {isLoading &&
+                !streamingContent &&
+                !streamingThinking &&
+                thinkingEnabled && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="w-full"
+                  >
+                    <div className="max-w-[700px] mx-auto px-4 sm:px-6 py-5 sm:py-8 flex gap-3 sm:gap-5 md:gap-7">
+                      <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-xl shrink-0 flex items-center justify-center bg-primary text-primary-foreground shadow-lg">
+                        <Sparkles className="h-4 w-4 sm:h-4.5 sm:w-4.5" />
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-4 overflow-hidden pt-1">
+                        <ThinkingBlock
+                          thinking=""
+                          isStreaming={true}
+                          defaultView={showThinking ? "open" : "closed"}
+                        />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
+              <CompletedSandboxFiles
+                streamingSandboxTools={streamingSandboxTools}
+                isLoading={isLoading}
+                streamingContent={streamingContent}
+                streamingThinking={streamingThinking}
+              />
+            </>
+          )}
+        </div>
+      </ScrollArea>
       {userScrolledAway && isStreaming && (
         <button
           onClick={() => {

@@ -254,6 +254,17 @@ li > ol {
   opacity: 0.5;
 }
 
+/* Prevent Streamdown content from causing horizontal page overflow on mobile */
+[data-streamdown="table-wrapper"] {
+  max-width: 100%;
+}
+[data-streamdown="code-block"] {
+  max-width: 100%;
+}
+[data-streamdown="code-block-body"] {
+  max-width: 100%;
+}
+
 /* Prevent code overflow in Streamdown / artifact panels */
 .artifact-code pre {
   overflow-x: auto;
