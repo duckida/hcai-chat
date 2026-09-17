@@ -177,6 +177,7 @@ export default function Home({
       if (convs.length > 0 && isFirstMount.current) {
         setActiveConversation(convs[0].id);
         setMessages(convs[0].messages);
+        messagesRef.current = convs[0].messages;
         setArtifactPanelOpen(convs[0].artifactPanelOpen ?? false);
         if (convs[0].model) {
           setSelectedModel(convs[0].model);
@@ -406,6 +407,7 @@ export default function Home({
     setConversations((prev) => [newConversation, ...prev]);
     setActiveConversation(newId);
     setMessages([]);
+    messagesRef.current = [];
     setStreamingContent("");
     setStreamingThinking("");
     setStreamingError(null);
@@ -421,6 +423,7 @@ export default function Home({
       setActiveConversation(id);
       const conversation = conversations.find((c) => c.id === id);
       setMessages(conversation?.messages || []);
+      messagesRef.current = conversation?.messages || [];
       setArtifactPanelOpen(conversation?.artifactPanelOpen ?? false);
       if (conversation?.model) {
         setSelectedModel(conversation.model);
