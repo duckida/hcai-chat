@@ -128,13 +128,17 @@ export const streamChatCompletion = async (
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
-
-      const processLine = (line) => {
-        if (!line.startsWith("data: ")) return;
-
-        const data = line.slice(6);
+      // SSE frames a single event with one or more "data:" lines followed by
+      // a blank line. Splitting on "\n" instead of "\n\n" breaks if a data
+      // payload contains an embedded newline, and joining the leftover buffer
+      // with trim() on stream end silently discards bytes cut mid-JSON by a
+      // dropped connection — the "response doesn't finish" symptom. Use
+      // proper blank-line event framing instead.
+      const dispatchFrame = (raw) => {
+        const trimmed = raw.trim();
+        if (!trimmed.startsWith("data: ")) return;
+        const data = trimmed.slice(6);
         if (data === "[DONE]") return;
-
         try {
           const parsed = JSON.parse(data);
 
@@ -186,27 +190,48 @@ export const streamChatCompletion = async (
             }
           }
         } catch (_error) {
-          // Ignore malformed or partial lines until more stream data arrives.
+          // Ignore malformed or partial frames until more stream data arrives.
         }
+      };
+
+      // Split on blank-line event boundaries. A frame is only complete once we
+      // hit "\n\n" (or "\r\n\r\n"), so trailing partial data stays in the
+      // buffer until the next read — nothing is silently dropped on EOF.
+      const flushFrames = () => {
+        let frameStart = 0;
+        let idx = 0;
+        while (idx < buffer.length) {
+          if (buffer[idx] === "\n" && buffer[idx + 1] === "\n") {
+            const raw = buffer.slice(frameStart, idx);
+            frameStart = idx + 2;
+            dispatchFrame(raw.trim());
+            idx += 2;
+            continue;
+          }
+          if (buffer[idx] === "\r") {
+            idx++;
+            continue;
+          }
+          idx++;
+        }
+        buffer = buffer.slice(frameStart);
       };
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) {
           buffer += decoder.decode(undefined);
-          const remaining = buffer.trim();
-          if (remaining) processLine(remaining);
+          // Process any final complete frame that arrived without a trailing
+          // blank line. A genuinely partial frame (mid-JSON cut by a dropped
+          // connection) cannot be salvaged — skip it so we still complete the
+          // message with what we have rather than hanging.
+          if (buffer) dispatchFrame(buffer.trim());
           await onComplete?.();
           break;
         }
 
         buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          processLine(line.trim());
-        }
+        flushFrames();
       }
     } catch (error) {
       // If streaming fails (e.g. QUIC protocol error), fall back to non-streaming

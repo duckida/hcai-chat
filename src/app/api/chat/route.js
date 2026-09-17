@@ -267,12 +267,12 @@ function validateRequest(body) {
     if (
       typeof max_tokens !== "number" ||
       max_tokens < 1 ||
-      max_tokens > 65536
+      max_tokens > 1048576
     ) {
       return {
         valid: false,
         status: 400,
-        error: "max_tokens must be between 1 and 65536",
+        error: "max_tokens must be between 1 and 1048576",
       };
     }
   }

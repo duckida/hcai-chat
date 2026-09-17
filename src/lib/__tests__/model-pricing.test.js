@@ -111,6 +111,25 @@ describe("getModelPricingMap", () => {
   });
 });
 
+describe("isModelFree", () => {
+  it("returns true when both input and output pricing are zero", async () => {
+    const { isModelFree } = await import("../model-pricing");
+    expect(isModelFree({ input: 0, output: 0 })).toBe(true);
+  });
+
+  it("returns false when either pricing value is non-zero", async () => {
+    const { isModelFree } = await import("../model-pricing");
+    expect(isModelFree({ input: 0, output: 0.001 })).toBe(false);
+    expect(isModelFree({ input: 0.001, output: 0 })).toBe(false);
+  });
+
+  it("returns false when pricing is unavailable", async () => {
+    const { isModelFree } = await import("../model-pricing");
+    expect(isModelFree(null)).toBe(false);
+    expect(isModelFree(undefined)).toBe(false);
+  });
+});
+
 describe("calcApiCost", () => {
   it("returns null when pricing is null", async () => {
     const { calcApiCost } = await import("../model-pricing");

@@ -31,6 +31,7 @@ import {
   generateExportFilename,
   triggerDownload,
 } from "@/lib/import-export";
+import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 export default function Home({
@@ -249,12 +250,23 @@ export default function Home({
   }, [initialSearchEnabled]);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
-        const res = await fetch("/api/balance");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (
+        const [balanceResponse, pricingMap] = await Promise.all([
+          fetch("/api/balance"),
+          getModelPricingMap(),
+        ]);
+        if (!balanceResponse.ok || cancelled) return;
+
+        const data = await balanceResponse.json();
+        const isFreeModel = isModelFree(pricingMap[selectedModel]);
+        if (cancelled) return;
+
+        if (isFreeModel) {
+          setIsBalanceModalOpen(false);
+        } else if (
           typeof data?.balanceRemaining === "number" &&
           data.balanceRemaining < 0
         ) {
@@ -262,7 +274,11 @@ export default function Home({
         }
       } catch {}
     })();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedModel]);
 
   const saveTimerRef = useRef(null);
 
@@ -720,11 +736,38 @@ export default function Home({
           );
         };
 
+        // The conversation may have been removed (deleted) or the user may
+        // have started a new chat while this stream was still running. Apply
+        // assistant output to the owning conversation by id against the
+        // latest state instead of a stale render snapshot.
+        const commitMessages = (extraMessage) => {
+          const finalMessages = extraMessage
+            ? [...updatedMessages, extraMessage]
+            : updatedMessages;
+          setMessages(finalMessages);
+          setConversations((prev) =>
+            prev.some((conv) => conv.id === currentId)
+              ? prev.map((conv) =>
+                  conv.id === currentId
+                    ? { ...conv, messages: finalMessages }
+                    : conv,
+                )
+              : prev,
+          );
+          return finalMessages;
+        };
+
         const makeOnComplete = (includeSources) => async () => {
           if (isStreamingComplete.current) return;
           isStreamingComplete.current = true;
 
-          if (!fullResponse && !fullThinking) {
+          // Use the live accumulators, not a render snapshot: the final
+          // deltas must never be dropped just because the component has not
+          // re-rendered since the last chunk arrived.
+          const finalContent = fullResponse;
+          const finalThinking = fullThinking;
+
+          if (!finalContent && !finalThinking) {
             const errorMsg = {
               title: "API Error",
               details: `No response received from model "${selectedModel}". The model may be overloaded or unavailable.`,
@@ -735,25 +778,17 @@ export default function Home({
               content: "",
               error: errorMsg,
             };
-            const finalMessages = [...updatedMessages, errorMessage];
             setStreamingContent("");
             setStreamingThinking("");
-            setMessages(finalMessages);
             setIsLoading(false);
-            setConversations((prev) =>
-              prev.map((conv) =>
-                conv.id === currentId
-                  ? { ...conv, messages: finalMessages }
-                  : conv,
-              ),
-            );
+            commitMessages(errorMessage);
             return;
           }
 
           const assistantMessage = {
             role: "assistant",
-            content: fullResponse,
-            thinking: fullThinking || undefined,
+            content: finalContent,
+            thinking: finalThinking || undefined,
             ...(includeSources
               ? {
                   sources: sources.length > 0 ? sources : undefined,
@@ -763,12 +798,11 @@ export default function Home({
             ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
             metrics,
           };
-          const finalMessages = [...updatedMessages, assistantMessage];
 
           setStreamingContent("");
           setStreamingThinking("");
-          setMessages(finalMessages);
           setIsLoading(false);
+          const finalMessages = commitMessages(assistantMessage);
 
           let titleUpdate = {};
           const currentConversation = conversationsRef.current.find(

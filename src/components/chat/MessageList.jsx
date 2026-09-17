@@ -904,6 +904,37 @@ export default function MessageList({
   const deferredStreamingContent = useDeferredValue(streamingContent);
   const deferredStreamingThinking = useDeferredValue(streamingThinking);
 
+  // A deferred value can lag behind the real one by a render. When a stream
+  // ends we clear the live buffers, so a still-lagging deferred value would
+  // momentarily render stale text and drop the final deltas — the visible
+  // "response cuts off" symptom. Latch the last non-empty values so the tail
+  // is never discarded while the persisted message takes over.
+  const lastContentRef = useRef("");
+  const lastThinkingRef = useRef("");
+  if (streamingContent) lastContentRef.current = streamingContent;
+  if (streamingThinking) lastThinkingRef.current = streamingThinking;
+
+  const settledStreamingContent = deferredStreamingContent ?? "";
+  const settledStreamingThinking = deferredStreamingThinking ?? "";
+
+  const hasLiveStream = !!(streamingContent || streamingThinking || isLoading);
+
+  // Once loading has stopped, keep showing the latched tail only until the
+  // persisted assistant message is present, then let the message list own it.
+  const lastMessage = messages?.[messages.length - 1];
+  const tailAlreadyPersisted =
+    !isLoading &&
+    lastMessage?.role === "assistant" &&
+    !!lastMessage?.content &&
+    lastMessage.content === lastContentRef.current;
+
+  const renderedStreamingContent =
+    settledStreamingContent ||
+    (hasLiveStream || tailAlreadyPersisted ? "" : lastContentRef.current);
+  const renderedStreamingThinking =
+    settledStreamingThinking ||
+    (hasLiveStream || tailAlreadyPersisted ? "" : lastThinkingRef.current);
+
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
     const { scrollHeight, scrollTop, clientHeight } = scrollRef.current;
@@ -1002,10 +1033,10 @@ export default function MessageList({
                 );
               })}
 
-              {(deferredStreamingContent || deferredStreamingThinking) && (
+              {(renderedStreamingContent || renderedStreamingThinking) && (
                 <StreamingMessage
-                  streamingContent={deferredStreamingContent}
-                  streamingThinking={deferredStreamingThinking}
+                  streamingContent={renderedStreamingContent}
+                  streamingThinking={renderedStreamingThinking}
                   thinkingEnabled={thinkingEnabled}
                   webSearchEnabled={webSearchEnabled}
                   agentModeEnabled={agentModeEnabled}
@@ -1054,6 +1085,7 @@ export default function MessageList({
       </ScrollArea>
       {userScrolledAway && isStreaming && (
         <button
+          type="button"
           onClick={() => {
             scrollRef.current?.scrollToBottom();
             setUserScrolledAway(false);

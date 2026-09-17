@@ -37,3 +37,8 @@ export function calcApiCost(pricing, inputTokens, outputTokens) {
   const total = inputCost + outputCost;
   return Number.isFinite(total) ? total : null;
 }
+
+export function isModelFree(pricing) {
+  if (!pricing) return false;
+  return pricing.input === 0 && pricing.output === 0;
+}
