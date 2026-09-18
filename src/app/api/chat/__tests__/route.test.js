@@ -5,13 +5,9 @@ const TEST_MODEL = "google/gemini-3.1-flash-lite";
 
 // Mock the upstream SDK modules so we don't actually call the AI provider
 vi.mock("@openrouter/ai-sdk-provider", () => ({
-  createOpenRouter: vi.fn(() => {
-    const fn = (model) => ({
-      modelId: model,
-      // a sentinel value to compare against
-    });
-    return fn;
-  }),
+  createOpenRouter: vi.fn(() => ({
+    chat: (model) => ({ modelId: model }),
+  })),
 }));
 
 vi.mock("ai", async () => {
@@ -31,6 +27,31 @@ const makeReq = (body) => ({
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+const setupStreamText = async (callbacks) => {
+  const { streamText } = await import("ai");
+  return streamText.mockImplementation(async ({ onChunk, onStepEnd, onEnd }) => {
+    if (callbacks.chunk) {
+      for (const chunk of callbacks.chunk) {
+        onChunk({ chunk });
+      }
+    }
+    if (callbacks.stepEnd) {
+      for (const step of callbacks.stepEnd) {
+        await onStepEnd(step);
+      }
+    }
+    if (callbacks.end) {
+      for (const end of callbacks.end) {
+        await onEnd(end);
+      }
+    }
+    return {
+      text: Promise.resolve(""),
+      content: Promise.resolve([]),
+    };
+  });
+};
 
 describe("/api/chat POST", () => {
   it("returns 400 if JSON is invalid", async () => {
@@ -75,7 +96,7 @@ describe("/api/chat POST", () => {
       }),
     );
     const call = generateText.mock.calls[0][0];
-    expect(call.system).toMatch(/Artifact Mode/);
+    expect(call.instructions).toMatch(/Artifact Mode/);
   });
 
   it("does not include artifact instructions when artifacts=false", async () => {
@@ -91,7 +112,7 @@ describe("/api/chat POST", () => {
       }),
     );
     const call = generateText.mock.calls[0][0];
-    expect(call.system).not.toMatch(/Artifact Mode/);
+    expect(call.instructions).not.toMatch(/Artifact Mode/);
   });
 
   it("passes maxTokens to generateText when provided", async () => {
@@ -107,10 +128,10 @@ describe("/api/chat POST", () => {
       }),
     );
     const call = generateText.mock.calls[0][0];
-    expect(call.maxTokens).toBe(1024);
+    expect(call.maxOutputTokens).toBe(1024);
   });
 
-  it("uses the openrouter provider with the right baseUrl", async () => {
+  it("uses the openrouter provider with the right baseURL", async () => {
     const { createOpenRouter } = await import("@openrouter/ai-sdk-provider");
     const { generateText } = await import("ai");
     generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });
@@ -125,7 +146,7 @@ describe("/api/chat POST", () => {
     expect(createOpenRouter).toHaveBeenCalledWith(
       expect.objectContaining({
         apiKey: "k",
-        baseUrl: "https://ai.hackclub.com/proxy/v1",
+        baseURL: "https://ai.hackclub.com/proxy/v1",
       }),
     );
   });
@@ -143,7 +164,7 @@ describe("/api/chat POST", () => {
       }),
     );
     const call = generateText.mock.calls[0][0];
-    expect(call.providerOptions.openrouter.include_reasoning).toBe(true);
+    expect(call.providerOptions.openrouter.reasoning).toEqual({ exclude: false });
 
     generateText.mockClear();
     generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });
@@ -157,7 +178,7 @@ describe("/api/chat POST", () => {
       }),
     );
     const call2 = generateText.mock.calls[0][0];
-    expect(call2.providerOptions.openrouter.include_reasoning).toBe(false);
+    expect(call2.providerOptions.openrouter.reasoning).toEqual({ exclude: true });
   });
 
   it("converts clientTools to SDK tools", async () => {
@@ -208,12 +229,8 @@ describe("/api/chat POST", () => {
   });
 
   it("returns a streaming response when stream is not false", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        // no events
-      })(),
-      usage: Promise.resolve({ promptTokens: 1, completionTokens: 2 }),
+    await setupStreamText({
+      end: [{ usage: { promptTokens: 1, completionTokens: 2 } }],
     });
 
     const res = await POST(
@@ -241,18 +258,18 @@ describe("/api/chat POST", () => {
   });
 
   it("emits a text-delta event as a content chunk", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "text-delta", text: "Hello" };
-        yield { type: "text-delta", text: " world" };
-        yield {
-          type: "finish",
+    await setupStreamText({
+      chunk: [
+        { type: "text-delta", text: "Hello" },
+        { type: "text-delta", text: " world" },
+      ],
+      end: [
+        {
           usage: { promptTokens: 1, completionTokens: 2 },
-          providerMetadata: {},
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 1, completionTokens: 2 }),
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
     });
 
     const res = await POST(
@@ -276,17 +293,15 @@ describe("/api/chat POST", () => {
   });
 
   it("emits a reasoning-delta event as a thinking chunk", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "reasoning-delta", text: "hmm" };
-        yield {
-          type: "finish",
+    await setupStreamText({
+      chunk: [{ type: "reasoning-delta", text: "hmm" }],
+      end: [
+        {
           usage: { promptTokens: 1, completionTokens: 1 },
-          providerMetadata: {},
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
     });
 
     const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
@@ -303,31 +318,33 @@ describe("/api/chat POST", () => {
   });
 
   it("emits tool-input-start, tool-input-delta, and tool-call events", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "tool-input-start", id: "id1", toolName: "web_search" };
-        yield { type: "tool-input-delta", id: "id1", delta: '{"q":' };
-        yield { type: "tool-input-delta", id: "id1", delta: '"hi"}' };
-        yield {
-          type: "tool-call",
-          toolCallId: "id1",
-          toolName: "web_search",
-          input: { q: "hi" },
-        };
-        yield {
-          type: "tool-result",
-          toolCallId: "id1",
-          toolName: "web_search",
-          output: { answer: "answer", citations: [] },
-        };
-        yield {
-          type: "finish",
+    await setupStreamText({
+      chunk: [
+        { type: "tool-input-start", id: "id1", toolName: "web_search" },
+        { type: "tool-input-delta", id: "id1", delta: '{"q":' },
+        { type: "tool-input-delta", id: "id1", delta: '"hi"}' },
+        { type: "tool-call", toolCallId: "id1", toolName: "web_search", input: { q: "hi" } },
+      ],
+      stepEnd: [
+        {
+          toolResults: [
+            {
+              toolName: "web_search",
+              input: { q: "hi" },
+              output: { answer: "answer", citations: [] },
+            },
+          ],
+          performance: {},
+          usage: {},
+        },
+      ],
+      end: [
+        {
           usage: { promptTokens: 1, completionTokens: 1 },
-          providerMetadata: {},
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 1, completionTokens: 1 }),
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
     });
 
     const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
@@ -346,19 +363,17 @@ describe("/api/chat POST", () => {
   });
 
   it("emits a usage event before [DONE]", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "text-delta", text: "x" };
-        yield {
-          type: "finish",
-          usage: { promptTokens: 5, completionTokens: 7 },
-          providerMetadata: {
-            openrouter: { usage: { cost: 0.001 } },
+    await setupStreamText({
+      chunk: [{ type: "text-delta", text: "x" }],
+      end: [
+        {
+          usage: { inputTokens: 5, outputTokens: 7, outputTokenDetails: { reasoningTokens: 3 } },
+          finalStep: {
+            providerMetadata: { openrouter: { usage: { cost: 0.001 } } },
           },
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 5, completionTokens: 7 }),
+          steps: [],
+        },
+      ],
     });
 
     const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
@@ -377,24 +392,30 @@ describe("/api/chat POST", () => {
     expect(out).toContain('"cost":0.001');
   });
 
-  it("uses cumulative totalUsage from the finish part and reports reasoning tokens", async () => {
-    const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "text-delta", text: "x" };
-        yield {
-          type: "finish",
-          totalUsage: {
-            promptTokens: 12,
-            completionTokens: 8,
+  it("uses cumulative totalUsage from usage event and reports reasoning tokens", async () => {
+    await setupStreamText({
+      chunk: [{ type: "text-delta", text: "x" }],
+      stepEnd: [
+        {
+          toolResults: [],
+          performance: { outputTokensPerSecond: 5.03 },
+          usage: { inputTokens: 5, outputTokens: 7 },
+        },
+      ],
+      end: [
+        {
+          usage: {
+            inputTokens: 5,
+            outputTokens: 7,
             outputTokenDetails: { reasoningTokens: 3 },
+            totalTokens: 12,
           },
-          providerMetadata: {
-            openrouter: { usage: { cost: 0.002 } },
+          finalStep: {
+            providerMetadata: { openrouter: { usage: { cost: 0.002 } } },
           },
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 99, completionTokens: 99 }),
+          steps: [],
+        },
+      ],
     });
 
     const res = await POST(
@@ -409,20 +430,50 @@ describe("/api/chat POST", () => {
       if (done) break;
       out += decoder.decode(value);
     }
-    expect(out).toContain('"inputTokens":12');
-    expect(out).toContain('"outputTokens":8');
+    expect(out).toContain('"inputTokens":5');
+    expect(out).toContain('"outputTokens":7');
     expect(out).toContain('"reasoningTokens":3');
     expect(out).toContain('"cost":0.002');
   });
 
+  it("uses server-provided tokensPerSecond from step performance", async () => {
+    await setupStreamText({
+      chunk: [{ type: "text-delta", text: "x" }],
+      stepEnd: [
+        {
+          toolResults: [],
+          performance: { outputTokensPerSecond: 5.03 },
+          usage: { inputTokens: 5, outputTokens: 7 },
+        },
+      ],
+      end: [
+        {
+          usage: { inputTokens: 5, outputTokens: 7, totalTokens: 12 },
+          finalStep: {
+            providerMetadata: { openrouter: { usage: { cost: 0.001 } } },
+            performance: { outputTokensPerSecond: 5.03 },
+          },
+          steps: [],
+        },
+      ],
+    });
+
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    expect(out).toContain('"tokensPerSecond":5.03');
+  });
+
   it("emits an error event and closes the stream on failure", async () => {
     const { streamText } = await import("ai");
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        throw new Error("stream boom");
-      })(),
-      usage: Promise.resolve({ promptTokens: 0, completionTokens: 0 }),
-    });
+    streamText.mockRejectedValue(new Error("stream boom"));
 
     const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
@@ -438,55 +489,41 @@ describe("/api/chat POST", () => {
     expect(out).toContain("stream boom");
   });
 
-  it("excludes tool call time from generation duration and tokensPerSecond", async () => {
-    const { streamText } = await import("ai");
-
-    // Simulate a stream where text-delta events are tightly grouped, but a
-    // long tool execution sits between them. Real wall-clock time spent on
-    // the tool should be reflected in `duration` but NOT in the
-    // `generationDuration` used for tokensPerSecond.
-    const startMs = 1_700_000_000_000;
-    const timeline = {
-      // stream begin (startTime)
-      0: startMs,
-      // first text-delta
-      1: startMs + 10,
-      // second text-delta after a long tool execution
-      2: startMs + 2000,
-      // stream end (endTime)
-      3: startMs + 2050,
-    };
-    let tick = 0;
-    const dateSpy = vi
-      .spyOn(Date, "now")
-      .mockImplementation(() => timeline[tick++] ?? startMs + 2050);
-
-    streamText.mockReturnValue({
-      fullStream: (async function* () {
-        yield { type: "text-delta", text: "Hello" };
-        yield { type: "tool-input-start", id: "t1", toolName: "web_search" };
-        yield { type: "tool-input-delta", id: "t1", delta: '{"q":' };
-        yield {
-          type: "tool-call",
-          toolCallId: "t1",
-          toolName: "web_search",
-          input: { q: "x" },
-        };
-        yield {
-          type: "tool-result",
-          toolCallId: "t1",
-          toolName: "web_search",
-          output: { answer: "ok", citations: [] },
-        };
-        yield { type: "text-delta", text: " world" };
-        yield {
-          type: "finish",
-          usage: { promptTokens: 5, completionTokens: 10 },
-          providerMetadata: { openrouter: { usage: { cost: 0.001 } } },
-        };
-      })(),
-      usage: Promise.resolve({ promptTokens: 5, completionTokens: 10 }),
+  it("uses server-provided outputTokensPerSecond for tokensPerSecond", async () => {
+    await setupStreamText({
+      chunk: [
+        { type: "text-delta", text: "Hello" },
+        { type: "tool-input-start", id: "t1", toolName: "web_search" },
+        { type: "tool-input-delta", id: "t1", delta: '{"q":' },
+        { type: "tool-call", toolCallId: "t1", toolName: "web_search", input: { q: "x" } },
+        { type: "text-delta", text: " world" },
+      ],
+      stepEnd: [
+        {
+          toolResults: [
+            {
+              toolName: "web_search",
+              input: { q: "x" },
+              output: { answer: "ok", citations: [] },
+            },
+          ],
+          performance: { outputTokensPerSecond: 5.03 },
+          usage: { inputTokens: 5, outputTokens: 10 },
+        },
+      ],
+      end: [
+        {
+          usage: { inputTokens: 5, outputTokens: 10, totalTokens: 15 },
+          finalStep: {
+            providerMetadata: { openrouter: { usage: { cost: 0.001 } } },
+            performance: { outputTokensPerSecond: 5.03 },
+          },
+          steps: [],
+        },
+      ],
     });
+
+    const dateSpy = vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
     try {
       const res = await POST(
@@ -519,20 +556,122 @@ describe("/api/chat POST", () => {
         out += decoder.decode(value);
       }
 
-      const usageMatch = out.match(/"type":"usage","usage":(\{[^}]+\})/);
-      expect(usageMatch).toBeTruthy();
-      const usage = JSON.parse(usageMatch[1]);
+      const usageStart = out.indexOf('data: {"type":"usage"');
+      expect(usageStart).toBeGreaterThan(-1);
+      const usageEnd = out.indexOf("\n\n", usageStart);
+      const usageJson = usageEnd > -1 ? out.slice(usageStart + 6, usageEnd) : out.slice(usageStart + 6);
+      const data = JSON.parse(usageJson);
 
-      // Wall-clock duration spans the entire stream (~2050ms = 2.05s)
-      expect(usage.duration).toBeCloseTo(2.05, 5);
-      // Generation duration only counts the active text windows
-      // (10ms -> 2000ms = 1990ms ≈ 1.99s)
-      expect(usage.generationDuration).toBeCloseTo(1.99, 5);
-      // tokensPerSecond is based on the active generation window, not wall clock
-      // 10 tokens / 1.99s ≈ 5.03 t/s
-      expect(usage.tokensPerSecond).toBe(5.03);
+      // Wall-clock duration spans the entire stream (~0ms in mock)
+      expect(data.usage.duration).toBeCloseTo(0, 5);
+      // tokensPerSecond comes from server-provided step performance
+      expect(data.usage.tokensPerSecond).toBe(5.03);
     } finally {
       dateSpy.mockRestore();
     }
+  });
+
+  it("emits sandbox_result events from onStepEnd toolResults", async () => {
+    await setupStreamText({
+      chunk: [
+        { type: "tool-input-start", id: "t1", toolName: "execute_code" },
+        { type: "tool-input-delta", id: "t1", delta: '{"code":' },
+        { type: "tool-call", toolCallId: "t1", toolName: "execute_code", input: { code: "console.log(1)" } },
+      ],
+      stepEnd: [
+        {
+          toolResults: [
+            {
+              toolName: "execute_code",
+              input: { code: "console.log(1)" },
+              output: {
+                code: "console.log(1)",
+                stdout: "1\n",
+                stderr: "",
+                exitCode: 0,
+                sandboxId: "sandbox-123",
+              },
+            },
+          ],
+          performance: {},
+          usage: {},
+        },
+      ],
+      end: [
+        {
+          usage: { promptTokens: 1, completionTokens: 1 },
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
+    });
+
+    const res = await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        agentMode: true,
+        conversationId: "conv-1",
+        e2bApiKey: "e2b-key",
+      }),
+    );
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    expect(out).toContain('"type":"sandbox_result"');
+    expect(out).toContain('"tool":"execute_code"');
+    expect(out).toContain('"stdout":"1\\n"');
+    expect(out).toContain('"exitCode":0');
+    expect(out).toContain('"sandboxId":"sandbox-123"');
+  });
+
+  it("emits search_result events from onStepEnd web_search toolResults", async () => {
+    await setupStreamText({
+      chunk: [
+        { type: "tool-input-start", id: "t1", toolName: "web_search" },
+        { type: "tool-call", toolCallId: "t1", toolName: "web_search", input: { q: "test" } },
+      ],
+      stepEnd: [
+        {
+          toolResults: [
+            {
+              toolName: "web_search",
+              input: { q: "test" },
+              output: { answer: "test answer", citations: [{ title: "src" }] },
+            },
+          ],
+          performance: {},
+          usage: {},
+        },
+      ],
+      end: [
+        {
+          usage: { promptTokens: 1, completionTokens: 1 },
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
+    });
+
+    const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    expect(out).toContain('"type":"search_result"');
+    expect(out).toContain('"content":"test answer"');
+    expect(out).toContain('"title":"src"');
   });
 });

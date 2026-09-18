@@ -78,206 +78,30 @@ function toSdkTools(clientTools, apiKey, conversationId, e2bApiKey, sandboxId) {
   );
 }
 
-async function emitStreamParts(
-  result,
-  send,
-  toolCallIndexes,
-  nextToolIndexRef,
-  generationTiming,
-) {
-  let finalUsage = null;
-  let finalCost = null;
+async function handleToolResults(toolResults, send) {
+  for (const toolResult of toolResults) {
+    const output = getToolOutput(toolResult);
+    if (!output) continue;
 
-  for await (const part of result.fullStream) {
-    switch (part.type) {
-      case "text-delta":
-      case "reasoning-delta": {
-        const now = Date.now();
-        if (generationTiming.startTime == null) {
-          generationTiming.startTime = now;
-        }
-        generationTiming.endTime = now;
-
-        if (part.type === "text-delta") {
-          send({
-            choices: [{ delta: { content: part.text } }],
-          });
-        } else {
-          send({
-            choices: [{ delta: { thinking: part.text } }],
-          });
-        }
-        break;
-      }
-
-      case "finish": {
-        finalUsage = part.totalUsage || part.usage;
-        finalCost = part.providerMetadata?.openrouter?.usage?.cost ?? null;
-        break;
-      }
-
-      case "tool-input-start": {
-        const index = nextToolIndexRef.current;
-        nextToolIndexRef.current += 1;
-        toolCallIndexes.set(part.id, index);
-
-        send({
-          choices: [
-            {
-              delta: {
-                tool_calls: [
-                  {
-                    index,
-                    id: part.id,
-                    function: {
-                      name: part.toolName,
-                      arguments: "",
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        });
-        break;
-      }
-
-      case "tool-input-delta": {
-        const index = toolCallIndexes.get(part.id);
-        if (index == null) break;
-
-        send({
-          choices: [
-            {
-              delta: {
-                tool_calls: [
-                  {
-                    index,
-                    function: {
-                      arguments: part.delta,
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        });
-        break;
-      }
-
-      case "tool-call": {
-        const hasExistingToolInput = toolCallIndexes.has(part.toolCallId);
-        let index = toolCallIndexes.get(part.toolCallId);
-        if (index == null) {
-          index = nextToolIndexRef.current;
-          nextToolIndexRef.current += 1;
-          toolCallIndexes.set(part.toolCallId, index);
-        }
-
-        const toolCallPayload = hasExistingToolInput
-          ? {
-              index,
-              id: part.toolCallId,
-            }
-          : {
-              index,
-              id: part.toolCallId,
-              function: {
-                name: part.toolName,
-                arguments: JSON.stringify(part.input ?? {}),
-              },
-            };
-
-        send({
-          choices: [
-            {
-              delta: {
-                tool_calls: [toolCallPayload],
-              },
-            },
-          ],
-        });
-
-        break;
-      }
-
-      case "tool-result":
-      case "tool-error": {
-        const output = getToolOutput(part);
-        if (part.toolName === "web_search" && output) {
-          const res = output;
-          send({
-            type: "search_result",
-            sources: res.citations || [],
-            content: res.answer || "",
-          });
-        }
-        if (SANDBOX_TOOL_NAMES.includes(part.toolName) && output) {
-          send({
-            type: "sandbox_result",
-            tool: part.toolName,
-            code: output.code || output.command || "",
-            stdout: output.stdout || "",
-            stderr: output.stderr || "",
-            exitCode: output.exitCode,
-            sandboxId: output.sandboxId || null,
-          });
-        }
-        break;
-      }
-
-      default:
-        break;
+    if (toolResult.toolName === "web_search") {
+      send({
+        type: "search_result",
+        sources: output.citations || [],
+        content: output.answer || "",
+      });
+    }
+    if (SANDBOX_TOOL_NAMES.includes(toolResult.toolName) && output) {
+      send({
+        type: "sandbox_result",
+        tool: toolResult.toolName,
+        code: output.code || output.command || "",
+        stdout: output.stdout || "",
+        stderr: output.stderr || "",
+        exitCode: output.exitCode,
+        sandboxId: output.sandboxId || null,
+      });
     }
   }
-
-  return {
-    usage:
-      finalUsage ||
-      (await result.totalUsage?.catch(() => null)) ||
-      (await result.usage.catch(() => null)),
-    cost: finalCost,
-  };
-}
-
-function validateRequest(body) {
-  const { messages, model, apiKey, max_tokens } = body;
-
-  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
-    return { valid: false, status: 401, error: "Valid API key is required" };
-  }
-
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return { valid: false, status: 400, error: "Messages array is required" };
-  }
-
-  if (messages.length > 200) {
-    return {
-      valid: false,
-      status: 400,
-      error: "Too many messages (max 200)",
-    };
-  }
-
-  if (!model || typeof model !== "string") {
-    return { valid: false, status: 400, error: "Model is required" };
-  }
-
-  if (max_tokens !== undefined && max_tokens !== null) {
-    if (
-      typeof max_tokens !== "number" ||
-      max_tokens < 1 ||
-      max_tokens > 1048576
-    ) {
-      return {
-        valid: false,
-        status: 400,
-        error: "max_tokens must be between 1 and 1048576",
-      };
-    }
-  }
-
-  return { valid: true };
 }
 
 export async function POST(req) {
@@ -327,9 +151,6 @@ export async function POST(req) {
     });
 
     let systemPrompt = `Current date: ${dateStr}. Current time: ${timeStr} UTC.`;
-    // Never forward corrupt history records (error placeholders, empty
-    // assistant turns) to the model — belt-and-suspenders on top of the
-    // client-side sanitization.
     const sanitizedMessages = sanitizeMessages(messages);
     const processedMessages = sanitizedMessages.map((msg) => {
       if (msg.role === "assistant" && msg.thinking) {
@@ -363,28 +184,27 @@ export async function POST(req) {
       agentMode ? sandboxId : null,
     );
 
-    const hackclub = createOpenRouter({
+    const openrouter = createOpenRouter({
       apiKey: apiKey,
-      baseUrl: "https://ai.hackclub.com/proxy/v1",
+      baseURL: "https://ai.hackclub.com/proxy/v1",
     });
 
     const reasoningOpts =
       think === true
-        ? { include_reasoning: true }
-        : { include_reasoning: false };
+        ? { reasoning: { exclude: false } }
+        : { reasoning: { exclude: true } };
 
     const providerOpts = {
       ...reasoningOpts,
-      ...(max_tokens ? { max_tokens } : {}),
     };
 
     if (stream === false) {
       const result = await generateText({
-        model: hackclub(model),
-        system: systemPrompt,
+        model: openrouter.chat(model),
+        instructions: systemPrompt,
         messages: processedMessages,
         tools: availableTools,
-        ...(max_tokens ? { maxTokens: max_tokens } : {}),
+        ...(max_tokens ? { maxOutputTokens: max_tokens } : {}),
         providerOptions: {
           openrouter: providerOpts,
         },
@@ -394,16 +214,16 @@ export async function POST(req) {
         .filter(
           (toolResult) =>
             SANDBOX_TOOL_NAMES.includes(toolResult.toolName) &&
-            toolResult.result,
+            toolResult.output,
         )
         .map((toolResult) => ({
           type: "sandbox_result",
           tool: toolResult.toolName,
-          code: toolResult.args?.code || toolResult.args?.command || "",
-          stdout: toolResult.result?.stdout || "",
-          stderr: toolResult.result?.stderr || "",
-          exitCode: toolResult.result?.exitCode,
-          sandboxId: toolResult.result?.sandboxId || null,
+          code: toolResult.input?.code || toolResult.input?.command || "",
+          stdout: toolResult.output?.stdout || "",
+          stderr: toolResult.output?.stderr || "",
+          exitCode: toolResult.output?.exitCode,
+          sandboxId: toolResult.output?.sandboxId || null,
         }));
 
       return Response.json({
@@ -427,7 +247,6 @@ export async function POST(req) {
           );
         };
 
-        // Periodic keepalive to prevent proxy timeout during long tool execution
         const keepalive = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(": keepalive\n\n"));
@@ -445,85 +264,190 @@ export async function POST(req) {
           };
           const startTime = Date.now();
           const generationTiming = { startTime: null, endTime: null };
+          const onChunk = (event) => {
+            const chunk = event.chunk;
 
-          const { usage, cost } = await emitStreamParts(
-            await streamText({
-              model: hackclub(model),
-              system: systemPrompt,
-              messages: currentMessages,
-              tools: availableTools,
-              stopWhen: stepCountIs(100),
-              providerOptions: {
-                openrouter: providerOpts,
-              },
-            }),
-            send,
-            toolCallIndexes,
-            nextToolIndexRef,
-            generationTiming,
-          );
-
-          // Accumulate usage data
-          if (usage) {
-            totalUsage.inputTokens +=
-              usage.promptTokens || usage.inputTokens || 0;
-            totalUsage.outputTokens +=
-              usage.completionTokens || usage.outputTokens || 0;
-            totalUsage.reasoningTokens +=
-              usage.outputTokenDetails?.reasoningTokens ||
-              usage.reasoningTokens ||
-              0;
-          }
-
-          const endTime = Date.now();
-          const totalDuration = (endTime - startTime) / 1000; // wall-clock seconds
-          // Generation duration excludes tool execution / network wait time:
-          // it spans only the windows in which text or reasoning deltas arrived.
-          const generationDurationMs =
-            generationTiming.startTime != null &&
-            generationTiming.endTime != null
-              ? generationTiming.endTime - generationTiming.startTime
-              : 0;
-          const generationDuration = generationDurationMs / 1000;
-          const durationForTps =
-            generationDurationMs > 0 ? generationDuration : 0;
-          const tokensPerSecond =
-            durationForTps > 0 ? totalUsage.outputTokens / durationForTps : 0;
-
-          let finalCost = cost;
-          if (finalCost == null) {
-            const pricingMap = await getModelPricingMap();
-            const pricing = pricingMap[model];
-            if (pricing) {
-              finalCost = calcApiCost(
-                pricing,
-                totalUsage.inputTokens,
-                totalUsage.outputTokens,
+            if (chunk.type === "text-delta") {
+              const now = Date.now();
+              if (generationTiming.startTime == null) {
+                generationTiming.startTime = now;
+              }
+              generationTiming.endTime = now;
+              send({
+                choices: [{ delta: { content: chunk.text } }],
+              });
+            } else if (chunk.type === "reasoning-delta") {
+              const now = Date.now();
+              if (generationTiming.startTime == null) {
+                generationTiming.startTime = now;
+              }
+              generationTiming.endTime = now;
+              send({
+                choices: [{ delta: { thinking: chunk.text } }],
+              });
+            } else if (chunk.type === "tool-input-start") {
+              const index = nextToolIndexRef.current;
+              nextToolIndexRef.current += 1;
+              toolCallIndexes.set(chunk.id, index);
+              send({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index,
+                          id: chunk.id,
+                          function: {
+                            name: chunk.toolName,
+                            arguments: "",
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+            } else if (chunk.type === "tool-input-delta") {
+              const index = toolCallIndexes.get(chunk.id);
+              if (index == null) return;
+              send({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index,
+                          function: {
+                            arguments: chunk.delta,
+                          },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              });
+            } else if (chunk.type === "tool-call") {
+              const hasExistingToolInput = toolCallIndexes.has(
+                chunk.toolCallId,
               );
+              let index = toolCallIndexes.get(chunk.toolCallId);
+              if (index == null) {
+                index = nextToolIndexRef.current;
+                nextToolIndexRef.current += 1;
+                toolCallIndexes.set(chunk.toolCallId, index);
+              }
+
+              const toolCallPayload = hasExistingToolInput
+                ? {
+                    index,
+                    id: chunk.toolCallId,
+                  }
+                : {
+                    index,
+                    id: chunk.toolCallId,
+                    function: {
+                      name: chunk.toolName,
+                      arguments: JSON.stringify(chunk.input ?? {}),
+                    },
+                  };
+
+              send({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [toolCallPayload],
+                    },
+                  },
+                ],
+              });
             }
-          }
+          };
 
-          // Send usage data before [DONE]
-          send({
-            type: "usage",
-            usage: {
-              model,
-              inputTokens: totalUsage.inputTokens,
-              outputTokens: totalUsage.outputTokens,
-              reasoningTokens: totalUsage.reasoningTokens,
-              totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
-              duration: totalDuration,
-              generationDuration,
-              tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
-              cost: finalCost,
+          const onStepEnd = async (event) => {
+            await handleToolResults(event.toolResults || [], send);
+          };
+
+          const onEnd = async (event) => {
+            const usage = event.usage;
+            const cost =
+              event.finalStep?.providerMetadata?.openrouter?.usage?.cost ??
+              null;
+
+            const tokensPerSecond =
+              event.finalStep?.performance?.outputTokensPerSecond ?? 0;
+            const timeToFirstOutputMs =
+              event.finalStep?.performance?.timeToFirstOutputMs ?? null;
+
+            const endTime = Date.now();
+            const totalDuration = (endTime - startTime) / 1000;
+
+            if (usage) {
+              totalUsage.inputTokens += usage.inputTokens || 0;
+              totalUsage.outputTokens += usage.outputTokens || 0;
+              totalUsage.reasoningTokens +=
+                usage.outputTokenDetails?.reasoningTokens ||
+                usage.reasoningTokens ||
+                0;
+            }
+
+            const generationDurationMs =
+              generationTiming.startTime != null &&
+              generationTiming.endTime != null
+                ? generationTiming.endTime - generationTiming.startTime
+                : 0;
+            const generationDuration = generationDurationMs / 1000;
+
+            let finalCost = cost;
+            if (finalCost == null) {
+              const pricingMap = await getModelPricingMap();
+              const pricing = pricingMap[model];
+              if (pricing) {
+                finalCost = calcApiCost(
+                  pricing,
+                  totalUsage.inputTokens,
+                  totalUsage.outputTokens,
+                );
+              }
+            }
+
+            send({
+              type: "usage",
+              usage: {
+                model,
+                inputTokens: totalUsage.inputTokens,
+                outputTokens: totalUsage.outputTokens,
+                reasoningTokens: totalUsage.reasoningTokens,
+                totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
+                duration: totalDuration,
+                generationDuration,
+                tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
+                ...(timeToFirstOutputMs != null ? { timeToFirstOutputMs } : {}),
+                cost: finalCost,
+              },
+            });
+
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            clearInterval(keepalive);
+            try {
+              controller.close();
+            } catch {}
+          };
+
+          await streamText({
+            model: openrouter.chat(model),
+            instructions: systemPrompt,
+            messages: currentMessages,
+            tools: availableTools,
+            stopWhen: stepCountIs(100),
+            ...(max_tokens ? { maxOutputTokens: max_tokens } : {}),
+            providerOptions: {
+              openrouter: providerOpts,
             },
+            allowSystemInMessages: true,
+            onChunk,
+            onStepEnd,
+            onEnd,
           });
-
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          clearInterval(keepalive);
-          try {
-            controller.close();
-          } catch {}
         } catch (error) {
           console.error(
             `[stream error] model=${model} msgs=${messages.length}:`,
@@ -560,4 +484,44 @@ export async function POST(req) {
       { status: 500 },
     );
   }
+}
+
+function validateRequest(body) {
+  const { messages, model, apiKey, max_tokens } = body;
+
+  if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+    return { valid: false, status: 401, error: "Valid API key is required" };
+  }
+
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { valid: false, status: 400, error: "Messages array is required" };
+  }
+
+  if (messages.length > 200) {
+    return {
+      valid: false,
+      status: 400,
+      error: "Too many messages (max 200)",
+    };
+  }
+
+  if (!model || typeof model !== "string") {
+    return { valid: false, status: 400, error: "Model is required" };
+  }
+
+  if (max_tokens !== undefined && max_tokens !== null) {
+    if (
+      typeof max_tokens !== "number" ||
+      max_tokens < 1 ||
+      max_tokens > 1048576
+    ) {
+      return {
+        valid: false,
+        status: 400,
+        error: "max_tokens must be between 1 and 1048576",
+      };
+    }
+  }
+
+  return { valid: true };
 }

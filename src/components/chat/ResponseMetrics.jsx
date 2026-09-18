@@ -13,7 +13,12 @@ export default function ResponseMetrics({ usage, duration }) {
   if (!usage) return null;
 
   const totalTokens = usage.inputTokens + usage.outputTokens;
-  const tokensPerSecond = duration > 0 ? usage.outputTokens / duration : 0;
+  const tokensPerSecond =
+    usage.tokensPerSecond != null
+      ? usage.tokensPerSecond
+      : duration > 0
+        ? usage.outputTokens / duration
+        : 0;
   const cost = usage.cost ?? null;
 
   const formatDuration = (seconds) => {
