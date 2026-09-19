@@ -449,7 +449,7 @@ export async function POST(req) {
             } catch {}
           };
 
-          await streamText({
+          const result = streamText({
             model: openrouter.chat(model),
             instructions: systemPrompt,
             messages: currentMessages,
@@ -465,6 +465,8 @@ export async function POST(req) {
             onEnd,
             onError,
           });
+
+          await result.consumeStream();
 
           clearInterval(keepalive);
           try {

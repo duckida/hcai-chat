@@ -30,25 +30,27 @@ beforeEach(() => {
 
 const setupStreamText = async (callbacks) => {
   const { streamText } = await import("ai");
-  return streamText.mockImplementation(async ({ onChunk, onStepEnd, onEnd }) => {
-    if (callbacks.chunk) {
-      for (const chunk of callbacks.chunk) {
-        onChunk({ chunk });
-      }
-    }
-    if (callbacks.stepEnd) {
-      for (const step of callbacks.stepEnd) {
-        await onStepEnd(step);
-      }
-    }
-    if (callbacks.end) {
-      for (const end of callbacks.end) {
-        await onEnd(end);
-      }
-    }
+  return streamText.mockImplementation(({ onChunk, onStepEnd, onEnd }) => {
     return {
       text: Promise.resolve(""),
       content: Promise.resolve([]),
+      consumeStream: async () => {
+        if (callbacks.chunk) {
+          for (const chunk of callbacks.chunk) {
+            onChunk({ chunk });
+          }
+        }
+        if (callbacks.stepEnd) {
+          for (const step of callbacks.stepEnd) {
+            await onStepEnd(step);
+          }
+        }
+        if (callbacks.end) {
+          for (const end of callbacks.end) {
+            await onEnd(end);
+          }
+        }
+      },
     };
   });
 };
@@ -473,7 +475,11 @@ describe("/api/chat POST", () => {
 
   it("emits an error event and closes the stream on failure", async () => {
     const { streamText } = await import("ai");
-    streamText.mockRejectedValue(new Error("stream boom"));
+    streamText.mockImplementation(() => ({
+      text: Promise.resolve(""),
+      content: Promise.resolve([]),
+      consumeStream: async () => { throw new Error("stream boom"); },
+    }));
 
     const res = await POST(makeReq({ model: TEST_MODEL, messages: [{ role: "user", content: "hi" }], apiKey: "k" }));
     const reader = res.body.getReader();
