@@ -191,8 +191,8 @@ export async function POST(req) {
 
     const reasoningOpts =
       think === true
-        ? { reasoning: { exclude: false } }
-        : { reasoning: { exclude: true } };
+        ? { include_reasoning: true, reasoning: { exclude: false } }
+        : { include_reasoning: false, reasoning: { exclude: true } };
 
     const providerOpts = {
       ...reasoningOpts,
@@ -250,7 +250,7 @@ export async function POST(req) {
         const keepalive = setInterval(() => {
           try {
             controller.enqueue(encoder.encode(": keepalive\n\n"));
-          } catch {
+          } catch (_e2) {
             clearInterval(keepalive);
           }
         }, 5_000);
@@ -360,7 +360,23 @@ export async function POST(req) {
                   },
                 ],
               });
+            } else if (chunk.type === "error") {
+              send({
+                type: "error",
+                error:
+                  typeof chunk.error === "string"
+                    ? chunk.error
+                    : chunk.error?.message || "Stream error",
+              });
             }
+          };
+
+          const onError = (error) => {
+            console.error(`[streamText onError] model=${model}:`, error);
+            send({
+              type: "error",
+              error: error?.message || "Stream error",
+            });
           };
 
           const onStepEnd = async (event) => {
@@ -447,18 +463,23 @@ export async function POST(req) {
             onChunk,
             onStepEnd,
             onEnd,
+            onError,
           });
+
+          clearInterval(keepalive);
+          try {
+            controller.close();
+          } catch (_e4) {}
         } catch (error) {
-          console.error(
-            `[stream error] model=${model} msgs=${messages.length}:`,
-            error,
-          );
-          send({
-            type: "error",
-            error:
-              error.message ||
-              `Stream failed for model "${model}" with ${messages.length} messages`,
-          });
+          console.error(`[start error] model=${model}:`, error);
+          try {
+            send({
+              type: "error",
+              error:
+                error.message ||
+                `Stream failed for model "${model}" with ${messages.length} messages`,
+            });
+          } catch {}
           clearInterval(keepalive);
           try {
             controller.close();
