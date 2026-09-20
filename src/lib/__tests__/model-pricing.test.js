@@ -14,31 +14,22 @@ describe("getModelPricingMap", () => {
     vi.restoreAllMocks();
   });
 
-  it("fetches and parses pricing data from the models endpoint", async () => {
+  it("fetches pricing data from the /api/pricing proxy", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
         Promise.resolve({
-          data: [
-            {
-              id: TEST_MODEL,
-              pricing: { prompt: "0.0001", completion: "0.0002" },
-            },
-            {
-              id: "other-model",
-              pricing: { prompt: "0.001", completion: "0.002" },
-            },
-          ],
+          data: {
+            [TEST_MODEL]: { input: 0.0001, output: 0.0002 },
+            "other-model": { input: 0.001, output: 0.002 },
+          },
         }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
     const { getModelPricingMap } = await import("../model-pricing");
     const map = await getModelPricingMap();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://ai.hackclub.com/proxy/v1/models",
-      { headers: { Accept: "application/json" } },
-    );
+    expect(fetchMock).toHaveBeenCalledWith("/api/pricing");
     expect(map[TEST_MODEL]).toEqual({ input: 0.0001, output: 0.0002 });
     expect(map["other-model"]).toEqual({ input: 0.001, output: 0.002 });
   });
@@ -46,7 +37,7 @@ describe("getModelPricingMap", () => {
   it("caches results within the TTL window", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ data: [] }),
+      json: () => Promise.resolve({ data: {} }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -59,7 +50,7 @@ describe("getModelPricingMap", () => {
   it("refetches after the cache TTL expires", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ data: [] }),
+      json: () => Promise.resolve({ data: {} }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -89,25 +80,27 @@ describe("getModelPricingMap", () => {
     expect(map).toEqual({});
   });
 
-  it("skips models with non-numeric pricing", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: [
-            { id: "ok", pricing: { prompt: "1", completion: "2" } },
-            { id: "bad", pricing: { prompt: "free", completion: "free" } },
-            { id: "missing" },
-          ],
-        }),
-    });
+  it("returns cached data on error after TTL expires", async () => {
+    const fetchMock = vi.fn();
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            data: { [TEST_MODEL]: { input: 0.001, output: 0.002 } },
+          }),
+      })
+      .mockResolvedValueOnce({ ok: false });
     vi.stubGlobal("fetch", fetchMock);
 
     const { getModelPricingMap } = await import("../model-pricing");
-    const map = await getModelPricingMap();
-    expect(map.ok).toBeDefined();
-    expect(map.bad).toBeUndefined();
-    expect(map.missing).toBeUndefined();
+    const map1 = await getModelPricingMap();
+    expect(map1[TEST_MODEL]).toEqual({ input: 0.001, output: 0.002 });
+
+    // Advance past TTL so next call tries to refetch
+    vi.advanceTimersByTime(6 * 60 * 1000);
+    await getModelPricingMap();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });
 

@@ -7,21 +7,10 @@ export async function getModelPricingMap() {
     return pricingCache;
   }
   try {
-    const res = await fetch("https://ai.hackclub.com/proxy/v1/models", {
-      headers: { Accept: "application/json" },
-    });
+    const res = await fetch("/api/pricing");
     if (!res.ok) return pricingCache || {};
     const data = await res.json();
-    const map = {};
-    for (const model of data.data || []) {
-      if (model.id && model.pricing) {
-        const prompt = Number.parseFloat(model.pricing.prompt);
-        const completion = Number.parseFloat(model.pricing.completion);
-        if (Number.isFinite(prompt) && Number.isFinite(completion)) {
-          map[model.id] = { input: prompt, output: completion };
-        }
-      }
-    }
+    const map = data.data || {};
     pricingCache = map;
     cacheTime = Date.now();
     return map;
