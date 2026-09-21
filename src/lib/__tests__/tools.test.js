@@ -5,7 +5,6 @@ import {
   executeTool,
   executeWebSearch,
   getTools,
-  getToolExecutors,
 } from "../tools";
 import { getStoredApiKey } from "../api-client";
 
@@ -332,25 +331,5 @@ describe("getTools", () => {
     const names = filtered.map((t) => t.function.name);
     expect(names).not.toContain("javascript_calculator");
     expect(names).toContain("web_search");
-  });
-});
-
-describe("getToolExecutors", () => {
-  it("returns an array of executor objects with the right shape", () => {
-    const executors = getToolExecutors();
-    expect(Array.isArray(executors)).toBe(true);
-    for (const exec of executors) {
-      expect(typeof exec.name).toBe("string");
-      expect(typeof exec.description).toBe("string");
-      expect(exec.parameters).toBeDefined();
-      expect(typeof exec.execute).toBe("function");
-    }
-  });
-
-  it("executor wrappers can be invoked", async () => {
-    const executors = getToolExecutors();
-    const calc = executors.find((e) => e.name === "javascript_calculator");
-    const result = await calc.execute({ expression: "10 - 4" });
-    expect(result.result).toBe(6);
   });
 });

@@ -40,8 +40,10 @@ export default function ContextUsage({ used, max, totalCost }) {
     <TooltipProvider>
       <Tooltip open={isOpen} onOpenChange={setIsOpen}>
         <TooltipTrigger asChild>
-          <div
-            className="flex items-center justify-center cursor-default shrink-0"
+          <button
+            type="button"
+            aria-label={`Context usage: ${percent}% used, ${formatNumber(used)} of ${formatNumber(max)}`}
+            className="flex items-center justify-center cursor-default shrink-0 bg-transparent border-0 p-0"
             onClick={(e) => {
               e.preventDefault();
               setIsOpen((prev) => !prev);
@@ -83,7 +85,7 @@ export default function ContextUsage({ used, max, totalCost }) {
                 className="transition-all duration-500"
               />
             </svg>
-          </div>
+          </button>
         </TooltipTrigger>
         <TooltipContent side="bottom" className="text-xs font-medium">
           <div className="flex flex-col gap-0.5">

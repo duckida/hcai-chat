@@ -17,242 +17,122 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  generateTitle,
-  getStoredApiKey,
-  getStoredE2bApiKey,
-  streamChatCompletion,
-} from "@/lib/api-client";
+import { useChatStream } from "@/hooks/use-chat-stream";
+import { useConversations } from "@/hooks/use-conversations";
+import { useIsDesktop } from "@/hooks/use-media-query";
+import { useModels } from "@/hooks/use-models";
+import { useSettings } from "@/hooks/use-settings";
+import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
-import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
-import { getAllConversations, saveAllConversations } from "@/lib/db";
+import { getAllConversations } from "@/lib/db";
 import {
   exportAllToZip,
   generateExportFilename,
   triggerDownload,
 } from "@/lib/import-export";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
-import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 export default function Home({
   initialQuery = null,
   initialSearchEnabled = false,
 } = {}) {
-  const [conversations, setConversations] = useState([]);
-  const [activeConversation, setActiveConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [streamingContent, setStreamingContent] = useState("");
-  const [streamingThinking, setStreamingThinking] = useState("");
-  const [selectedModel, setSelectedModel] = useState("xiaomi/mimo-v2.5");
-  const [titleGenerationModel, setTitleGenerationModel] = useState(
-    "qwen/qwen3-next-80b-a3b-instruct",
-  );
-  const [thinkingEnabled, setThinkingEnabled] = useState(true);
-  const [artifactsEnabled, setArtifactsEnabled] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [agentModeEnabled, setAgentModeEnabled] = useState(false);
+  const { values: settings, setValue: setSetting } = useSettings();
+  const isDesktop = useIsDesktop();
+  const { groupedModels, contextWindowMap, toolsSupportedMap } = useModels();
+
+  const conversations = useConversations({
+    selectedModel: settings.selectedModel,
+  });
+
+  const toolsSupported = toolsSupportedMap[settings.selectedModel] ?? true;
+
+  const stream = useChatStream({
+    conversations,
+    activeConversation: conversations.activeConversation,
+    messagesRef: conversations.messagesRef,
+    setMessages: conversations.setMessages,
+    patchConversation: conversations.patchConversation,
+    selectedModel: settings.selectedModel,
+    titleGenerationModel: settings.titleGenerationModel,
+    thinkingEnabled: settings.thinkingEnabled,
+    artifactsEnabled: settings.artifactsEnabled,
+    webSearchEnabled: settings.webSearchEnabled,
+    agentModeEnabled: settings.agentModeEnabled,
+    maxTokens: settings.maxTokens,
+    toolsSupported,
+    isDesktop,
+  });
+
+  // Reset streaming accumulators whenever the active conversation changes,
+  // and persist the panel state from the newly-active conversation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    const conv = conversations.conversations.find(
+      (c) => c.id === conversations.activeConversation,
+    );
+    stream.resetForConversation(conv ?? null);
+    setArtifactPanelOpen(conv?.artifactPanelOpen ?? false);
+    // activeConversation is the real dependency; conversations.find returns a
+    // stable reference for the same id, so listing it would re-run on every
+    // messages patch.
+  }, [conversations.activeConversation]);
+
   const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
+  const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [artifactFullscreen, setArtifactFullscreen] = useState(false);
-  const [theme, setTheme] = useState("aurora");
-  const [showThinking, setShowThinking] = useState(false);
-  const [showSandboxCode, setShowSandboxCode] = useState(true);
-  const [showSandboxOutput, setShowSandboxOutput] = useState(true);
-  const [showMetrics, setShowMetrics] = useState(true);
-  const [maxTokens, setMaxTokens] = useState(32000);
-  const [streamingError, setStreamingError] = useState(null);
-  const [contextUsage, setContextUsage] = useState(0);
-  const [contextWindowMap, setContextWindowMap] = useState({});
-  const [toolsSupportedMap, setToolsSupportedMap] = useState({});
-  const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
-  const [hasE2bKey, setHasE2bKey] = useState(false);
-  const [totalCost, setTotalCost] = useState(0);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [hasE2bKey, setHasE2bKey] = useState(false);
 
-  const isFirstMount = useRef(true);
-  const isStreamingComplete = useRef(false);
-  const isSubmittingRef = useRef(false);
-  const activeUsageConversationRef = useRef(null);
-  const lastUsageRef = useRef(null);
-  const predictedOutputTokensRef = useRef(0);
-  const conversationsRef = useRef(conversations);
-  const messagesRef = useRef(messages);
-  const activeConversationRef = useRef(activeConversation);
-  const initialQueryRef = useRef(initialQuery);
   const initialSearchEnabledRef = useRef(initialSearchEnabled);
   const hasAutoSentRef = useRef(false);
 
-  // Update refs when state changes
-  useEffect(() => {
-    conversationsRef.current = conversations;
-  }, [conversations]);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-  useEffect(() => {
-    activeConversationRef.current = activeConversation;
-  }, [activeConversation]);
-
-  // Derive artifacts from persisted messages (only when artifacts mode is on)
-  const messageArtifacts = useMemo(() => {
-    if (!artifactsEnabled) return [];
-    const allArtifacts = [];
-    for (const msg of messages) {
-      if (msg.role === "assistant") {
-        const { artifacts } = extractHtmlArtifacts(msg.content);
-        allArtifacts.push(...artifacts);
-      }
-    }
-    return allArtifacts;
-  }, [messages, artifactsEnabled]);
-
-  // Derive total cost from persisted messages
-  const computedTotalCost = useMemo(() => {
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.role === "assistant" && msg.metrics?.cost) {
-        total += msg.metrics.cost;
-      }
-    }
-    return total;
-  }, [messages]);
-
-  // Update total cost when messages change
-  useEffect(() => {
-    setTotalCost(computedTotalCost);
-  }, [computedTotalCost]);
-
-  // Derive streaming artifact from live streaming content (only when artifacts
-  // mode is on — otherwise HTML fences are treated as plain chat text)
-  const { streamingArtifact } = useMemo(() => {
-    if (!artifactsEnabled || !streamingContent)
-      return { streamingArtifact: null };
-    return extractHtmlArtifacts(streamingContent);
-  }, [streamingContent, artifactsEnabled]);
-
-  // Save artifactPanelOpen to active conversation
-  const saveArtifactPanelOpen = useCallback(
-    (open) => {
-      if (activeConversation) {
-        setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === activeConversation
-              ? { ...conv, artifactPanelOpen: open }
-              : conv,
-          ),
-        );
-      }
-    },
-    [activeConversation],
-  );
-
+  // Persist the artifact panel state onto the active conversation.
   const handleToggleArtifactPanel = useCallback(() => {
     setArtifactPanelOpen((prev) => {
       const next = !prev;
-      saveArtifactPanelOpen(next);
+      if (conversations.activeConversation) {
+        conversations.patchConversation(conversations.activeConversation, {
+          artifactPanelOpen: next,
+        });
+      }
       return next;
     });
-  }, [saveArtifactPanelOpen]);
+  }, [conversations]);
 
+  // Open the panel alongside artifacts mode on desktop.
   useEffect(() => {
-    (async () => {
-      let convs = [];
-      try {
-        convs = await getAllConversations();
-      } catch {}
-      // Migrate from localStorage if IndexedDB is empty
-      if (convs.length === 0) {
-        const stored = localStorage.getItem("conversations");
-        if (stored) {
-          try {
-            convs = JSON.parse(stored);
-            localStorage.removeItem("conversations");
-          } catch {}
-        }
-      }
-      setConversations(convs);
-      if (convs.length > 0 && isFirstMount.current) {
-        setActiveConversation(convs[0].id);
-        setMessages(convs[0].messages);
-        messagesRef.current = convs[0].messages;
-        setArtifactPanelOpen(convs[0].artifactPanelOpen ?? false);
-        if (convs[0].model) {
-          setSelectedModel(convs[0].model);
-        }
-        setContextUsage(convs[0].contextUsage || 0);
-        lastUsageRef.current = {
-          inputTokens: convs[0].contextUsage || 0,
-          outputTokens: 0,
-        };
-      }
-    })();
+    if (
+      settings.artifactsEnabled &&
+      isDesktop &&
+      !artifactPanelOpen &&
+      conversations.activeConversation
+    ) {
+      setArtifactPanelOpen(true);
+      conversations.patchConversation(conversations.activeConversation, {
+        artifactPanelOpen: true,
+      });
+    }
+  }, [settings.artifactsEnabled, isDesktop, artifactPanelOpen, conversations]);
 
-    const savedModel = localStorage.getItem("selected_model");
-    if (savedModel) setSelectedModel(savedModel);
+  // Models that cannot call tools must not advertise tool-backed features.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (!toolsSupported) {
+      if (settings.webSearchEnabled) setSetting("webSearchEnabled", false);
+      if (settings.agentModeEnabled) setSetting("agentModeEnabled", false);
+    }
+  }, [toolsSupported]);
 
+  // Prompt for an API key on first run.
+  useEffect(() => {
     setHasE2bKey(!!getStoredE2bApiKey());
+    if (!getStoredApiKey()) setIsApiKeyModalOpen(true);
+  }, []);
 
-    const savedTitleModel = localStorage.getItem("title_generation_model");
-    if (savedTitleModel) setTitleGenerationModel(savedTitleModel);
-
-    const savedThinking = localStorage.getItem("thinking_enabled");
-    if (savedThinking) setThinkingEnabled(JSON.parse(savedThinking));
-
-    const savedArtifacts = localStorage.getItem("artifacts_enabled");
-    if (savedArtifacts) setArtifactsEnabled(JSON.parse(savedArtifacts));
-
-    const savedWebSearch = localStorage.getItem("web_search_enabled");
-    if (savedWebSearch) setWebSearchEnabled(JSON.parse(savedWebSearch));
-
-    if (initialSearchEnabled) setWebSearchEnabled(true);
-
-    const savedAgentMode = localStorage.getItem("agent_mode_enabled");
-    if (savedAgentMode) setAgentModeEnabled(JSON.parse(savedAgentMode));
-
-    const savedShowThinking = localStorage.getItem("show_thinking");
-    if (savedShowThinking) setShowThinking(JSON.parse(savedShowThinking));
-
-    const savedShowSandboxCode = localStorage.getItem("show_sandbox_code");
-    if (savedShowSandboxCode !== null)
-      setShowSandboxCode(JSON.parse(savedShowSandboxCode));
-
-    const savedShowSandboxOutput = localStorage.getItem("show_sandbox_output");
-    if (savedShowSandboxOutput !== null)
-      setShowSandboxOutput(JSON.parse(savedShowSandboxOutput));
-
-    const savedShowMetrics = localStorage.getItem("show_metrics");
-    if (savedShowMetrics) setShowMetrics(JSON.parse(savedShowMetrics));
-
-    const savedMaxTokens = localStorage.getItem("max_tokens");
-    if (savedMaxTokens) setMaxTokens(JSON.parse(savedMaxTokens));
-
-    const savedTheme = localStorage.getItem("theme");
-    if (savedTheme) {
-      setTheme(savedTheme);
-      if (savedTheme === "sunrise") {
-        document.documentElement.classList.add("theme-sunrise");
-      } else if (savedTheme === "hackclub") {
-        document.documentElement.classList.add("theme-hackclub");
-      }
-    } else {
-      document.documentElement.classList.remove(
-        "theme-sunrise",
-        "theme-hackclub",
-      );
-    }
-
-    if (!getStoredApiKey()) {
-      setIsApiKeyModalOpen(true);
-    }
-    isFirstMount.current = false;
-  }, [initialSearchEnabled]);
-
+  // Offer the free fallback model when the proxy reports a negative balance.
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       try {
         const [balanceResponse, pricingMap] = await Promise.all([
@@ -260,14 +140,13 @@ export default function Home({
           getModelPricingMap(),
         ]);
         if (!balanceResponse.ok || cancelled) return;
-
         const data = await balanceResponse.json();
-        const isFreeModel = isModelFree(pricingMap[selectedModel]);
         if (cancelled) return;
-
-        if (isFreeModel) {
+        if (isModelFree(pricingMap[settings.selectedModel])) {
           setIsBalanceModalOpen(false);
-        } else if (
+          return;
+        }
+        if (
           typeof data?.balanceRemaining === "number" &&
           data.balanceRemaining < 0
         ) {
@@ -275,219 +154,56 @@ export default function Home({
         }
       } catch {}
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [selectedModel]);
+  }, [settings.selectedModel]);
 
-  const saveTimerRef = useRef(null);
-
-  useEffect(() => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveAllConversations(conversations).catch(() => {});
-    }, 500);
-  }, [conversations]);
-
-  useEffect(() => {
-    localStorage.setItem("selected_model", selectedModel);
-  }, [selectedModel]);
-
-  useEffect(() => {
-    localStorage.setItem("title_generation_model", titleGenerationModel);
-  }, [titleGenerationModel]);
-
-  useEffect(() => {
-    localStorage.setItem("thinking_enabled", JSON.stringify(thinkingEnabled));
-  }, [thinkingEnabled]);
-
-  useEffect(() => {
-    localStorage.setItem("artifacts_enabled", JSON.stringify(artifactsEnabled));
-    if (
-      artifactsEnabled &&
-      typeof window !== "undefined" &&
-      window.innerWidth >= 768
-    ) {
-      setArtifactPanelOpen(true);
-      saveArtifactPanelOpen(true);
+  // Derive artifacts from persisted messages (only when artifacts mode is on)
+  const messageArtifacts = useMemo(() => {
+    if (!settings.artifactsEnabled) return [];
+    const allArtifacts = [];
+    for (const msg of conversations.messages) {
+      if (msg.role === "assistant") {
+        const { artifacts } = extractHtmlArtifacts(msg.content);
+        allArtifacts.push(...artifacts);
+      }
     }
-  }, [artifactsEnabled, saveArtifactPanelOpen]);
+    return allArtifacts;
+  }, [conversations.messages, settings.artifactsEnabled]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      "web_search_enabled",
-      JSON.stringify(webSearchEnabled),
-    );
-  }, [webSearchEnabled]);
+  // Derive streaming artifact from live streaming content (only when
+  // artifacts mode is on — otherwise HTML fences are plain chat text)
+  const { streamingArtifact } = useMemo(() => {
+    if (!settings.artifactsEnabled || !stream.streamingContent)
+      return { streamingArtifact: null };
+    return extractHtmlArtifacts(stream.streamingContent);
+  }, [stream.streamingContent, settings.artifactsEnabled]);
 
-  useEffect(() => {
-    localStorage.setItem(
-      "agent_mode_enabled",
-      JSON.stringify(agentModeEnabled),
-    );
-  }, [agentModeEnabled]);
-
-  const toolsSupported = toolsSupportedMap[selectedModel] ?? true;
-
-  useEffect(() => {
-    if (!toolsSupported) {
-      if (webSearchEnabled) setWebSearchEnabled(false);
-      if (agentModeEnabled) setAgentModeEnabled(false);
+  // Derive total cost from persisted messages
+  const totalCost = useMemo(() => {
+    let total = 0;
+    for (const msg of conversations.messages) {
+      if (msg.role === "assistant" && msg.metrics?.cost) {
+        total += msg.metrics.cost;
+      }
     }
-  }, [toolsSupported, webSearchEnabled, agentModeEnabled]);
+    return total;
+  }, [conversations.messages]);
 
-  useEffect(() => {
-    localStorage.setItem("show_thinking", JSON.stringify(showThinking));
-  }, [showThinking]);
-
-  useEffect(() => {
-    localStorage.setItem("show_sandbox_code", JSON.stringify(showSandboxCode));
-  }, [showSandboxCode]);
-
-  useEffect(() => {
-    localStorage.setItem(
-      "show_sandbox_output",
-      JSON.stringify(showSandboxOutput),
-    );
-  }, [showSandboxOutput]);
-
-  useEffect(() => {
-    localStorage.setItem("show_metrics", JSON.stringify(showMetrics));
-  }, [showMetrics]);
-
-  useEffect(() => {
-    localStorage.setItem("theme", theme);
-    document.documentElement.classList.remove(
-      "theme-sunrise",
-      "theme-hackclub",
-    );
-    if (theme === "sunrise") {
-      document.documentElement.classList.add("theme-sunrise");
-    } else if (theme === "hackclub") {
-      document.documentElement.classList.add("theme-hackclub");
-    }
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem("max_tokens", JSON.stringify(maxTokens));
-  }, [maxTokens]);
+  const handleNewChat = useCallback(() => {
+    conversations.newConversation({
+      artifactPanelOpen: settings.artifactsEnabled && isDesktop,
+    });
+  }, [conversations, settings.artifactsEnabled, isDesktop]);
 
   const handleModelChange = useCallback(
     (model) => {
-      setSelectedModel(model);
-      if (activeConversation) {
-        setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === activeConversation ? { ...conv, model } : conv,
-          ),
-        );
-      }
+      setSetting("selectedModel", model);
+      conversations.setConversationModel(model);
     },
-    [activeConversation],
+    [conversations, setSetting],
   );
-
-  const handleNewChat = useCallback(() => {
-    const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
-    const shouldOpen = artifactsEnabled && isDesktop;
-
-    const newId =
-      typeof crypto !== "undefined" && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const newConversation = {
-      id: newId,
-      title: "New Chat",
-      createdAt: new Date().toISOString(),
-      messages: [],
-      artifactPanelOpen: shouldOpen,
-      model: selectedModel,
-      contextUsage: 0,
-    };
-    setConversations((prev) => [newConversation, ...prev]);
-    setActiveConversation(newId);
-    setMessages([]);
-    messagesRef.current = [];
-    setStreamingContent("");
-    setStreamingThinking("");
-    setStreamingError(null);
-    setStreamingSandboxTools([]);
-    setContextUsage(0);
-    lastUsageRef.current = null;
-    predictedOutputTokensRef.current = 0;
-    setArtifactPanelOpen(shouldOpen);
-  }, [artifactsEnabled, selectedModel]);
-
-  const handleSelectConversation = useCallback(
-    (id) => {
-      setActiveConversation(id);
-      const conversation = conversations.find((c) => c.id === id);
-      setMessages(conversation?.messages || []);
-      messagesRef.current = conversation?.messages || [];
-      setArtifactPanelOpen(conversation?.artifactPanelOpen ?? false);
-      if (conversation?.model) {
-        setSelectedModel(conversation.model);
-      }
-      setStreamingContent("");
-      setStreamingThinking("");
-      setStreamingError(null);
-      setStreamingSandboxTools([]);
-      lastUsageRef.current = null;
-      predictedOutputTokensRef.current = 0;
-      setContextUsage(
-        conversation?.messages?.length ? (conversation?.contextUsage ?? 0) : 0,
-      );
-      lastUsageRef.current = {
-        inputTokens: conversation?.contextUsage || 0,
-        outputTokens: 0,
-      };
-    },
-    [conversations],
-  );
-
-  const handleDeleteConversation = useCallback(
-    (id) => {
-      const sandboxId =
-        conversationsRef.current.find((c) => c.id === id)?.sandboxId || null;
-      fetch("/api/sandbox", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "destroy",
-          conversationId: id,
-          ...(sandboxId ? { sandboxId } : {}),
-        }),
-      }).catch(() => {});
-
-      setConversations((prev) => {
-        const filtered = prev.filter((c) => c.id !== id);
-        if (activeConversation === id) {
-          setStreamingSandboxTools([]);
-          if (filtered.length > 0) {
-            setActiveConversation(filtered[0].id);
-            setMessages(filtered[0].messages);
-          } else {
-            setActiveConversation(null);
-            setMessages([]);
-          }
-        }
-        return filtered;
-      });
-    },
-    [activeConversation],
-  );
-
-  const handleRenameConversation = useCallback((id, newTitle) => {
-    setConversations((prev) =>
-      prev.map((conv) =>
-        conv.id === id ? { ...conv, title: newTitle } : conv,
-      ),
-    );
-  }, []);
-
-  const handleImport = useCallback(() => {
-    setIsImportDialogOpen(true);
-  }, []);
 
   const handleExportAll = useCallback(async () => {
     try {
@@ -502,565 +218,76 @@ export default function Home({
     }
   }, []);
 
-  const handleImportComplete = useCallback(async (result) => {
-    toast.success(
-      `Imported ${result.chats.imported} conversation(s)` +
-        (result.chats.replaced > 0
-          ? `, replaced ${result.chats.replaced}`
-          : "") +
-        (result.settings ? " (settings imported)" : ""),
-    );
-    // Refresh conversations from DB
-    try {
-      const convs = await getAllConversations();
-      setConversations(convs);
-      if (convs.length > 0 && !activeConversationRef.current) {
-        setActiveConversation(convs[0].id);
-        setMessages(convs[0].messages);
-      }
-    } catch (error) {
-      console.error("Failed to refresh conversations after import:", error);
-    }
+  const handleImport = useCallback(() => {
+    setIsImportDialogOpen(true);
   }, []);
 
-  const handleSendMessage = useCallback(
-    async (content, files = []) => {
-      if (!content.trim() && files.length === 0) return;
-
-      if (isSubmittingRef.current) return;
-      isSubmittingRef.current = true;
-
-      // Check if this is an auto-send from URL params
-      const isAutoSend =
-        !hasAutoSentRef.current && initialQueryRef.current === content;
-      if (isAutoSend) {
-        hasAutoSentRef.current = true;
-      }
-
-      // Determine if we should use web search based on toggle or URL param
-      const needsWebSearch = isAutoSend
-        ? initialSearchEnabledRef.current
-        : webSearchEnabled;
-
-      const needsAgentMode = agentModeEnabled;
-
-      if (needsAgentMode && !getStoredE2bApiKey()) {
-        isSubmittingRef.current = false;
-        toast.error("Add your E2B API key in Settings to use cloud sandbox.");
-        return;
-      }
-
-      let currentId = activeConversationRef.current;
-      if (!currentId) {
-        const isDesktop =
-          typeof window !== "undefined" && window.innerWidth >= 768;
-        const shouldOpen = artifactsEnabled && isDesktop;
-
-        const newId =
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-        const newConversation = {
-          id: newId,
-          title: "New Chat",
-          createdAt: new Date().toISOString(),
-          messages: [],
-          artifactPanelOpen: shouldOpen,
-          model: selectedModel,
-          contextUsage: 0,
-        };
-        setConversations((prev) => [newConversation, ...prev]);
-        setActiveConversation(newId);
-        setContextUsage(0);
-        setArtifactPanelOpen(shouldOpen);
-        currentId = newId;
-      }
-
-      // Track usage against the conversation this message belongs to, so
-      // switching chats mid-stream doesn't attribute tokens to the wrong one.
-      activeUsageConversationRef.current = currentId;
-      predictedOutputTokensRef.current = 0;
-
-      const e2bApiKey = getStoredE2bApiKey();
-      const sandboxId =
-        conversationsRef.current.find((c) => c.id === currentId)?.sandboxId ||
-        null;
-
-      // Upload files to bucky
-      let fileUrls = [];
-      if (files.length > 0) {
-        const results = await Promise.allSettled(
-          files.map(async (file) => {
-            if (file.type.startsWith("image/") && file.dataUrl) {
-              const blob = dataUrlToBlob(file.dataUrl);
-              const uploadFile = new File([blob], file.name, {
-                type: file.type,
-              });
-              return await uploadFileToBucky(uploadFile);
-            }
-            if (file.rawFile) return await uploadFileToBucky(file.rawFile);
-            return null;
-          }),
-        );
-        fileUrls = results.map((r) =>
-          r.status === "fulfilled" ? r.value : null,
-        );
-      }
-
-      let userMessage;
-      if (files.length > 0) {
-        const contentParts = [];
-        if (content.trim()) {
-          contentParts.push({ type: "text", text: content });
-        }
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const buckyUrl = fileUrls[i];
-          if (file.type.startsWith("image/")) {
-            contentParts.push({
-              type: "image",
-              image: buckyUrl || file.dataUrl,
-            });
-          } else if (file.text) {
-            contentParts.push({
-              type: "text",
-              text: `--- File: ${file.name} ---\n${file.text}\n---`,
-              isFileAttachment: true,
-            });
-          } else if (buckyUrl) {
-            contentParts.push({
-              type: "file",
-              data: buckyUrl,
-              filename: file.name,
-              mediaType: file.type,
-            });
-          }
-        }
-        userMessage = {
-          role: "user",
-          content: contentParts,
-          _files: files.map((f, i) => ({
-            id: f.id,
-            name: f.name,
-            type: f.type,
-            size: f.size,
-            url: fileUrls[i] || null,
-          })),
-        };
-      } else {
-        userMessage = { role: "user", content };
-      }
-      const updatedMessages = [...messagesRef.current, userMessage];
-      setMessages(updatedMessages);
-      setStreamingContent("");
-      setStreamingThinking("");
-      setStreamingError(null);
-      setStreamingSandboxTools([]);
-      setIsLoading(true);
-
-      setConversations((prev) =>
-        prev.map((conv) =>
-          conv.id === currentId ? { ...conv, messages: updatedMessages } : conv,
-        ),
+  const handleImportComplete = useCallback(
+    async (result) => {
+      toast.success(
+        `Imported ${result.chats.imported} conversation(s)` +
+          (result.chats.replaced > 0
+            ? `, replaced ${result.chats.replaced}`
+            : "") +
+          (result.settings ? " (settings imported)" : ""),
       );
-
-      let fullResponse = "";
-      let fullThinking = "";
-      let sources = [];
-      let metrics = null;
-      const sandboxResults = [];
-      isStreamingComplete.current = false;
+      // Refresh conversations from DB; incremental writes mean the DB is now
+      // authoritative and cannot be clobbered by a pending save.
       try {
-        const tools = getTools({
-          includeWebSearch: needsWebSearch,
-          includeAgentTools: needsAgentMode,
-          includeCalculator: toolsSupported,
-        });
-
-        const snapToActualUsage = () => {
-          const actual = lastUsageRef.current;
-          predictedOutputTokensRef.current = 0;
-          if (!actual) return;
-          const total = (actual.inputTokens || 0) + (actual.outputTokens || 0);
-          if (activeConversationRef.current === currentId) {
-            setContextUsage(total);
-          }
-          const usageFor = activeUsageConversationRef.current || currentId;
-          if (usageFor) {
-            setConversations((prev) =>
-              prev.map((conv) =>
-                conv.id === usageFor ? { ...conv, contextUsage: total } : conv,
-              ),
-            );
-          }
-        };
-
-        const predictOutputTokens = (chars) => {
-          // Rough heuristic: ~4 characters per token on average.
-          return Math.max(0, Math.round((chars || 0) / 4));
-        };
-
-        const bumpPredictedUsage = (chars) => {
-          if (chars <= 0) return;
-          predictedOutputTokensRef.current += predictOutputTokens(chars);
-          const inputBase = lastUsageRef.current?.inputTokens || 0;
-          const outputBase = lastUsageRef.current?.outputTokens || 0;
-          const total =
-            inputBase + outputBase + predictedOutputTokensRef.current;
-          if (activeConversationRef.current === currentId) {
-            setContextUsage(total);
-          }
-        };
-
-        const makeOnError = () => (error) => {
-          isStreamingComplete.current = true;
-          snapToActualUsage();
-          setStreamingError({
-            title: "API Error",
-            details: `[${selectedModel}] ${error.message}`,
-          });
-          setIsLoading(false);
-          setStreamingContent("");
-          setStreamingThinking("");
-
-          const errorMessage = {
-            role: "assistant",
-            content: "",
-            error: { title: "API Error", details: error.message },
-          };
-          const finalMessages = [...updatedMessages, errorMessage];
-          setMessages(finalMessages);
-          setConversations((prev) =>
-            prev.map((conv) =>
-              conv.id === currentId
-                ? { ...conv, messages: finalMessages }
-                : conv,
-            ),
-          );
-        };
-
-        // The conversation may have been removed (deleted) or the user may
-        // have started a new chat while this stream was still running. Apply
-        // assistant output to the owning conversation by id against the
-        // latest state instead of a stale render snapshot.
-        const commitMessages = (extraMessage) => {
-          const finalMessages = extraMessage
-            ? [...updatedMessages, extraMessage]
-            : updatedMessages;
-          setMessages(finalMessages);
-          setConversations((prev) =>
-            prev.some((conv) => conv.id === currentId)
-              ? prev.map((conv) =>
-                  conv.id === currentId
-                    ? { ...conv, messages: finalMessages }
-                    : conv,
-                )
-              : prev,
-          );
-          return finalMessages;
-        };
-
-        const makeOnComplete = (includeSources) => async () => {
-          if (isStreamingComplete.current) return;
-          isStreamingComplete.current = true;
-
-          // Use the live accumulators, not a render snapshot: the final
-          // deltas must never be dropped just because the component has not
-          // re-rendered since the last chunk arrived.
-          const finalContent = fullResponse;
-          const finalThinking = fullThinking;
-
-          if (!finalContent && !finalThinking) {
-            const errorMsg = {
-              title: "API Error",
-              details: `No response received from model "${selectedModel}". The model may be overloaded or unavailable.`,
-            };
-            setStreamingError(errorMsg);
-            const errorMessage = {
-              role: "assistant",
-              content: "",
-              error: errorMsg,
-            };
-            setStreamingContent("");
-            setStreamingThinking("");
-            setIsLoading(false);
-            commitMessages(errorMessage);
-            return;
-          }
-
-          const assistantMessage = {
-            role: "assistant",
-            content: finalContent,
-            thinking: finalThinking || undefined,
-            ...(includeSources
-              ? {
-                  sources: sources.length > 0 ? sources : undefined,
-                  webSearch: true,
-                }
-              : {}),
-            ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
-            metrics,
-          };
-
-          setStreamingContent("");
-          setStreamingThinking("");
-          setIsLoading(false);
-          const finalMessages = commitMessages(assistantMessage);
-
-          let titleUpdate = {};
-          const currentConversation = conversationsRef.current.find(
-            (c) => c.id === currentId,
-          );
-          if (
-            currentConversation?.title === "New Chat" &&
-            finalMessages.length === 2
-          ) {
-            const newTitle = await generateTitle(content, titleGenerationModel);
-            titleUpdate = { title: newTitle };
-          }
-
-          setConversations((prev) =>
-            prev.map((conv) =>
-              conv.id === currentId
-                ? { ...conv, messages: finalMessages, ...titleUpdate }
-                : conv,
-            ),
-          );
-          snapToActualUsage();
-        };
-
-        const onChunk = (chunk, type) => {
-          bumpPredictedUsage(chunk.length);
-          if (type === "thinking") {
-            fullThinking += chunk;
-            setStreamingThinking(fullThinking);
-          } else {
-            fullResponse += chunk;
-            setStreamingContent(fullResponse);
-          }
-        };
-
-        const onToolCall = (call) => {
-          if (call.arguments && !call.complete) {
-            bumpPredictedUsage(call.arguments.length);
-          }
-
-          if (!needsAgentMode) return;
-
-          if (call.name && SANDBOX_TOOL_NAMES.includes(call.name)) {
-            setStreamingSandboxTools((prev) => {
-              const exists = prev.find((t) => t.index === call.index);
-              if (exists) {
-                return prev.map((t) =>
-                  t.index === call.index
-                    ? {
-                        ...t,
-                        code: call.arguments || t.code,
-                        status: call.complete ? "running" : t.status,
-                      }
-                    : t,
-                );
-              }
-              return [
-                ...prev,
-                {
-                  index: call.index,
-                  tool: call.name,
-                  code: call.arguments || "",
-                  status: call.complete ? "running" : "writing",
-                  stdout: "",
-                  stderr: "",
-                  exitCode: null,
-                  conversationId: currentId,
-                },
-              ];
-            });
-          } else if (call.arguments) {
-            setStreamingSandboxTools((prev) =>
-              prev.map((t) =>
-                t.index === call.index
-                  ? { ...t, code: t.code + call.arguments }
-                  : t,
-              ),
-            );
-          }
-
-          if (call.complete) {
-            setStreamingSandboxTools((prev) => {
-              const existing = prev.find((t) => t.index === call.index);
-              if (!existing || !SANDBOX_TOOL_NAMES.includes(existing.tool))
-                return prev;
-              let code = existing.code;
-              try {
-                const parsed = JSON.parse(code);
-                code = parsed.code || parsed.command || code;
-              } catch {}
-              return prev.map((t) =>
-                t.index === call.index ? { ...t, code, status: "running" } : t,
-              );
-            });
-          }
-        };
-
-        const onSandboxResult = (result) => {
-          if (result.sandboxId) {
-            setConversations((prev) =>
-              prev.map((conv) =>
-                conv.id === currentId
-                  ? { ...conv, sandboxId: result.sandboxId }
-                  : conv,
-              ),
-            );
-          }
-          sandboxResults.push({ ...result, conversationId: currentId });
-          setStreamingSandboxTools((prev) => {
-            const lastRunning = [...prev]
-              .reverse()
-              .find((t) => t.status === "running" || t.status === "writing");
-            if (!lastRunning) return prev;
-            return prev.map((t) =>
-              t.index === lastRunning.index
-                ? {
-                    ...t,
-                    status: "complete",
-                    stdout: result.stdout || "",
-                    stderr: result.stderr || "",
-                    exitCode: result.exitCode,
-                    sandboxId: result.sandboxId,
-                  }
-                : t,
-            );
-          });
-        };
-
-        const commonArgs = [
-          updatedMessages,
-          selectedModel,
-          onChunk,
-          makeOnError(),
-          makeOnComplete(needsWebSearch),
-          thinkingEnabled,
-          artifactsEnabled,
-          tools,
-          "auto",
-          onToolCall,
-          needsWebSearch
-            ? (searchSources) => {
-                sources = searchSources;
-              }
-            : null,
-          (metricsData) => {
-            metrics = metricsData;
-            if (!metricsData) return;
-            lastUsageRef.current = metricsData;
-            predictedOutputTokensRef.current = 0;
-            const total =
-              (metricsData.inputTokens || 0) + (metricsData.outputTokens || 0);
-            if (activeUsageConversationRef.current) {
-              setConversations((prev) =>
-                prev.map((conv) =>
-                  conv.id === activeUsageConversationRef.current
-                    ? { ...conv, contextUsage: total }
-                    : conv,
-                ),
-              );
-            }
-            if (activeConversationRef.current === currentId) {
-              setContextUsage(total);
-              if (metricsData.cost != null) {
-                setTotalCost((prev) => prev + metricsData.cost);
-              }
-            }
-          },
-          maxTokens,
-          needsAgentMode,
-          needsAgentMode ? currentId : null,
-          needsAgentMode ? e2bApiKey : null,
-          needsAgentMode ? sandboxId : null,
-          needsAgentMode ? onSandboxResult : null,
-        ];
-
-        await streamChatCompletion(...commonArgs);
-      } catch (_error) {
-        isStreamingComplete.current = true;
-        const errorMsg = {
-          title: "Error",
-          details: _error.message || "An unexpected error occurred.",
-        };
-        setStreamingError(errorMsg);
-        setIsLoading(false);
-        setStreamingContent("");
-        setStreamingThinking("");
-
-        const errorMessage = {
-          role: "assistant",
-          content: "",
-          error: errorMsg,
-        };
-        const finalMessages = [...updatedMessages, errorMessage];
-        setMessages(finalMessages);
-        setConversations((prev) =>
-          prev.map((conv) =>
-            conv.id === currentId ? { ...conv, messages: finalMessages } : conv,
-          ),
-        );
-      } finally {
-        isSubmittingRef.current = false;
+        const convs = await getAllConversations();
+        conversations.replaceConversations(convs);
+      } catch (error) {
+        console.error("Failed to refresh conversations after import:", error);
       }
     },
-    [
-      selectedModel,
-      thinkingEnabled,
-      artifactsEnabled,
-      webSearchEnabled,
-      agentModeEnabled,
-      toolsSupported,
-      titleGenerationModel,
-      maxTokens,
-    ],
+    [conversations],
   );
 
-  // Auto-send initial query from URL params
+  // Auto-send initial query from URL params (/search?q=...). Web search is
+  // forced on for this send when the page was opened with ?search=true.
+  // Intentionally depends only on the query (stream.send identity changes
+  // with model/tools state; the timer must not re-fire on every switch).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
     if (!initialQuery || hasAutoSentRef.current) return;
-    // Wait for conversations to load and component to mount
     const timer = setTimeout(() => {
       if (!hasAutoSentRef.current && initialQuery) {
-        handleSendMessage(initialQuery);
+        hasAutoSentRef.current = true;
+        if (initialSearchEnabledRef.current) {
+          setSetting("webSearchEnabled", true);
+        }
+        stream.send(initialQuery, []);
       }
     }, 200);
     return () => clearTimeout(timer);
-  }, [initialQuery, handleSendMessage]);
+  }, [initialQuery]);
 
   return (
     <>
       <ChatLayout
         onNewChat={handleNewChat}
-        conversations={conversations}
-        activeConversation={activeConversation}
-        onSelectConversation={handleSelectConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onRenameConversation={handleRenameConversation}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        selectedModel={selectedModel}
+        conversations={conversations.conversations}
+        activeConversation={conversations.activeConversation}
+        onSelectConversation={conversations.selectConversation}
+        onDeleteConversation={conversations.deleteConversation}
+        onRenameConversation={conversations.renameConversation}
+        selectedModel={settings.selectedModel}
         onModelChange={handleModelChange}
-        thinkingEnabled={thinkingEnabled}
-        onThinkingChange={setThinkingEnabled}
-        artifactsEnabled={artifactsEnabled}
-        onArtifactsChange={setArtifactsEnabled}
-        webSearchEnabled={webSearchEnabled}
-        onWebSearchChange={setWebSearchEnabled}
-        agentModeEnabled={agentModeEnabled}
-        onAgentModeChange={setAgentModeEnabled}
+        groupedModels={groupedModels}
+        thinkingEnabled={settings.thinkingEnabled}
+        onThinkingChange={(v) => setSetting("thinkingEnabled", v)}
+        artifactsEnabled={settings.artifactsEnabled}
+        onArtifactsChange={(v) => setSetting("artifactsEnabled", v)}
+        webSearchEnabled={settings.webSearchEnabled}
+        onWebSearchChange={(v) => setSetting("webSearchEnabled", v)}
+        agentModeEnabled={settings.agentModeEnabled}
+        onAgentModeChange={(v) => setSetting("agentModeEnabled", v)}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
-        contextUsage={contextUsage}
+        contextUsage={stream.contextUsage}
         contextWindowMap={contextWindowMap}
-        onContextWindowMapChange={setContextWindowMap}
         toolsSupported={toolsSupported}
-        onToolsSupportedMapChange={setToolsSupportedMap}
         totalCost={totalCost}
         rightPanel={
           <ArtifactPanel
@@ -1075,22 +302,22 @@ export default function Home({
       >
         <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList
-            messages={messages}
-            isLoading={isLoading}
-            streamingContent={streamingContent}
-            streamingThinking={streamingThinking}
-            streamingError={streamingError}
-            thinkingEnabled={thinkingEnabled}
-            webSearchEnabled={webSearchEnabled}
-            agentModeEnabled={agentModeEnabled}
-            artifactsEnabled={artifactsEnabled}
-            streamingSandboxTools={streamingSandboxTools}
-            showThinking={showThinking}
-            showSandboxCode={showSandboxCode}
-            showSandboxOutput={showSandboxOutput}
-            showMetrics={showMetrics}
+            messages={conversations.messages}
+            isLoading={stream.isLoading}
+            streamingContent={stream.streamingContent}
+            streamingThinking={stream.streamingThinking}
+            streamingError={stream.streamingError}
+            thinkingEnabled={settings.thinkingEnabled}
+            webSearchEnabled={settings.webSearchEnabled}
+            agentModeEnabled={settings.agentModeEnabled}
+            artifactsEnabled={settings.artifactsEnabled}
+            streamingSandboxTools={stream.streamingSandboxTools}
+            showThinking={settings.showThinking}
+            showSandboxCode={settings.showSandboxCode}
+            showSandboxOutput={settings.showSandboxOutput}
+            showMetrics={settings.showMetrics}
           />
-          <ChatInput onSend={handleSendMessage} isLoading={isLoading} />
+          <ChatInput onSend={stream.send} isLoading={stream.isLoading} />
         </div>
       </ChatLayout>
 
@@ -1101,20 +328,23 @@ export default function Home({
           setHasE2bKey(!!getStoredE2bApiKey());
           toast.success("Settings updated");
         }}
-        titleGenerationModel={titleGenerationModel}
-        onTitleGenerationModelChange={setTitleGenerationModel}
-        theme={theme}
-        onThemeChange={setTheme}
-        showThinking={showThinking}
-        onShowThinkingChange={setShowThinking}
-        showSandboxCode={showSandboxCode}
-        onShowSandboxCodeChange={setShowSandboxCode}
-        showSandboxOutput={showSandboxOutput}
-        onShowSandboxOutputChange={setShowSandboxOutput}
-        showMetrics={showMetrics}
-        onShowMetricsChange={setShowMetrics}
-        maxTokens={maxTokens}
-        onMaxTokensChange={setMaxTokens}
+        groupedModels={groupedModels}
+        titleGenerationModel={settings.titleGenerationModel}
+        onTitleGenerationModelChange={(v) =>
+          setSetting("titleGenerationModel", v)
+        }
+        theme={settings.theme}
+        onThemeChange={(v) => setSetting("theme", v)}
+        showThinking={settings.showThinking}
+        onShowThinkingChange={(v) => setSetting("showThinking", v)}
+        showSandboxCode={settings.showSandboxCode}
+        onShowSandboxCodeChange={(v) => setSetting("showSandboxCode", v)}
+        showSandboxOutput={settings.showSandboxOutput}
+        onShowSandboxOutputChange={(v) => setSetting("showSandboxOutput", v)}
+        showMetrics={settings.showMetrics}
+        onShowMetricsChange={(v) => setSetting("showMetrics", v)}
+        maxTokens={settings.maxTokens}
+        onMaxTokensChange={(v) => setSetting("maxTokens", v)}
         onImport={handleImport}
         onExportAll={handleExportAll}
       />

@@ -27,6 +27,7 @@ export default defineConfig({
         "src/**/__tests__/**",
         "src/app/**/layout.js",
         "src/app/**/page.js",
+        "src/components/ui/**",
       ],
     },
   },

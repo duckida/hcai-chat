@@ -14,6 +14,13 @@ export const metadata = {
   description: "A modern web-based chat UI for Hack Club AI",
 };
 
+export const viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0f" },
+  ],
+};
+
 export default function RootLayout({ children }) {
   return (
     <html

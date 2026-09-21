@@ -65,10 +65,6 @@ export function generateExportFilename(prefix = "hcai-chat-export") {
   return `${prefix}-${date}.zip`;
 }
 
-export function generateSingleChatExportFilename(conversationId) {
-  return `chat-${conversationId}.zip`;
-}
-
 export function stripSecrets(settings) {
   if (!settings || typeof settings !== "object") return settings;
   const copy = JSON.parse(JSON.stringify(settings));

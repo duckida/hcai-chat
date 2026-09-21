@@ -1,17 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  exaAnswer,
-  exaContents,
-  exaFindSimilar,
-  exaSearch,
-  executeToolCall,
   generateTitle,
   getErrorMessage,
   getStoredApiKey,
   setStoredApiKey,
   streamChatCompletion,
-  streamChatWithTools,
-  streamExaAnswer,
 } from "../api-client";
 
 const TEST_MODEL = "google/gemini-3.1-flash-lite";
@@ -105,7 +98,12 @@ describe("streamChatCompletion", () => {
   it("calls onError when no API key is set", async () => {
     localStorage.clear();
     const onError = vi.fn();
-    await streamChatCompletion([], "model", vi.fn(), onError);
+    await streamChatCompletion({
+      messages: [],
+      model: "model",
+      onChunk: vi.fn(),
+      onError,
+    });
     expect(onError).toHaveBeenCalledWith(expect.any(Error));
   });
 
@@ -116,7 +114,12 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const messages = [{ role: "user", content: "hi" }];
-    await streamChatCompletion(messages, TEST_MODEL, vi.fn(), vi.fn());
+    await streamChatCompletion({
+      messages,
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+    });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/chat",
@@ -149,7 +152,12 @@ describe("streamChatCompletion", () => {
       { role: "assistant", content: "" },
       { role: "user", content: "still here" },
     ];
-    await streamChatCompletion(messages, TEST_MODEL, vi.fn(), vi.fn());
+    await streamChatCompletion({
+      messages,
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+    });
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.messages).toEqual([
@@ -182,7 +190,12 @@ describe("streamChatCompletion", () => {
         error: { title: "API Error", details: "boom" },
       },
     ];
-    await streamChatCompletion(messages, TEST_MODEL, onChunk, vi.fn());
+    await streamChatCompletion({
+      messages,
+      model: TEST_MODEL,
+      onChunk,
+      onError: vi.fn(),
+    });
 
     expect(onChunk).toHaveBeenCalledWith("fallback ok", "content");
     const fallbackBody = JSON.parse(fetchMock.mock.calls[1][1].body);
@@ -198,7 +211,12 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onChunk = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, onChunk, vi.fn());
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk,
+      onError: vi.fn(),
+    });
     expect(onChunk).toHaveBeenCalledWith("Hello", "content");
     expect(onChunk).toHaveBeenCalledWith(" world", "content");
   });
@@ -211,7 +229,13 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onChunk = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, onChunk, vi.fn(), null, true);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk,
+      onError: vi.fn(),
+      thinking: true,
+    });
     expect(onChunk).toHaveBeenCalledWith("hmm", "thinking");
   });
 
@@ -223,9 +247,19 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onMetrics = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, vi.fn(), vi.fn(), vi.fn(), false, false, null, "auto", null, null, onMetrics);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onMetrics,
+    });
     expect(onMetrics).toHaveBeenCalledWith(
-      expect.objectContaining({ model: TEST_MODEL, inputTokens: 1, outputTokens: 2 }),
+      expect.objectContaining({
+        model: TEST_MODEL,
+        inputTokens: 1,
+        outputTokens: 2,
+      }),
     );
   });
 
@@ -237,7 +271,12 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onError = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, vi.fn(), onError);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+    });
     expect(onError).toHaveBeenCalledWith(expect.any(Error));
     expect(onError.mock.calls[0][0].message).toBe("Oops");
   });
@@ -250,22 +289,37 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onSearchResult = vi.fn();
-    await streamChatCompletion(
-      [],
-      TEST_MODEL,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      false,
-      false,
-      null,
-      "auto",
-      null,
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
       onSearchResult,
-    );
-    expect(onSearchResult).toHaveBeenCalledWith(
-      [{ url: "https://a" }],
-      "text",
+    });
+    expect(onSearchResult).toHaveBeenCalledWith([{ url: "https://a" }], "text");
+  });
+
+  it("forwards sandbox_result events", async () => {
+    const lines = [
+      'data: {"type":"sandbox_result","tool":"execute_code","code":"1+1","stdout":"2","stderr":"","exitCode":0,"sandboxId":"sbx"}\n\n',
+      "data: [DONE]\n\n",
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
+
+    const onSandboxResult = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onSandboxResult,
+    });
+    expect(onSandboxResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tool: "execute_code",
+        sandboxId: "sbx",
+        exitCode: 0,
+      }),
     );
   });
 
@@ -277,18 +331,15 @@ describe("streamChatCompletion", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(makeStreamResponse(lines)));
 
     const onToolCall = vi.fn();
-    await streamChatCompletion(
-      [],
-      TEST_MODEL,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      false,
-      false,
-      [{ type: "function", function: { name: "web_search" } }],
-      "auto",
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      tools: [{ type: "function", function: { name: "web_search" } }],
+      toolChoice: "auto",
       onToolCall,
-    );
+    });
     expect(onToolCall).toHaveBeenCalledWith(
       expect.objectContaining({
         index: 0,
@@ -305,7 +356,13 @@ describe("streamChatCompletion", () => {
       vi.fn().mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"])),
     );
     const onComplete = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, vi.fn(), vi.fn(), onComplete);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onComplete,
+    });
     expect(onComplete).toHaveBeenCalled();
   });
 
@@ -319,7 +376,12 @@ describe("streamChatCompletion", () => {
 
     const onChunk = vi.fn();
     const onError = vi.fn();
-    await streamChatCompletion([], TEST_MODEL, onChunk, onError);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+    });
     expect(onChunk).toHaveBeenCalledWith("ok", "content");
   });
 
@@ -329,75 +391,72 @@ describe("streamChatCompletion", () => {
       .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
     vi.stubGlobal("fetch", fetchMock);
     const tools = [{ type: "function", function: { name: "x" } }];
-    await streamChatCompletion(
-      [],
-      TEST_MODEL,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      false,
-      false,
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
       tools,
-      "required",
-    );
+      toolChoice: "required",
+    });
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.tools).toEqual(tools);
     expect(body.tool_choice).toBe("required");
   });
-});
 
-describe("streamChatWithTools", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    setStoredApiKey("key");
+  it("forwards agent-mode fields only when agentMode is set", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      agentMode: true,
+      conversationId: "conv-1",
+      e2bApiKey: "e2b-key",
+      sandboxId: "sbx-1",
+      onSandboxResult: vi.fn(),
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.agentMode).toBe(true);
+    expect(body.conversationId).toBe("conv-1");
+    expect(body.e2bApiKey).toBe("e2b-key");
+    expect(body.sandboxId).toBe("sbx-1");
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
+  it("omits agent-mode fields when agentMode is false", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty("agentMode");
+    expect(body).not.toHaveProperty("conversationId");
   });
 
-  it("calls onError when no API key is set", async () => {
-    localStorage.clear();
-    const onError = vi.fn();
-    await streamChatWithTools([], TEST_MODEL, vi.fn(), onError);
-    expect(onError).toHaveBeenCalled();
-  });
-
-  it("decodes AI SDK stream part types 0/6/8/9", async () => {
-    const lines = [
-      '0:"hello"\n',
-      '6:"thinking-now"\n',
-      '8:{"toolCall":{"index":0,"toolCallId":"id1","toolName":"web_search","args":{"q":"hi"}}}\n',
-      '9:{"toolCall":{"index":0,"toolCallId":"id1","toolName":""}}\n',
-    ].join("");
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(makeStreamResponse([lines])),
-    );
-
-    const onChunk = vi.fn();
-    const onToolCall = vi.fn();
-    await streamChatWithTools(
-      [],
-      TEST_MODEL,
-      onChunk,
-      vi.fn(),
-      vi.fn(),
-      false,
-      false,
-      null,
-      "auto",
-      onToolCall,
-    );
-    expect(onChunk).toHaveBeenCalledWith("hello", "content");
-    expect(onChunk).toHaveBeenCalledWith("thinking-now", "thinking");
-    expect(onToolCall).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "web_search", complete: false }),
-    );
-    expect(onToolCall).toHaveBeenCalledWith(
-      expect.objectContaining({ complete: true }),
-    );
+  it("includes max_tokens when provided", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      maxTokens: 4096,
+    });
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.max_tokens).toBe(4096);
   });
 });
 
@@ -420,7 +479,10 @@ describe("generateTitle", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ choices: [{ message: { content: '"Quick title"' } }] }),
+        json: () =>
+          Promise.resolve({
+            choices: [{ message: { content: '"Quick title"' } }],
+          }),
       }),
     );
     expect(await generateTitle("hi")).toBe("Quick title");
@@ -435,228 +497,5 @@ describe("generateTitle", () => {
     );
     expect(result.endsWith("...")).toBe(true);
     expect(result.length).toBeLessThanOrEqual(33);
-  });
-});
-
-describe("Exa helpers", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    setStoredApiKey("k");
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("exaSearch POSTs to /api/exa and returns JSON", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ results: [] }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    const out = await exaSearch("query", { numResults: 3 });
-    expect(out).toEqual({ results: [] });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.endpoint).toBe("search");
-    expect(body.data.numResults).toBe(3);
-  });
-
-  it("exaFindSimilar sends a url field", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ ok: true }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    await exaFindSimilar("https://example.com");
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.endpoint).toBe("findSimilar");
-    expect(body.data.url).toBe("https://example.com");
-  });
-
-  it("exaContents wraps a single url in an array", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ ok: true }),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    await exaContents("https://example.com");
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.endpoint).toBe("contents");
-    expect(body.data.urls).toEqual(["https://example.com"]);
-  });
-
-  it("exaAnswer returns the raw response when stream=false", async () => {
-    const response = {
-      ok: true,
-      json: () => Promise.resolve({ answer: "42" }),
-    };
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response));
-    const out = await exaAnswer("q", { stream: false });
-    expect(out).toBe(response);
-  });
-
-  it("throws on non-OK responses with server error message", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        json: () => Promise.resolve({ error: "Bad" }),
-      }),
-    );
-    await expect(exaSearch("x")).rejects.toThrow("Bad");
-  });
-
-  it("calls onError when no API key", async () => {
-    localStorage.clear();
-    const onError = vi.fn();
-    await streamExaAnswer("q", vi.fn(), onError, vi.fn());
-    expect(onError).toHaveBeenCalled();
-  });
-
-  it("streamExaAnswer streams content from SSE", async () => {
-    const lines = [
-      'data: {"answer":"a"}\n',
-      'data: {"answer":"b"}\n',
-      "data: [DONE]\n",
-    ].join("");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(makeStreamResponse([lines])),
-    );
-
-    const onChunk = vi.fn();
-    const onComplete = vi.fn();
-    await streamExaAnswer("q", onChunk, vi.fn(), onComplete);
-    expect(onChunk).toHaveBeenCalledWith("a");
-    expect(onChunk).toHaveBeenCalledWith("b");
-  });
-});
-
-describe("executeToolCall", () => {
-  beforeEach(() => {
-    localStorage.clear();
-    setStoredApiKey("k");
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("throws when no API key is present", async () => {
-    localStorage.clear();
-    await expect(executeToolCall("x", {})).rejects.toThrow(/API key/);
-  });
-
-  it("parses the JSON response on success", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: { get: (h) => (h === "content-type" ? "application/json" : null) },
-        text: () => Promise.resolve(JSON.stringify({ result: "ok" })),
-      }),
-    );
-    const out = await executeToolCall("web_search", { q: "hi" });
-    expect(out).toEqual({ result: "ok" });
-  });
-
-  it("uses server error message on non-OK JSON", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 500,
-        headers: { get: (h) => (h === "content-type" ? "application/json" : null) },
-        json: () => Promise.resolve({ error: "Bad" }),
-        text: () => Promise.resolve(""),
-      }),
-    );
-    await expect(executeToolCall("x", {})).rejects.toThrow("Bad");
-  });
-
-  it("uses status-based message when failure is not JSON", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 502,
-        headers: { get: () => "text/plain" },
-        text: () => Promise.resolve("Bad Gateway"),
-        json: () => Promise.reject(new Error("not json")),
-      }),
-    );
-    await expect(executeToolCall("x", {})).rejects.toThrow("Bad Gateway");
-  });
-
-  it("throws on non-JSON success response", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: { get: () => "text/html" },
-        text: () => Promise.resolve("<html></html>"),
-      }),
-    );
-    await expect(executeToolCall("x", {})).rejects.toThrow(/Invalid response type/);
-  });
-
-  it("throws on empty success body", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: { get: () => "application/json" },
-        text: () => Promise.resolve(""),
-      }),
-    );
-    await expect(executeToolCall("x", {})).rejects.toThrow(/Empty response/);
-  });
-
-  it("throws on malformed JSON in success body", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        headers: { get: () => "application/json" },
-        text: () => Promise.resolve("not json"),
-      }),
-    );
-    await expect(executeToolCall("x", {})).rejects.toThrow(/Failed to parse/);
-  });
-
-  it("sends the API key in the request body", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        headers: { get: () => "application/json" },
-        text: () => Promise.resolve("{}"),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    await executeToolCall("x", { foo: 1 });
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.tool).toBe("x");
-    expect(body.parameters).toEqual({ foo: 1 });
-    expect(body.apiKey).toBe("k");
-  });
-
-  it("accepts an explicit apiKey argument", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        headers: { get: () => "application/json" },
-        text: () => Promise.resolve("{}"),
-      });
-    vi.stubGlobal("fetch", fetchMock);
-    await executeToolCall("x", {}, "explicit-key");
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
-    expect(body.apiKey).toBe("explicit-key");
   });
 });

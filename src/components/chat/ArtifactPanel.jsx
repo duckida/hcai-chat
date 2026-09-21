@@ -54,24 +54,23 @@ export default function ArtifactPanel({
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_WIDTH;
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-    } catch {
-      return DEFAULT_WIDTH;
-    }
-  });
-  const [isResizing, setIsResizing] = useState(false);
-  const iframeRef = useRef(null);
-  const handleRef = useRef(null);
-  const resizeStartX = useRef(0);
-  const resizeStartWidth = useRef(0);
+  const [mounted, setMounted] = useState(false);
 
+  // Hydration safety: the stored width is only read after mount so the
+  // server render and first client paint agree on the panel's width.
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
   const [vw, setVw] = useState(0);
 
   useEffect(() => {
+    setMounted(true);
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const stored = saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+      setPanelWidth(Number.isFinite(stored) ? stored : DEFAULT_WIDTH);
+    } catch {
+      setPanelWidth(DEFAULT_WIDTH);
+    }
+
     const update = () => setVw(window.innerWidth);
     update();
     window.addEventListener("resize", update);
@@ -90,6 +89,12 @@ export default function ArtifactPanel({
       } catch {}
     }
   }, [panelWidth]);
+
+  const [isResizing, setIsResizing] = useState(false);
+  const iframeRef = useRef(null);
+  const handleRef = useRef(null);
+  const resizeStartX = useRef(0);
+  const resizeStartWidth = useRef(0);
 
   const handleFullscreenToggle = () => {
     if (onFullscreenToggle) onFullscreenToggle();
@@ -215,10 +220,9 @@ export default function ArtifactPanel({
           transition={{ type: "spring", stiffness: 300, damping: 30 }}
           className="flex flex-row h-full bg-background max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
           style={{
-            width:
-              typeof window !== "undefined" && window.innerWidth < 768
-                ? undefined
-                : panelWidth,
+            // Until mounted, vw is 0 on both server and client so the markup
+            // matches; after mount this reflects the real viewport.
+            width: mounted && vw < 768 ? undefined : panelWidth,
           }}
         >
           {/* Resize handle - desktop only */}

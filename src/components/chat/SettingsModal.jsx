@@ -2,8 +2,6 @@
 
 import {
   Brain,
-  Check,
-  ChevronDown,
   Cloud,
   Download,
   Eye,
@@ -18,7 +16,8 @@ import {
   Upload,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import ModelPicker from "@/components/chat/ModelPicker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -26,16 +25,6 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -46,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useModels } from "@/hooks/use-models";
 import {
   getStoredApiKey,
   getStoredE2bApiKey,
@@ -296,53 +286,9 @@ export default function SettingsModal({
   const [e2bApiKey, setE2bApiKey] = useState("");
   const [showE2bKey, setShowE2bKey] = useState(false);
   const [error, setError] = useState("");
-  const [groupedModels, setGroupedModels] = useState({});
-  const [expandedProvider, setExpandedProvider] = useState(null);
   const [activeSection, setActiveSection] = useState("connection");
 
-  const fetchModels = useRef(async () => {
-    try {
-      const response = await fetch("/api/models");
-      if (response.ok) {
-        const data = await response.json();
-        if (data.data && Array.isArray(data.data)) {
-          const uniqueModels = Array.from(
-            new Map(data.data.map((m) => [m.id, m])).values(),
-          );
-
-          const grouped = uniqueModels.reduce((acc, model) => {
-            let provider;
-            let name;
-            if (model.name?.includes(":")) {
-              const parts = model.name.split(":");
-              provider = parts[0].trim();
-              name = parts.slice(1).join(":").trim();
-            } else {
-              const [providerRaw] = model.id.split("/");
-              provider =
-                providerRaw.charAt(0).toUpperCase() + providerRaw.slice(1);
-              name = model.name || model.id.split("/").pop();
-            }
-
-            if (!acc[provider]) acc[provider] = [];
-            acc[provider].push({ id: model.id, name });
-            return acc;
-          }, {});
-
-          const sortedGrouped = {};
-          Object.keys(grouped)
-            .sort()
-            .forEach((provider) => {
-              sortedGrouped[provider] = grouped[provider].sort((a, b) =>
-                a.name.localeCompare(b.name),
-              );
-            });
-
-          setGroupedModels(sortedGrouped);
-        }
-      }
-    } catch (_e) {}
-  });
+  const { groupedModels } = useModels();
 
   useEffect(() => {
     if (isOpen) {
@@ -351,7 +297,6 @@ export default function SettingsModal({
       const storedE2b = getStoredE2bApiKey();
       setE2bApiKey(storedE2b || "");
       setError("");
-      fetchModels.current();
     }
   }, [isOpen]);
 
@@ -524,110 +469,13 @@ export default function SettingsModal({
 
                   <div className="space-y-3">
                     <SectionLabel>Title Generation Model</SectionLabel>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="flex items-center justify-between w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring text-sm"
-                        >
-                          <span className="truncate">
-                            {Object.values(groupedModels)
-                              .flat()
-                              .find((m) => m.id === titleGenerationModel)
-                              ?.name || "Select Model"}
-                          </span>
-                          <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="start"
-                        className="w-[var(--radix-dropdown-menu-trigger-width)] border-border shadow-2xl rounded-2xl p-1 bg-popover z-[100] max-h-[40vh] overflow-y-auto"
-                      >
-                        {Object.entries(groupedModels).length > 0 ? (
-                          <>
-                            <div className="hidden md:block">
-                              {Object.entries(groupedModels).map(
-                                ([provider, models]) => (
-                                  <DropdownMenuSub key={provider}>
-                                    <DropdownMenuSubTrigger className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-default">
-                                      {provider}
-                                    </DropdownMenuSubTrigger>
-                                    <DropdownMenuPortal>
-                                      <DropdownMenuSubContent className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100] max-h-[40vh] overflow-y-auto">
-                                        {models.map((m) => (
-                                          <DropdownMenuItem
-                                            key={m.id}
-                                            onClick={() =>
-                                              onTitleGenerationModelChange(m.id)
-                                            }
-                                            className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer flex items-center justify-between"
-                                          >
-                                            <span>{m.name}</span>
-                                            {titleGenerationModel === m.id && (
-                                              <Check className="h-4 w-4 ml-2" />
-                                            )}
-                                          </DropdownMenuItem>
-                                        ))}
-                                      </DropdownMenuSubContent>
-                                    </DropdownMenuPortal>
-                                  </DropdownMenuSub>
-                                ),
-                              )}
-                            </div>
-                            <div className="md:hidden">
-                              {Object.entries(groupedModels).map(
-                                ([provider, models]) => (
-                                  <div key={provider}>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setExpandedProvider(
-                                          expandedProvider === provider
-                                            ? null
-                                            : provider,
-                                        );
-                                      }}
-                                      className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-accent"
-                                    >
-                                      <span className="font-medium">
-                                        {provider}
-                                      </span>
-                                      <ChevronDown
-                                        className={`h-3.5 w-3.5 opacity-50 transition-transform ${expandedProvider === provider ? "rotate-180" : ""}`}
-                                      />
-                                    </button>
-                                    {expandedProvider === provider && (
-                                      <div className="pb-1 pl-4">
-                                        {models.map((m) => (
-                                          <DropdownMenuItem
-                                            key={m.id}
-                                            onClick={() =>
-                                              onTitleGenerationModelChange(m.id)
-                                            }
-                                            className="text-[12px] transition-colors rounded-lg py-2 px-3 cursor-pointer flex items-center justify-between"
-                                          >
-                                            <span>{m.name}</span>
-                                            {titleGenerationModel === m.id && (
-                                              <Check className="h-3.5 w-3.5 ml-2" />
-                                            )}
-                                          </DropdownMenuItem>
-                                        ))}
-                                      </div>
-                                    )}
-                                  </div>
-                                ),
-                              )}
-                            </div>
-                          </>
-                        ) : (
-                          <div className="p-4 text-xs text-center text-muted-foreground font-medium">
-                            Loading models...
-                          </div>
-                        )}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <ModelPicker
+                      groupedModels={groupedModels}
+                      value={titleGenerationModel}
+                      onChange={onTitleGenerationModelChange}
+                      triggerClassName="w-full justify-between border-border bg-muted rounded-xl px-4 h-12 font-medium text-sm"
+                      emptyLabel="Select Model"
+                    />
                   </div>
 
                   <div className="space-y-3">

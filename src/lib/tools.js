@@ -485,24 +485,4 @@ export function getTools(options = {}) {
   });
 }
 
-/**
- * Get tools with their execution functions
- * Useful for server-side tool calling
- * @returns {Array} Array of tool objects with schema and executor
- */
-export function getToolExecutors() {
-  return TOOLS.map((tool) => ({
-    name: tool.function.name,
-    description: tool.function.description,
-    parameters: tool.function.parameters,
-    execute: async (params) => executeTool(tool.function.name, params),
-  }));
-}
-
 export const SANDBOX_TOOL_NAMES = ["execute_code", "run_command"];
-
-export function getAgentTools() {
-  return TOOLS.filter((tool) =>
-    SANDBOX_TOOL_NAMES.includes(tool.function.name),
-  );
-}

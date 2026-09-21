@@ -3,7 +3,6 @@
 import {
   Brain,
   Check,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cloud,
@@ -19,17 +18,8 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import ContextUsage from "@/components/chat/ContextUsage";
+import ModelPicker from "@/components/chat/ModelPicker";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -45,102 +35,48 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-export default function ChatLayout({
-  onNewChat,
-  conversations = [],
+const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
+const MIN_SIDEBAR_WIDTH = 200;
+const MAX_SIDEBAR_WIDTH = 600;
+
+function getSearchableText(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((part) => getSearchableText(part?.text ?? part?.content ?? part))
+      .join(" ");
+  }
+  if (typeof value === "object") {
+    return [value.name, value.title, value.text, value.content]
+      .map(getSearchableText)
+      .join(" ");
+  }
+  return String(value);
+}
+
+function SidebarContent({
+  conversations,
   activeConversation,
   onSelectConversation,
   onDeleteConversation,
   onRenameConversation,
-  searchQuery = "",
-  onSearchChange,
-  selectedModel,
-  onModelChange,
-  thinkingEnabled,
-  onThinkingChange,
-  artifactsEnabled,
-  onArtifactsChange,
-  webSearchEnabled,
-  onWebSearchChange,
-  agentModeEnabled,
-  onAgentModeChange,
+  onNewChat,
   onApiKeyClick,
-  rightPanel,
-  children,
-  artifactFullscreen = false,
-  contextUsage = 0,
-  contextWindowMap = {},
-  onContextWindowMapChange,
-  toolsSupported = true,
-  onToolsSupportedMapChange,
-  hasE2bKey = false,
-  totalCost = 0,
+  searchQuery,
+  onSearchChange,
+  onSheetClose,
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
-  const [groupedModels, setGroupedModels] = useState({});
-  const [expandedProvider, setExpandedProvider] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
-  const [localSearchQuery, setLocalSearchQuery] = useState("");
   const [revealedActionsId, setRevealedActionsId] = useState(null);
   const editInputRef = useRef(null);
   const longPressTimerRef = useRef(null);
   const longPressTriggeredRef = useRef(false);
 
-  const [sidebarWidth, setSidebarWidth] = useState(260);
-  const [isDragging, setIsDragging] = useState(false);
-  const dragRef = useRef(false);
+  const effectiveSearchQuery = searchQuery;
+  const setEffectiveSearchQuery = onSearchChange;
 
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    dragRef.current = true;
-    setIsDragging(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-
-    const handleMouseMove = (e) => {
-      if (!dragRef.current) return;
-      const newWidth = Math.max(200, Math.min(600, e.clientX));
-      setSidebarWidth(newWidth);
-    };
-
-    const handleMouseUp = () => {
-      dragRef.current = false;
-      setIsDragging(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-  };
-
-  // Sync local search with parent if controlled
-  const effectiveSearchQuery =
-    onSearchChange !== undefined ? searchQuery : localSearchQuery;
-  const setEffectiveSearchQuery =
-    onSearchChange !== undefined ? onSearchChange : setLocalSearchQuery;
-
-  const getSearchableText = (value) => {
-    if (!value) return "";
-    if (typeof value === "string") return value;
-    if (Array.isArray(value)) {
-      return value
-        .map((part) => getSearchableText(part?.text ?? part?.content ?? part))
-        .join(" ");
-    }
-    if (typeof value === "object") {
-      return [value.name, value.title, value.text, value.content]
-        .map(getSearchableText)
-        .join(" ");
-    }
-    return String(value);
-  };
-
-  // Filter conversations based on search query (title, messages, and files)
   const filteredConversations = conversations.filter((conv) => {
     if (!effectiveSearchQuery.trim()) return true;
     const query = effectiveSearchQuery.toLowerCase().trim();
@@ -155,13 +91,19 @@ export default function ChatLayout({
     return searchable.includes(query);
   });
 
-  // Focus input when entering edit mode
   useEffect(() => {
     if (editingId && editInputRef.current) {
       editInputRef.current.focus();
       editInputRef.current.select();
     }
   }, [editingId]);
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   const handleStartRename = (conv) => {
     clearLongPressTimer();
@@ -183,10 +125,11 @@ export default function ChatLayout({
     setEditTitle("");
   };
 
-  const clearLongPressTimer = () => {
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
+  const handleKeyDown = (e, convId) => {
+    if (e.key === "Enter") {
+      handleSaveRename(convId);
+    } else if (e.key === "Escape") {
+      handleCancelRename();
     }
   };
 
@@ -199,92 +142,19 @@ export default function ChatLayout({
     }, 500);
   };
 
-  const handleTouchEnd = () => {
-    clearLongPressTimer();
-  };
+  const handleTouchEnd = () => clearLongPressTimer();
 
-  useEffect(
-    () => () => {
-      if (longPressTimerRef.current) {
-        window.clearTimeout(longPressTimerRef.current);
-      }
-    },
-    [],
-  );
+  // Clear any in-flight long-press timer if the sheet closes mid-press.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: timer cleanup only
+  useEffect(() => () => clearLongPressTimer(), []);
 
-  const handleKeyDown = (e, convId) => {
-    if (e.key === "Enter") {
-      handleSaveRename(convId);
-    } else if (e.key === "Escape") {
-      handleCancelRename();
-    }
-  };
-
-  useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const response = await fetch("/api/models");
-        if (response.ok) {
-          const data = await response.json();
-          if (data.data && Array.isArray(data.data)) {
-            // Remove duplicates and group by provider
-            const uniqueModels = Array.from(
-              new Map(data.data.map((m) => [m.id, m])).values(),
-            );
-
-            const grouped = uniqueModels.reduce((acc, model) => {
-              let provider, name;
-              if (model.name?.includes(":")) {
-                const parts = model.name.split(":");
-                provider = parts[0].trim();
-                name = parts.slice(1).join(":").trim();
-              } else {
-                const [providerRaw] = model.id.split("/");
-                provider =
-                  providerRaw.charAt(0).toUpperCase() + providerRaw.slice(1);
-                name = model.name || model.id.split("/").pop();
-              }
-
-              if (!acc[provider]) acc[provider] = [];
-              acc[provider].push({ id: model.id, name });
-              return acc;
-            }, {});
-
-            // Sort providers and their models
-            const sortedGrouped = {};
-            Object.keys(grouped)
-              .sort()
-              .forEach((provider) => {
-                sortedGrouped[provider] = grouped[provider].sort((a, b) =>
-                  a.name.localeCompare(b.name),
-                );
-              });
-
-            setGroupedModels(sortedGrouped);
-
-            const ctxMap = {};
-            const toolsMap = {};
-            for (const m of uniqueModels) {
-              ctxMap[m.id] = m.context_length || 128000;
-              toolsMap[m.id] =
-                m.supported_parameters?.includes("tools") ?? false;
-            }
-            onContextWindowMapChange?.(ctxMap);
-            onToolsSupportedMapChange?.(toolsMap);
-          }
-        }
-      } catch (_e) {}
-    };
-    fetchModels();
-  }, [onContextWindowMapChange, onToolsSupportedMapChange]);
-
-  const renderSidebarContent = () => (
+  return (
     <div className="flex flex-col h-full bg-muted">
       <div className="p-3 mb-2">
         <Button
           onClick={() => {
             onNewChat();
-            setMobileSheetOpen(false);
+            onSheetClose?.();
           }}
           className="w-full justify-start gap-2 bg-background hover:bg-accent text-foreground border-none shadow-sm h-10 px-3 rounded-lg transition-all font-medium"
           variant="outline"
@@ -423,6 +293,144 @@ export default function ChatLayout({
       </div>
     </div>
   );
+}
+
+function ToggleButton({
+  active,
+  disabled,
+  onClick,
+  tooltip,
+  children,
+  activeClass,
+}) {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            disabled={disabled}
+            onClick={onClick}
+            className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+              disabled
+                ? "opacity-40 cursor-not-allowed text-muted-foreground"
+                : active
+                  ? activeClass
+                  : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {children}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p className="text-xs">{tooltip}</p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+export default function ChatLayout({
+  onNewChat,
+  conversations = [],
+  activeConversation,
+  onSelectConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  searchQuery = "",
+  onSearchChange,
+  selectedModel,
+  onModelChange,
+  groupedModels = {},
+  thinkingEnabled,
+  onThinkingChange,
+  artifactsEnabled,
+  onArtifactsChange,
+  webSearchEnabled,
+  onWebSearchChange,
+  agentModeEnabled,
+  onAgentModeChange,
+  onApiKeyClick,
+  rightPanel,
+  children,
+  artifactFullscreen = false,
+  contextUsage = 0,
+  contextWindowMap = {},
+  toolsSupported = true,
+  hasE2bKey = false,
+  totalCost = 0,
+}) {
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    if (typeof window === "undefined") return 260;
+    try {
+      const saved = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+      return saved
+        ? Math.max(
+            MIN_SIDEBAR_WIDTH,
+            Math.min(MAX_SIDEBAR_WIDTH, parseInt(saved, 10)),
+          )
+        : 260;
+    } catch {
+      return 260;
+    }
+  });
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Persist the resized sidebar width for the next session.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {}
+  }, [sidebarWidth]);
+
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  // Listeners live in an effect tied to the drag state, so they are always
+  // removed on drag end — and on unmount mid-drag — instead of relying on a
+  // mouseup that may never fire.
+  useEffect(() => {
+    if (!isDragging) return;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handleMouseMove = (e) => {
+      setSidebarWidth(
+        Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, e.clientX)),
+      );
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDragging]);
+
+  const sidebarContent = (
+    <SidebarContent
+      conversations={conversations}
+      activeConversation={activeConversation}
+      onSelectConversation={onSelectConversation}
+      onDeleteConversation={onDeleteConversation}
+      onRenameConversation={onRenameConversation}
+      onNewChat={onNewChat}
+      onApiKeyClick={onApiKeyClick}
+      searchQuery={searchQuery}
+      onSearchChange={onSearchChange}
+      onSheetClose={() => setMobileSheetOpen(false)}
+    />
+  );
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans antialiased selection:bg-accent">
@@ -431,7 +439,7 @@ export default function ChatLayout({
         style={{ width: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
       >
         <div className="w-full h-full flex flex-col min-w-[200px]">
-          {renderSidebarContent()}
+          {sidebarContent}
         </div>
         <button
           type="button"
@@ -446,8 +454,8 @@ export default function ChatLayout({
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 relative">
-        <header className="h-12 sm:h-14 border-b border-border flex items-center justify-between px-3 sm:px-4 bg-background/80 backdrop-blur-md sticky top-0 z-20">
-          <div className="flex items-center gap-1 sm:gap-2">
+        <header className="h-12 sm:h-14 border-b border-border flex items-center justify-between gap-2 px-3 sm:px-4 bg-background/80 backdrop-blur-md sticky top-0 z-20">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <Button
               variant="ghost"
               size="icon"
@@ -473,226 +481,76 @@ export default function ChatLayout({
                   showCloseButton={false}
                 >
                   <SheetTitle className="sr-only">Navigation</SheetTitle>
-                  {renderSidebarContent()}
+                  {sidebarContent}
                 </SheetContent>
               </Sheet>
             </div>
           </div>
 
-          <div className="flex-1 flex items-center justify-center gap-0.5 sm:gap-2">
+          <div className="flex-1 min-w-0 flex items-center justify-center gap-0.5 sm:gap-2">
             {!artifactFullscreen && (
               <>
                 <div className="flex items-center gap-0.5 sm:gap-1">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onThinkingChange(!thinkingEnabled)}
-                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${thinkingEnabled ? "text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950" : "text-muted-foreground hover:text-foreground"}`}
-                        >
-                          <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          Toggle thinking {thinkingEnabled ? "off" : "on"}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <ToggleButton
+                    active={thinkingEnabled}
+                    onClick={() => onThinkingChange(!thinkingEnabled)}
+                    tooltip={`Toggle thinking ${thinkingEnabled ? "off" : "on"}`}
+                    activeClass="text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950"
+                  >
+                    <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </ToggleButton>
 
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => onArtifactsChange(!artifactsEnabled)}
-                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            artifactsEnabled
-                              ? "text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950"
-                              : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          {`Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <ToggleButton
+                    active={artifactsEnabled}
+                    onClick={() => onArtifactsChange(!artifactsEnabled)}
+                    tooltip={`Toggle artifacts ${artifactsEnabled ? "off" : "on"}`}
+                    activeClass="text-purple-600 bg-purple-50 dark:text-purple-400 dark:bg-purple-950"
+                  >
+                    <Puzzle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </ToggleButton>
 
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={!toolsSupported}
-                          onClick={() => onWebSearchChange(!webSearchEnabled)}
-                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            !toolsSupported
-                              ? "opacity-40 cursor-not-allowed text-muted-foreground"
-                              : webSearchEnabled
-                                ? "text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950"
-                                : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          {toolsSupported
-                            ? `Toggle web search ${webSearchEnabled ? "off" : "on"}`
-                            : "Not supported by current model"}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <ToggleButton
+                    active={webSearchEnabled}
+                    disabled={!toolsSupported}
+                    onClick={() => onWebSearchChange(!webSearchEnabled)}
+                    tooltip={
+                      toolsSupported
+                        ? `Toggle web search ${webSearchEnabled ? "off" : "on"}`
+                        : "Not supported by current model"
+                    }
+                    activeClass="text-green-600 bg-green-50 dark:text-green-400 dark:bg-green-950"
+                  >
+                    <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </ToggleButton>
 
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          disabled={!toolsSupported || !hasE2bKey}
-                          onClick={() => onAgentModeChange(!agentModeEnabled)}
-                          className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-                            !toolsSupported || !hasE2bKey
-                              ? "opacity-40 cursor-not-allowed text-muted-foreground"
-                              : agentModeEnabled
-                                ? "text-sky-500 bg-sky-50 dark:text-sky-400 dark:bg-sky-950"
-                                : "text-muted-foreground hover:text-foreground"
-                          }`}
-                        >
-                          <Cloud className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p className="text-xs">
-                          {!hasE2bKey
-                            ? "Add your E2B API key in Settings to use cloud sandbox"
-                            : toolsSupported
-                              ? `Toggle cloud sandbox ${agentModeEnabled ? "off" : "on"}`
-                              : "Not supported by current model"}
-                        </p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+                  <ToggleButton
+                    active={agentModeEnabled}
+                    disabled={!toolsSupported || !hasE2bKey}
+                    onClick={() => onAgentModeChange(!agentModeEnabled)}
+                    tooltip={
+                      !hasE2bKey
+                        ? "Add your E2B API key in Settings to use cloud sandbox"
+                        : toolsSupported
+                          ? `Toggle cloud sandbox ${agentModeEnabled ? "off" : "on"}`
+                          : "Not supported by current model"
+                    }
+                    activeClass="text-sky-500 bg-sky-50 dark:text-sky-400 dark:bg-sky-950"
+                  >
+                    <Cloud className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  </ToggleButton>
                 </div>
 
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex items-center justify-between w-auto min-w-[100px] sm:min-w-[140px] border-none shadow-none hover:bg-accent transition-colors focus:ring-0 font-bold text-[12px] sm:text-[14px] text-foreground bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1.5 sm:px-3 rounded-xl"
-                    >
-                      <span className="truncate max-w-[150px] sm:max-w-[200px]">
-                        {Object.values(groupedModels)
-                          .flat()
-                          .find((m) => m.id === selectedModel)?.name || "Model"}
-                      </span>
-                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    align="start"
-                    className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100] max-h-[60vh] overflow-y-auto"
-                  >
-                    {Object.entries(groupedModels).length > 0 ? (
-                      <>
-                        <div className="hidden md:block">
-                          {Object.entries(groupedModels).map(
-                            ([provider, models]) => (
-                              <DropdownMenuSub key={provider}>
-                                <DropdownMenuSubTrigger className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-default">
-                                  {provider}
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuPortal>
-                                  <DropdownMenuSubContent className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100] max-h-[60vh] overflow-y-auto">
-                                    {models.map((m) => (
-                                      <DropdownMenuItem
-                                        key={m.id}
-                                        onClick={() => onModelChange(m.id)}
-                                        className="text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer flex items-center justify-between"
-                                      >
-                                        <span>{m.name}</span>
-                                        {selectedModel === m.id && (
-                                          <Check className="h-4 w-4 ml-2" />
-                                        )}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </DropdownMenuSubContent>
-                                </DropdownMenuPortal>
-                              </DropdownMenuSub>
-                            ),
-                          )}
-                        </div>
-                        <div className="md:hidden">
-                          {Object.entries(groupedModels).map(
-                            ([provider, models]) => (
-                              <div key={provider}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setExpandedProvider(
-                                      expandedProvider === provider
-                                        ? null
-                                        : provider,
-                                    );
-                                  }}
-                                  className="w-full flex items-center justify-between text-[13px] transition-colors rounded-lg py-2.5 px-4 cursor-pointer hover:bg-accent"
-                                >
-                                  <span className="font-medium">
-                                    {provider}
-                                  </span>
-                                  <ChevronDown
-                                    className={`h-3.5 w-3.5 opacity-50 transition-transform ${expandedProvider === provider ? "rotate-180" : ""}`}
-                                  />
-                                </button>
-                                {expandedProvider === provider && (
-                                  <div className="pb-1 pl-4">
-                                    {models.map((m) => (
-                                      <DropdownMenuItem
-                                        key={m.id}
-                                        onClick={() => onModelChange(m.id)}
-                                        className="text-[12px] transition-colors rounded-lg py-2 px-3 cursor-pointer flex items-center justify-between"
-                                      >
-                                        <span>{m.name}</span>
-                                        {selectedModel === m.id && (
-                                          <Check className="h-3.5 w-3.5 ml-2" />
-                                        )}
-                                      </DropdownMenuItem>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ),
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="p-4 text-xs text-center text-muted-foreground font-medium">
-                        Loading models...
-                      </div>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <ModelPicker
+                  groupedModels={groupedModels}
+                  value={selectedModel}
+                  onChange={onModelChange}
+                />
               </>
             )}
           </div>
 
           {!artifactFullscreen && (
-            <div className="flex items-center">
+            <div className="flex items-center shrink-0">
               <ContextUsage
                 used={contextUsage}
                 max={contextWindowMap[selectedModel] || 0}
