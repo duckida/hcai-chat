@@ -45,6 +45,31 @@ const makeStreamResponse = (chunks) => {
 const delta = (content) =>
   `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
 
+// A stream that delivers one content delta, then aborts the body read — the
+// same shape as the proxy's mid-stream QUIC reset.
+function makeAbortableStreamResponse(partialText, deltaCount) {
+  const encoder = new TextEncoder();
+  let index = 0;
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: () => {
+          index += 1;
+          if (index <= deltaCount) {
+            return Promise.resolve({
+              done: false,
+              value: encoder.encode(delta(partialText)),
+            });
+          }
+          return Promise.reject(new Error("network reset"));
+        },
+      }),
+    },
+  };
+}
+
 // Both hooks must render inside one component: the stream hook closes over
 // the conversations object, so rendering them separately would capture a
 // stale snapshot and never see state updates.
@@ -354,5 +379,41 @@ describe("useChatStream", () => {
       inputTokens: 10,
       outputTokens: 2,
     });
+  });
+
+  it("does not duplicate the response when a dropped stream triggers the non-streaming fallback", async () => {
+    // The proxy can kill an SSE stream mid-response (QUIC reset). The client
+    // retries with stream:false, which regenerates the whole answer. That
+    // replay must replace the partial text, not append to it — otherwise the
+    // message contains the answer twice.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.stream) {
+          return Promise.resolve(makeAbortableStreamResponse("Partial", 1));
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "The whole answer, start to finish." }),
+        });
+      }),
+    );
+
+    const result = await setup();
+    await act(async () => {
+      await result.result.current.stream.send("hi", []);
+    });
+
+    const assistant =
+      result.result.current.conversations.messages.find(
+        (m) => m.role === "assistant",
+      );
+    expect(assistant.content).toBe("The whole answer, start to finish.");
+    expect(assistant.content).not.toMatch(/Partial/);
+    expect(
+      result.result.current.conversations.messages.filter((m) => m.role === "user"),
+    ).toHaveLength(1);
   });
 });

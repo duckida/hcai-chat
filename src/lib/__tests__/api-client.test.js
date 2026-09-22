@@ -202,6 +202,74 @@ describe("streamChatCompletion", () => {
     expect(fallbackBody.messages).toEqual([{ role: "user", content: "hi" }]);
   });
 
+  it("fires onFallbackStart before replaying the regenerated text", async () => {
+    const fetchMock = vi.fn().mockImplementation((url, opts) => {
+      const parsed = JSON.parse(opts.body);
+      if (parsed.stream) {
+        // A proxy mid-stream abort: the fetch "succeeds" but the body throws
+        // partway through, leaving the client with a partial answer.
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => {
+              let i = 0;
+              const frames = [
+                'data: {"choices":[{"delta":{"content":"Partial answer"}}]}\n\n',
+                "BROKEN",
+              ];
+              return {
+                read: () => {
+                  i++;
+                  if (i === 1) {
+                    return Promise.resolve({
+                      done: false,
+                      value: new TextEncoder().encode(frames[0]),
+                    });
+                  }
+                  return Promise.reject(new Error("network reset"));
+                },
+              };
+            },
+          },
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: "Full answer, complete" }),
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onFallbackStart = vi.fn();
+    const onChunk = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError: vi.fn(),
+      onFallbackStart,
+    });
+
+    expect(onFallbackStart).toHaveBeenCalledTimes(1);
+    // The discard must happen before the regenerated text is replayed.
+    expect(onChunk.mock.invocationCallOrder[0]).toBeLessThan(
+      onChunk.mock.invocationCallOrder[1],
+    );
+    const fallbackOrder = onFallbackStart.mock.invocationCallOrder[0];
+    const replayedAt =
+      onChunk.mock.invocationCallOrder.find(
+        (order) =>
+          onChunk.mock.calls[onChunk.mock.invocationCallOrder.indexOf(order)]?.[0] ===
+          "Full answer, complete",
+      );
+    expect(replayedAt).toBeGreaterThan(fallbackOrder);
+
+    expect(onChunk).toHaveBeenCalledWith("Partial answer", "content");
+    expect(onChunk).toHaveBeenCalledWith("Full answer, complete", "content");
+  });
+
   it("forwards content chunks via onChunk", async () => {
     const lines = [
       'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',

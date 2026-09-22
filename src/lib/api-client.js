@@ -102,7 +102,10 @@ export const generateTitle = async (
  *
  * If the SSE transport fails (e.g. the proxy's QUIC error), the request
  * is retried once with `stream: false` and the JSON result is replayed
- * through the same callbacks.
+ * through the same callbacks. The retry regenerates the whole answer, so
+ * onFallbackStart fires first and any partially-streamed content must be
+ * discarded — otherwise the replayed text is appended to the partial text
+ * and the answer appears twice in one message.
  *
  * @param {object} options
  */
@@ -125,6 +128,7 @@ export const streamChatCompletion = async ({
   e2bApiKey = null,
   sandboxId = null,
   onSandboxResult = null,
+  onFallbackStart = null,
 }) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -294,6 +298,7 @@ export const streamChatCompletion = async ({
 
   const doFallback = async () => {
     try {
+      onFallbackStart?.();
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

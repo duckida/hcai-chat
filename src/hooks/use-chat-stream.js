@@ -483,6 +483,20 @@ export function useChatStream({
           e2bApiKey: needsAgentMode ? e2bApiKey : null,
           sandboxId: needsAgentMode ? sandboxId : null,
           onSandboxResult: needsAgentMode ? onSandboxResult : null,
+          onFallbackStart: () => {
+            // The non-streaming retry regenerates the whole answer. Drop the
+            // partial text the dead stream already accumulated, otherwise the
+            // replay appends to it and the response appears twice.
+            fullResponse = "";
+            fullThinking = "";
+            sources = [];
+            metrics = null;
+            sandboxResults.length = 0;
+            isStreamingComplete.current = false;
+            setStreamingContent("");
+            setStreamingThinking("");
+            setStreamingSandboxTools([]);
+          },
         });
       } catch (_error) {
         isStreamingComplete.current = true;
