@@ -1,5 +1,6 @@
 "use client";
 
+import { Globe } from "lucide-react";
 import { memo, useMemo } from "react";
 import { Streamdown } from "streamdown";
 import { extractHtmlArtifacts } from "@/lib/artifacts";

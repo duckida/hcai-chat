@@ -191,4 +191,25 @@ describe("MessageList", () => {
     );
     expect(screen.getByText(/sources \(1\)/i)).toBeInTheDocument();
   });
+
+  it("renders a completed web-search message without dropping the thinking block", () => {
+    // The web-search badge only renders on a *completed* assistant message.
+    // An unimported icon there throws during render and the whole message —
+    // including the thinking block — unmounts.
+    render(
+      <MessageList
+        messages={[
+          {
+            role: "assistant",
+            content: "here is the answer",
+            thinking: "I considered the search results",
+            webSearch: true,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+    expect(screen.getByText("here is the answer")).toBeInTheDocument();
+    expect(screen.getByText(/web search/i)).toBeInTheDocument();
+  });
 });
