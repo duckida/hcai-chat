@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sanitizeMessages } from "../messages";
+import { hasRenderableContent, sanitizeMessages } from "../messages";
 
 describe("sanitizeMessages", () => {
   it("returns an empty array for non-array input", () => {
@@ -104,5 +104,83 @@ describe("sanitizeMessages", () => {
       },
     ];
     expect(sanitizeMessages(messages)).toEqual([]);
+  });
+});
+
+describe("hasRenderableContent", () => {
+  it("hides messages with nothing the renderer can display", () => {
+    expect(hasRenderableContent({ role: "user", content: "" })).toBe(false);
+    expect(hasRenderableContent({ role: "user", content: "   " })).toBe(false);
+    expect(hasRenderableContent({ role: "user", content: [] })).toBe(false);
+    expect(
+      hasRenderableContent({ role: "user", content: "", _files: [] }),
+    ).toBe(false);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "text", text: "  " }],
+      }),
+    ).toBe(false);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "image", image: null }],
+      }),
+    ).toBe(false);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "file", data: null, filename: "doc.pdf" }],
+      }),
+    ).toBe(false);
+    expect(hasRenderableContent({ role: "assistant", content: " " })).toBe(
+      false,
+    );
+    expect(hasRenderableContent({ role: "tool", content: "result" })).toBe(
+      false,
+    );
+  });
+
+  it("keeps messages with at least one displayable part", () => {
+    expect(hasRenderableContent({ role: "user", content: "hi" })).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "text", text: "hi" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "image", image: "data:image/png;base64,AAA" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [{ type: "file", data: "https://x/y.pdf", filename: "y.pdf" }],
+      }),
+    ).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "user",
+        content: [],
+        _files: [{ id: "1", name: "a.txt", type: "text/plain", size: 1 }],
+      }),
+    ).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "assistant",
+        content: "",
+        thinking: "hmm",
+      }),
+    ).toBe(true);
+    expect(
+      hasRenderableContent({
+        role: "assistant",
+        content: "",
+        error: { title: "API Error", details: "boom" },
+      }),
+    ).toBe(true);
   });
 });

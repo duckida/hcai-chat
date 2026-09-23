@@ -48,9 +48,22 @@ const Message = memo(function Message({
   const contentImages = useMemo(() => {
     if (!Array.isArray(message.content)) return [];
     return message.content
-      .filter((p) => p.type === "image")
+      .filter((p) => p.type === "image" && !!p.image)
       .map((p) => p.image);
   }, [message.content]);
+
+  const hasVisibleBody =
+    !!renderedText ||
+    artifacts.length > 0 ||
+    contentImages.length > 0 ||
+    (attachments && attachments.length > 0) ||
+    !!message.thinking ||
+    hasSources ||
+    (message.sandboxResults && message.sandboxResults.length > 0) ||
+    !!message.webSearch ||
+    (showMetrics && !!message.metrics);
+
+  if (!hasVisibleBody) return null;
 
   return (
     <div className="w-full animate-in fade-in duration-300">

@@ -212,4 +212,75 @@ describe("MessageList", () => {
     expect(screen.getByText("here is the answer")).toBeInTheDocument();
     expect(screen.getByText(/web search/i)).toBeInTheDocument();
   });
+
+  it("does not render a stale streaming tail once the turn is persisted", () => {
+    const view = render(
+      <MessageList messages={[]} streamingContent="stale tail" />,
+    );
+    view.rerender(
+      <MessageList
+        messages={[
+          { role: "user", content: "question" },
+          { role: "assistant", content: "", thinking: "fresh thinking" },
+        ]}
+        isLoading={false}
+        streamingContent=""
+        streamingThinking=""
+      />,
+    );
+    expect(screen.queryByText("stale tail")).not.toBeInTheDocument();
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+  });
+
+  it("does not render a stale streaming tail beside an error card", () => {
+    const view = render(
+      <MessageList messages={[]} streamingContent="stale tail" />,
+    );
+    view.rerender(
+      <MessageList
+        messages={[
+          {
+            role: "assistant",
+            content: "",
+            error: { title: "Boom", details: "request failed" },
+          },
+        ]}
+        isLoading={false}
+        streamingContent=""
+      />,
+    );
+    expect(screen.getByText("Boom")).toBeInTheDocument();
+    expect(screen.queryByText("stale tail")).not.toBeInTheDocument();
+  });
+
+  it("hides the stream, its text, and its placeholder when they belong to another conversation", () => {
+    render(
+      <MessageList
+        messages={[{ role: "user", content: "hello" }]}
+        activeConversation="conv-b"
+        streamingConversationId="conv-a"
+        isLoading={true}
+        streamingContent="other chat text"
+        thinkingEnabled={true}
+      />,
+    );
+    expect(screen.queryByText("other chat text")).not.toBeInTheDocument();
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
+
+  it("shows the placeholder for the active conversation's stream before content arrives", () => {
+    render(
+      <MessageList
+        messages={[{ role: "user", content: "hello" }]}
+        activeConversation="conv-a"
+        streamingConversationId="conv-a"
+        isLoading={true}
+        streamingContent=""
+        streamingThinking=""
+        thinkingEnabled={true}
+      />,
+    );
+    expect(screen.getByText(/thinking/i)).toBeInTheDocument();
+  });
 });

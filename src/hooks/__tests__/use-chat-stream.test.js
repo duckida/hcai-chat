@@ -193,9 +193,21 @@ describe("useChatStream", () => {
   });
 
   it("stores an error placeholder when the response is empty", async () => {
+    // An empty stream triggers one non-streaming retry; when the retry also
+    // returns nothing, the turn commits as an error placeholder.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"])),
+      vi.fn().mockImplementation((url, opts) => {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.stream) {
+          return Promise.resolve(makeStreamResponse(["data: [DONE]\n\n"]));
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "" }),
+        });
+      }),
     );
     const result = await setup();
 
@@ -209,6 +221,98 @@ describe("useChatStream", () => {
     expect(result.result.current.conversations.messages[1].error.details).toContain(
       "mimo-v2.5",
     );
+  });
+
+  it("commits a thinking-only turn without an error or a retry", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { thinking: "Let me try." } }] })}\n\n`,
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("hi", []);
+    });
+
+    const assistant = result.result.current.conversations.messages.find(
+      (m) => m.role === "assistant",
+    );
+    expect(assistant.content).toBe("");
+    expect(assistant.thinking).toBe("Let me try.");
+    expect(assistant.error).toBeFalsy();
+    expect(result.result.current.stream.streamingError).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("scopes the stream to its conversation and clears it on reset", async () => {
+    let resolveStream;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise((resolve) => (resolveStream = resolve))),
+    );
+    const result = await setup();
+
+    act(() => {
+      result.result.current.stream.send("hi", []);
+    });
+    await act(async () => {});
+
+    expect(result.result.current.stream.streamingConversationId).toBe(
+      result.result.current.conversations.activeConversation,
+    );
+
+    act(() => {
+      result.result.current.stream.resetForConversation(null);
+    });
+    expect(result.result.current.stream.streamingConversationId).toBeNull();
+
+    await act(async () => {
+      resolveStream(makeStreamResponse([delta("late"), "data: [DONE]\n\n"]));
+    });
+  });
+
+  it("does not clobber the active conversation when the stream completes after switching away", async () => {
+    let resolveFirst;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise((resolve) => (resolveFirst = resolve))),
+    );
+    const result = await setup();
+
+    act(() => {
+      result.result.current.stream.send("first", []);
+    });
+    await act(async () => {});
+
+    const owningId = result.result.current.conversations.activeConversation;
+    expect(owningId).toBeTruthy();
+
+    act(() => {
+      result.result.current.conversations.newConversation();
+    });
+    await act(async () => {});
+    expect(result.result.current.conversations.activeConversation).not.toBe(
+      owningId,
+    );
+
+    await act(async () => {
+      resolveFirst(
+        makeStreamResponse([delta("late reply"), "data: [DONE]\n\n"]),
+      );
+    });
+
+    const owning = result.result.current.conversations.conversations.find(
+      (c) => c.id === owningId,
+    );
+    expect(
+      owning.messages.some(
+        (m) => m.role === "assistant" && m.content === "late reply",
+      ),
+    ).toBe(true);
+    expect(result.result.current.conversations.messages).toHaveLength(0);
   });
 
   it("surfaces a server error event as an error message", async () => {

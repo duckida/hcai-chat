@@ -303,7 +303,9 @@ export default function Home({
         <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList
             messages={conversations.messages}
+            activeConversation={conversations.activeConversation}
             isLoading={stream.isLoading}
+            streamingConversationId={stream.streamingConversationId}
             streamingContent={stream.streamingContent}
             streamingThinking={stream.streamingThinking}
             streamingError={stream.streamingError}

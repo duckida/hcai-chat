@@ -54,6 +54,7 @@ export function useChatStream({
   const [streamingError, setStreamingError] = useState(null);
   const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingConversationId, setStreamingConversationId] = useState(null);
   const [contextUsage, setContextUsage] = useState(0);
 
   const isStreamingComplete = useRef(false);
@@ -67,6 +68,7 @@ export function useChatStream({
     setStreamingThinking("");
     setStreamingError(null);
     setStreamingSandboxTools([]);
+    setStreamingConversationId(null);
     setContextUsage(0);
     lastUsageRef.current = null;
     predictedOutputTokensRef.current = 0;
@@ -153,6 +155,7 @@ export function useChatStream({
       let userMessage;
       if (files.length > 0) {
         const contentParts = [];
+        const failedUploads = [];
         if (content.trim()) {
           contentParts.push({ type: "text", text: content });
         }
@@ -160,10 +163,15 @@ export function useChatStream({
           const file = files[i];
           const buckyUrl = fileUrls[i];
           if (file.type.startsWith("image/")) {
-            contentParts.push({
-              type: "image",
-              image: buckyUrl || file.dataUrl,
-            });
+            const imageSrc = buckyUrl || file.dataUrl;
+            if (imageSrc) {
+              contentParts.push({
+                type: "image",
+                image: imageSrc,
+              });
+            } else {
+              failedUploads.push(file.name);
+            }
           } else if (file.text) {
             contentParts.push({
               type: "text",
@@ -177,7 +185,21 @@ export function useChatStream({
               filename: file.name,
               mediaType: file.type,
             });
+          } else {
+            failedUploads.push(file.name);
           }
+        }
+        if (failedUploads.length > 0) {
+          toast.error(
+            `Could not attach ${failedUploads.join(", ")} — upload failed.`,
+          );
+        }
+        // Never persist a message the renderer cannot display (all parts
+        // dropped): it would surface as an orphaned avatar row with an
+        // empty body. Tell the user instead of sending a hollow message.
+        if (contentParts.length === 0) {
+          isSubmittingRef.current = false;
+          return;
         }
         userMessage = {
           role: "user",
@@ -197,6 +219,7 @@ export function useChatStream({
       setMessages(updatedMessages);
       resetStreamingState();
       setIsLoading(true);
+      setStreamingConversationId(currentId);
       patchConversation(currentId, { messages: updatedMessages });
 
       let fullResponse = "";
@@ -205,6 +228,24 @@ export function useChatStream({
       let metrics = null;
       const sandboxResults = [];
       isStreamingComplete.current = false;
+
+      // The conversation may have been removed (deleted) or the user may
+      // have started a new chat while this stream was still running. Apply
+      // assistant output to the owning conversation by id against the
+      // latest state instead of a stale render snapshot — and only touch
+      // the visible message list when that conversation is still active, so
+      // a late commit can never clobber the chat the user is looking at.
+      const commitMessages = (extraMessage) => {
+        const finalMessages = extraMessage
+          ? [...updatedMessages, extraMessage]
+          : updatedMessages;
+        if (conversations.activeConversationRef.current === currentId) {
+          setMessages(finalMessages);
+        }
+        patchConversation(currentId, { messages: finalMessages });
+        return finalMessages;
+      };
+
       try {
         const tools = getTools({
           includeWebSearch: needsWebSearch,
@@ -252,22 +293,7 @@ export function useChatStream({
             content: "",
             error: { title: "API Error", details: error.message },
           };
-          const finalMessages = [...updatedMessages, errorMessage];
-          setMessages(finalMessages);
-          patchConversation(currentId, { messages: finalMessages });
-        };
-
-        // The conversation may have been removed (deleted) or the user may
-        // have started a new chat while this stream was still running. Apply
-        // assistant output to the owning conversation by id against the
-        // latest state instead of a stale render snapshot.
-        const commitMessages = (extraMessage) => {
-          const finalMessages = extraMessage
-            ? [...updatedMessages, extraMessage]
-            : updatedMessages;
-          setMessages(finalMessages);
-          patchConversation(currentId, { messages: finalMessages });
-          return finalMessages;
+          commitMessages(errorMessage);
         };
 
         const makeOnComplete = (includeSources) => async () => {
@@ -514,9 +540,7 @@ export function useChatStream({
           content: "",
           error: errorMsg,
         };
-        const finalMessages = [...updatedMessages, errorMessage];
-        setMessages(finalMessages);
-        patchConversation(currentId, { messages: finalMessages });
+        commitMessages(errorMessage);
       } finally {
         isSubmittingRef.current = false;
       }
@@ -547,6 +571,7 @@ export function useChatStream({
     streamingThinking,
     streamingError,
     streamingSandboxTools,
+    streamingConversationId,
     contextUsage,
     setContextUsage,
     resetForConversation,

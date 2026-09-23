@@ -59,17 +59,29 @@ export const sanitizeMessages = (messages) => {
   );
 };
 
+const hasRenderablePart = (part) => {
+  if (!part || typeof part !== "object") return false;
+  if (part.type === "text") return !!part.text?.trim();
+  if (part.type === "image") return !!part.image;
+  if (part.type === "file") return !!(part.data && part.filename);
+  return false;
+};
+
 /**
  * Whether a persisted message should occupy space in the rendered list.
  * Tool records and empty turns are skipped; error placeholders render as
- * an inline error card instead.
+ * an inline error card instead. A message must contain at least one part
+ * the renderer can actually display — array length alone is not enough,
+ * or payload-less parts (e.g. a failed image upload) render an avatar
+ * with an empty body.
  */
 export function hasRenderableContent(message) {
   if (message.role === "user") {
     if (typeof message.content === "string" && message.content.trim())
       return true;
-    if (Array.isArray(message.content) && message.content.length > 0)
-      return true;
+    if (message._files && message._files.length > 0) return true;
+    if (Array.isArray(message.content))
+      return message.content.some(hasRenderablePart);
     return false;
   }
   if (message.role === "tool") return false;

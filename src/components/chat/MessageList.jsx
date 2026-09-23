@@ -22,6 +22,8 @@ import ThinkingBlock from "./message/ThinkingBlock";
 export default function MessageList({
   messages,
   isLoading,
+  activeConversation = null,
+  streamingConversationId = null,
   streamingContent,
   streamingThinking,
   streamingError,
@@ -37,41 +39,39 @@ export default function MessageList({
 }) {
   const scrollRef = useRef(null);
   const [userScrolledAway, setUserScrolledAway] = useState(false);
-  const isStreaming = !!(streamingContent || streamingThinking || isLoading);
 
   const deferredStreamingContent = useDeferredValue(streamingContent);
   const deferredStreamingThinking = useDeferredValue(streamingThinking);
 
-  // A deferred value can lag behind the real one by a render. When a stream
-  // ends we clear the live buffers, so a still-lagging deferred value would
-  // momentarily render stale text and drop the final deltas — the visible
-  // "response cuts off" symptom. Latch the last non-empty values so the tail
-  // is never discarded while the persisted message takes over.
-  const lastContentRef = useRef("");
-  const lastThinkingRef = useRef("");
-  if (streamingContent) lastContentRef.current = streamingContent;
-  if (streamingThinking) lastThinkingRef.current = streamingThinking;
+  // Only the stream owned by the conversation on screen may render — a stream
+  // running for another conversation must never leak its text, thinking,
+  // placeholder, or sandbox blocks into this one.
+  const streamVisible =
+    streamingConversationId == null ||
+    streamingConversationId === activeConversation;
 
-  const settledStreamingContent = deferredStreamingContent ?? "";
-  const settledStreamingThinking = deferredStreamingThinking ?? "";
+  const isStreaming =
+    streamVisible && !!(streamingContent || streamingThinking || isLoading);
 
-  const hasLiveStream = !!(streamingContent || streamingThinking || isLoading);
+  // While the stream is live, render the deferred values (they lag the raw
+  // buffers by at most one render, purely for responsiveness). The instant the
+  // stream ends, isLoading and the raw buffers clear in the same batch that
+  // commits the persisted assistant message, so the stream row disappears on
+  // exactly the frame the persisted message appears — no latches, no stale
+  // tails, no duplicated rows. The commit is built from live accumulators, so
+  // the tail is never dropped here.
+  const renderedStreamingContent = isStreaming
+    ? (deferredStreamingContent ?? "")
+    : "";
+  const renderedStreamingThinking = isStreaming
+    ? (deferredStreamingThinking ?? "")
+    : "";
 
-  // Once loading has stopped, keep showing the latched tail only until the
-  // persisted assistant message is present, then let the message list own it.
-  const lastMessage = messages?.[messages.length - 1];
-  const tailAlreadyPersisted =
-    !isLoading &&
-    lastMessage?.role === "assistant" &&
-    !!lastMessage?.content &&
-    lastMessage.content === lastContentRef.current;
-
-  const renderedStreamingContent =
-    settledStreamingContent ||
-    (hasLiveStream || tailAlreadyPersisted ? "" : lastContentRef.current);
-  const renderedStreamingThinking =
-    settledStreamingThinking ||
-    (hasLiveStream || tailAlreadyPersisted ? "" : lastThinkingRef.current);
+  const liveStreamingError = streamVisible ? streamingError : null;
+  const liveSandboxTools = useMemo(
+    () => (streamVisible ? streamingSandboxTools : []),
+    [streamVisible, streamingSandboxTools],
+  );
 
   const handleScroll = useCallback(() => {
     if (!scrollRef.current) return;
@@ -87,20 +87,20 @@ export default function MessageList({
       scrollRef.current &&
       !userScrolledAway &&
       (messages.length > 0 ||
-        streamingContent ||
-        streamingThinking ||
-        streamingError ||
-        streamingSandboxTools.length > 0 ||
+        renderedStreamingContent ||
+        renderedStreamingThinking ||
+        liveStreamingError ||
+        liveSandboxTools.length > 0 ||
         isLoading)
     ) {
       scrollRef.current.scrollToBottom();
     }
   }, [
     messages,
-    streamingContent,
-    streamingThinking,
-    streamingError,
-    streamingSandboxTools,
+    renderedStreamingContent,
+    renderedStreamingThinking,
+    liveStreamingError,
+    liveSandboxTools,
     isLoading,
     userScrolledAway,
   ]);
@@ -119,16 +119,15 @@ export default function MessageList({
     [messages],
   );
 
-  const hasContent =
-    activeMessages.length > 0 ||
-    streamingContent ||
-    streamingThinking ||
-    streamingError ||
-    streamingSandboxTools.length > 0;
+  const hasStreamingMessage =
+    !!renderedStreamingContent ||
+    !!renderedStreamingThinking ||
+    liveSandboxTools.length > 0;
 
-  const completedTool = streamingSandboxTools.find(
-    (t) => t.status === "complete",
-  );
+  const hasContent =
+    activeMessages.length > 0 || hasStreamingMessage || !!liveStreamingError;
+
+  const completedTool = liveSandboxTools.find((t) => t.status === "complete");
 
   return (
     <div className="flex-1 h-full relative min-h-0 min-w-0">
@@ -173,16 +172,16 @@ export default function MessageList({
                   webSearchEnabled={webSearchEnabled}
                   agentModeEnabled={agentModeEnabled}
                   artifactsEnabled={artifactsEnabled}
-                  streamingSandboxTools={streamingSandboxTools}
+                  streamingSandboxTools={liveSandboxTools}
                   showSandboxCode={showSandboxCode}
                   showSandboxOutput={showSandboxOutput}
                   showThinking={showThinking}
                 />
               )}
 
-              {isLoading &&
-                !streamingContent &&
-                !streamingThinking &&
+              {isStreaming &&
+                !renderedStreamingContent &&
+                !renderedStreamingThinking &&
                 thinkingEnabled && (
                   <div className="w-full animate-in fade-in duration-300">
                     <MessageRow variant="assistant">
@@ -197,8 +196,8 @@ export default function MessageList({
 
               {completedTool?.conversationId &&
                 !isLoading &&
-                !streamingContent &&
-                !streamingThinking && (
+                !renderedStreamingContent &&
+                !renderedStreamingThinking && (
                   <SandboxFiles
                     key={completedTool.conversationId}
                     conversationId={completedTool.conversationId}

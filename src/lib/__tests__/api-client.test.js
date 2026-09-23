@@ -421,7 +421,12 @@ describe("streamChatCompletion", () => {
   it("calls onComplete when the stream finishes", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"])),
+      vi.fn().mockResolvedValue(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"done"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      ),
     );
     const onComplete = vi.fn();
     await streamChatCompletion({
@@ -431,6 +436,106 @@ describe("streamChatCompletion", () => {
       onError: vi.fn(),
       onComplete,
     });
+    expect(onComplete).toHaveBeenCalled();
+  });
+
+  it("retries non-streaming when the stream ends without delivering anything", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeStreamResponse(["data: [DONE]\n\n"]))
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: "recovered" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    const onFallbackStart = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onFallbackStart).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith("recovered", "content");
+    expect(onComplete).toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("does not retry a stream that delivered thinking", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        'data: {"choices":[{"delta":{"thinking":"hmm"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalled();
+  });
+
+  it("does not retry after a server error event", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        'data: {"type":"error","error":"Oops"}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toBe("Oops");
+  });
+
+  it("does not retry after a server-side tool result was delivered", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        'data: {"type":"sandbox_result","tool":"execute_code","code":"1+1","stdout":"2","stderr":"","exitCode":0,"sandboxId":"sbx"}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onSandboxResult = vi.fn();
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onSandboxResult,
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onSandboxResult).toHaveBeenCalledTimes(1);
     expect(onComplete).toHaveBeenCalled();
   });
 

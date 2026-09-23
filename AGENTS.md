@@ -37,7 +37,7 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
     - `ChatLayout.jsx`: Main layout with resizable sidebar (conversation list, search, model selector), header with toggle buttons (thinking, artifacts, web search, agent mode), and model dropdown. The agent toggle is disabled with a tooltip when no E2B key is stored (`hasE2bKey` prop).
     - `ContextUsage.jsx`: Ring chart showing context window usage.
     - `CustomLink.jsx`: External link with security confirmation dialog.
-    - `MessageList.jsx`: Message rendering with Streamdown, thinking blocks, web search indicators, sources display, image/file attachments, streaming message display, Agent Indicator, sandbox blocks (`StreamingSandboxBlock` — collapsible, code truncated to 4 lines, output/error sections gated by `showSandboxCode`/`showSandboxOutput`), generated file pills with token-based downloads (`SandboxFilePills`/`SandboxFiles`), and error display.
+    - `MessageList.jsx`: Message rendering with Streamdown, thinking blocks, web search indicators, sources display, image/file attachments, streaming message display, Agent Indicator, sandbox blocks (`StreamingSandboxBlock` — collapsible, code truncated to 4 lines, output/error sections gated by `showSandboxCode`/`showSandboxOutput`), generated file pills with token-based downloads (`SandboxFilePills`/`SandboxFiles`), and error display. Stream UI (text, thinking, placeholder, sandbox tools, file pills) is conversation-scoped via `activeConversation`/`streamingConversationId` props — a stream running for another conversation never renders here. The streaming row renders only while the stream is live; on completion it disappears on the same frame the persisted assistant message appears (no latches or deferred-value tails).
     - `ResponseMetrics.jsx`: Token count, duration, tokens/sec, and cost display.
     - `SettingsModal.jsx`: Full settings dialog with Connection/Sandbox/Models/Appearance/Behavior sections. The Sandbox section holds the E2B API key field plus "Show Sandbox Input" and "Show Sandbox Output" toggles (moved out of Behavior).
     - `ThinkingIndicator.jsx`: Animated bouncing dots indicator (sm/md/lg sizes).
@@ -45,7 +45,7 @@ HCAI Chat is a modern AI-driven chat interface built with **Next.js (App Router)
   - `ui/`: Low-level Shadcn UI primitives (avatar, button, card, dialog, dropdown-menu, input, label, scroll-area, select, separator, sheet, textarea, tooltip).
 
 - `src/lib/`: Utility functions and client-side logic.
-  - `api-client.js`: API wrappers for the chat endpoint. Contains `streamChatCompletion` (SSE-based streaming; accepts `e2bApiKey`/`sandboxId` and an `onSandboxResult` callback), `generateTitle`, Exa helpers (`exaSearch`, `exaFindSimilar`, `exaContents`, `exaAnswer`, `streamExaAnswer`), `streamChatWithTools`, and `executeToolCall`. API key management (`getStoredApiKey`, `setStoredApiKey`) and E2B key management (`getStoredE2bApiKey`, `setStoredE2bApiKey`).
+  - `api-client.js`: API wrappers for the chat endpoint. Contains `streamChatCompletion` (SSE-based streaming; accepts `e2bApiKey`/`sandboxId` and an `onSandboxResult` callback; a clean EOF that delivered nothing — no text, thinking, tool calls, server-side tool results, or error — retries once via the non-streaming path), `generateTitle`, Exa helpers (`exaSearch`, `exaFindSimilar`, `exaContents`, `exaAnswer`, `streamExaAnswer`), `streamChatWithTools`, and `executeToolCall`. API key management (`getStoredApiKey`, `setStoredApiKey`) and E2B key management (`getStoredE2bApiKey`, `setStoredE2bApiKey`).
   - `artifacts.js`: HTML artifact extraction from ` ```html` fenced code blocks in text content. Supports streaming (unclosed fences) with `extractHtmlArtifacts`. Exports `ARTIFACT_INSTRUCTIONS` for system prompts and `ARTIFACT_AGENT_MODE_INSTRUCTIONS` (appended by the chat route when both artifacts and agent mode are on — artifacts must be output as text, not written to the sandbox).
   - `bucky.js`: File upload client (`uploadFileToBucky` via `/api/upload` proxy) and `dataUrlToBlob` converter.
   - `db.js`: IndexedDB persistence layer for conversations. CRUD operations: `getAllConversations`, `saveAllConversations`, `putConversation`, `deleteConversation`.
@@ -117,7 +117,7 @@ Agent Mode enables the AI to execute JavaScript code and shell commands in a per
 - Caddy proxy advertises HTTP/3 via `alt-svc: h3=":443"; ma=2592000`, causing `ERR_QUIC_PROTOCOL_ERROR` on long-lived SSE streams during tool execution
 - Server sends `X-Accel-Buffering: no` and `Alt-Svc: clear` headers
 - Keepalive comment (`: keepalive\n\n`) sent every 5s to prevent proxy idle timeout
-- Client-side fallback: on SSE stream failure, retries with `stream: false` (JSON response) and pipes through `onChunk`
+- Client-side fallback: on SSE stream failure, retries with `stream: false` (JSON response) and pipes through `onChunk`; the same retry runs once when a stream ends cleanly but delivered nothing at all (server-side tool results and error events count as delivered and never trigger it)
 - `send()` function uses `controller.desiredSize === null` guard instead of silent try-catch to prevent stuck "Running" state
 
 ### 6. State Management & Persistence

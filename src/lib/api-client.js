@@ -102,7 +102,9 @@ export const generateTitle = async (
  *
  * If the SSE transport fails (e.g. the proxy's QUIC error), the request
  * is retried once with `stream: false` and the JSON result is replayed
- * through the same callbacks. The retry regenerates the whole answer, so
+ * through the same callbacks. The same retry runs when the stream ends
+ * cleanly but delivered nothing at all (response dropped upstream).
+ * The retry regenerates the whole answer, so
  * onFallbackStart fires first and any partially-streamed content must be
  * discarded — otherwise the replayed text is appended to the partial text
  * and the answer appears twice in one message.
@@ -144,6 +146,14 @@ export const streamChatCompletion = async ({
   // placeholders saved into history). These stay visible in the UI but must
   // never be replayed to the model.
   const cleanMessages = sanitizeMessages(messages);
+
+  // What the stream actually delivered — used to detect a response that was
+  // dropped upstream before any delta arrived.
+  let sawContent = false;
+  let sawThinking = false;
+  let sawToolCall = false;
+  let sawServerError = false;
+  let sawServerSideEvent = false;
 
   const body = {
     model,
@@ -203,6 +213,7 @@ export const streamChatCompletion = async ({
 
           // Error event from server
           if (parsed.type === "error") {
+            sawServerError = true;
             onError(
               new Error(
                 parsed.error ||
@@ -214,12 +225,14 @@ export const streamChatCompletion = async ({
 
           // Search result metadata from server-side tool execution
           if (parsed.type === "search_result" && onSearchResult) {
+            sawServerSideEvent = true;
             onSearchResult(parsed.sources || [], parsed.content || "");
             return;
           }
 
           // Sandbox execution result
           if (parsed.type === "sandbox_result" && onSandboxResult) {
+            sawServerSideEvent = true;
             onSandboxResult(parsed);
             return;
           }
@@ -228,10 +241,17 @@ export const streamChatCompletion = async ({
           const content = delta.content || "";
           const thinking = delta.thinking || "";
 
-          if (content) onChunk(content, "content");
-          if (thinking) onChunk(thinking, "thinking");
+          if (content) {
+            sawContent = true;
+            onChunk(content, "content");
+          }
+          if (thinking) {
+            sawThinking = true;
+            onChunk(thinking, "thinking");
+          }
 
           if (delta.tool_calls && onToolCall) {
+            sawToolCall = true;
             for (const toolCall of delta.tool_calls) {
               onToolCall({
                 index: toolCall.index,
@@ -279,7 +299,24 @@ export const streamChatCompletion = async ({
           // connection) cannot be salvaged — skip it so we still complete the
           // message with what we have rather than hanging.
           if (buffer) dispatchFrame(buffer.trim());
-          await onComplete?.();
+          // A clean EOF with nothing delivered at all — no text, no
+          // reasoning, no tool calls, no server-side tool results, no
+          // server error — means the response was dropped upstream before
+          // its first delta. Retry once through the non-streaming path
+          // instead of committing an empty turn. Tool results count as
+          // delivered: their work already happened server-side and must
+          // never be re-run.
+          if (
+            !sawContent &&
+            !sawThinking &&
+            !sawToolCall &&
+            !sawServerSideEvent &&
+            !sawServerError
+          ) {
+            await doFallback();
+          } else {
+            await onComplete?.();
+          }
           break;
         }
 
