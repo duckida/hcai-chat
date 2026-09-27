@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P2 complete** → next: P3 (settings store + dialog) |
+| **Phase** | **P3 complete** → next: P4 (models: store + `ModelPicker` + `ContextUsage`) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 32 files / **440 tests passing**, 23.9s — lint, format and `next build` all clean |
+| **Current test suite** | 32 files / **448 tests passing** — lint, format and `next build` all clean |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -28,6 +28,52 @@
 **Deferred polish (do not sneak into a phase):** the four header toggles and the sidebar
 collapse button are icon-only with no `aria-label`. Adding labels is an a11y behaviour change
 — schedule it with the P9 primitive swap, not during a mechanical phase.
+
+## P3 decomposition — Settings
+
+`src/components/chat/SettingsModal.jsx` (661 lines) → `src/components/settings/`:
+
+| File | Lines | Contents |
+|---|---|---|
+| `settings/SettingsModal.jsx` | 175 | Shell: dialog, key state, `handleSave`, section switch, footer. |
+| `settings/sections.js` | 47 | The `SECTIONS` registry (ids, labels, descriptions, icons). |
+| `settings/chrome.jsx` | 106 | `SectionLabel`, `SectionHeading`, `SwitchRow`, `KeyInput` — the four shapes every section reuses. |
+| `settings/SectionNav.jsx` | 91 | Desktop `SidebarNav` + `MobileSectionPills`. Holds the `DialogTitle`. |
+| `settings/{Connection,Sandbox,Models,Appearance,Behavior,Data}Section.jsx` | ~50 each | One section per file: props in, JSX out. |
+
+`hooks/use-settings.js` was **deleted in the same commit** as `src/stores/settings.js` (P3a) —
+single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.test.js`.
+
+## Findings from P3 — read before touching dialogs
+
+1. **The `Dialog` primitive cannot place its title.** RAC `Dialog` takes `title` as a prop and
+   renders a fixed header; Settings puts its `DialogTitle` *inside* the sidebar nav
+   (`hidden sm:flex`), and the test pins exactly one `getByText(/^Settings$/)`.
+   **→ the Radix→Aria dialog swap is deferred to P9**, where all four consumers
+   (`SettingsModal`, `ChatApp`, `ImportDialog`, `CustomLink`) move together. The primitive
+   needs context-registered `DialogTitle`/`DialogDescription` first — design it against all
+   four at once, not piecemeal. Radix `Dialog` is also *not* on the anti-jank list (that is
+   ScrollArea / framer-motion / tw-animate-css), so nothing is lost by waiting.
+2. **Settings must keep calling `useModels()` itself** — it cannot take `groupedModels` as a
+   prop, because the `fetches models on open` test renders the modal *alone* and needs the
+   fetch to originate here. ChatApp was passing a `groupedModels` prop Settings never
+   accepted. Dead prop, removed.
+3. **Mobile settings content was unreachable (real bug, now fixed).** The body is
+   `flex flex-col max-h-[90vh]` and the content column was `flex-1` with no `min-h-0`, so
+   `min-height:auto` refused to shrink and Radix's `overflow-hidden` ScrollArea root clipped
+   the bottom of every section — Save/Cancel included. Replaced `ScrollArea` with
+   `overflow-y-auto min-h-0`. **This is a behavior change, not a refactor**: the smoke script
+   must scroll Settings on a narrow viewport.
+4. **`ui/scroll-area` has two consumers left** — `MessageList` (P7) and `SidebarContent`
+   (P5). It dies with the last one.
+5. **Switches are switches now.** The old `Toggle` was a bare `<button>`: no `role`, no
+   `aria-checked`, no label association. `SwitchRow` renders `role="switch"` + `aria-checked`
+   + `<label for>`, so the name and state are announced and clicking the visible label
+   toggles it. DOM depth is unchanged, which is why the original
+   `parentElement.parentElement.querySelector("button")` assertions still hold.
+6. **P3a caught a shipped-but-unshipped bug**: `applyThemeClass` added the raw theme name
+   (`sunrise`) instead of the class name (`theme-sunrise`) — both colour themes would have
+   silently stopped applying. Ported tests, not the hook, caught it.
 
 ## Findings from P1 — read before writing components
 
@@ -69,7 +115,7 @@ collapse button are icon-only with no `aria-label`. Adding labels is an a11y beh
 | **P0** | Baseline, invariant checklist, file→phase inventory, sync SHA | ✔ |
 | **P1** ✅ | Foundations, ships nothing: `createStore` (15 tests) + `src/components/primitives/*` (23 tests) | ✔ |
 | **P2** ✅ | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + thin shell; `ChatLayout` → `SidebarContent` / `Header`. 17 characterization tests added. | ✔ |
-| **P3** | Settings: store + dialog rewrite; delete `use-settings.js`; single-writer rule begins | ✔ |
+| **P3** ✅ | Settings: `src/stores/settings.js` + dialog decomposed into `src/components/settings/*`; `hooks/use-settings.js` deleted (single-writer rule begins). 12 store tests + 4 switch tests. | ✔ |
 | **P4** | Models: store + `ModelPicker` (Aria `Select` vs nested `Menu` decided in P1) + `ContextUsage` | ✔ |
 | **P5** | Conversations: store + `Sidebar` + import/export + IDB migration test with seeded old records | ✔ |
 | **P6** | Turn: `turn` store, `useChatTurn`, rAF delta coalescing; port SSE/attribution invariants | ✔ |
@@ -172,7 +218,7 @@ Nothing may be deleted except by the phase listed here.
 | `components/chat/ChatLayout.jsx` | 171 | P2 ✅ | Shell only. Split out `layout/SidebarContent.jsx` and `layout/Header.jsx`. |
 | `layout/SidebarContent.jsx` | 270 | P2 ✅ | **P5** rewrites it with the conversations store. |
 | `layout/Header.jsx` | 224 | P2 ✅ | **P4** rewrites its ModelPicker/ContextUsage wiring. |
-| `components/chat/SettingsModal.jsx` | 661 | P3 | |
+| `components/settings/*` | 741 | P3 ✅ | Replaces `components/chat/SettingsModal.jsx` (661): shell + 6 sections + shared chrome. **P4** rewrites `ModelsSection`/`AppearanceSection` wiring. |
 | `components/chat/ImportDialog.jsx` | 240 | P5 | |
 | `lib/import-export.js` | 574 | P5 | Largest client lib file; keep `lib/settings.js` registry as input. |
 | `components/chat/ModelPicker.jsx` | 124 | P4 | Aria primitive decision in P1. |
@@ -189,7 +235,7 @@ Nothing may be deleted except by the phase listed here.
 | `components/chat/ResponseMetrics.jsx` | 103 | P7 | |
 | `components/chat/CustomLink.jsx` | 69 | P7 | |
 | `components/chat/ThinkingIndicator.jsx` | 31 | P7 | |
-| `hooks/use-settings.js` | 58 | P3 | |
+| `hooks/use-settings.js` | — | P3 ✅ | **Deleted** — replaced by `src/stores/settings.js` (single-writer rule). |
 | `hooks/use-media-query.js` | 30 | P1 | Trivial; re-home under `hooks/`. |
 | `components/layout/AppWrapper.jsx` | 18 | P2 | Becomes the provider root. |
 | `components/ui/*` (Radix) | 904 | **P9** | Stays untouched until P9 — new components read `components/primitives/*` instead. Deleting early breaks the still-Radix old tree. |

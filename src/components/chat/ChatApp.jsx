@@ -7,7 +7,7 @@ import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import ImportDialog from "@/components/chat/ImportDialog";
 import MessageList from "@/components/chat/MessageList";
-import SettingsModal from "@/components/chat/SettingsModal";
+import SettingsModal from "@/components/settings/SettingsModal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -335,7 +335,6 @@ export default function ChatApp({
           setHasE2bKey(!!getStoredE2bApiKey());
           toast.success("Settings updated");
         }}
-        groupedModels={groupedModels}
         titleGenerationModel={settings.titleGenerationModel}
         onTitleGenerationModelChange={(v) =>
           setSetting("titleGenerationModel", v)

@@ -241,3 +241,58 @@ describe("SettingsModal", () => {
     expect(trigger).toHaveTextContent(/sunrise/i);
   });
 });
+
+describe("SettingsModal switches", () => {
+  it("exposes each switch as role=switch reflecting its state", async () => {
+    const user = userEvent.setup();
+    renderModal({ showThinking: true, showMetrics: false });
+    await goToSection(user, "Behavior");
+
+    const thinking = screen.getByRole("switch", { name: /^show thinking$/i });
+    expect(thinking).toHaveAttribute("aria-checked", "true");
+
+    const metrics = screen.getByRole("switch", {
+      name: /^show response metrics$/i,
+    });
+    expect(metrics).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("names each switch from its visible label", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await goToSection(user, "Behavior");
+
+    const metrics = screen.getByRole("switch", {
+      name: /^show response metrics$/i,
+    });
+    expect(metrics).toHaveAccessibleDescription(/token count and timing/i);
+  });
+
+  it("toggles when the visible label is clicked", async () => {
+    const user = userEvent.setup();
+    const onShowThinkingChange = vi.fn();
+    renderModal({ showThinking: false, onShowThinkingChange });
+    await goToSection(user, "Behavior");
+
+    await user.click(screen.getByText(/^Show Thinking$/));
+
+    expect(onShowThinkingChange).toHaveBeenCalledWith(true);
+  });
+
+  it("offers a switch for each sandbox display option", async () => {
+    const user = userEvent.setup();
+    const onShowSandboxCodeChange = vi.fn();
+    renderModal({ showSandboxCode: false, onShowSandboxCodeChange });
+    await goToSection(user, "Sandbox");
+
+    expect(
+      screen.getByRole("switch", { name: /^show sandbox input$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("switch", { name: /^show sandbox output$/i }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByText(/^Show Sandbox Input$/));
+    expect(onShowSandboxCodeChange).toHaveBeenCalledWith(true);
+  });
+});
