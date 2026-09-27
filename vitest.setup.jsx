@@ -124,3 +124,10 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
 if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};
 }
+
+// Polyfill getAnimations (used by react-aria-components SharedElementTransition)
+if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
+  Element.prototype.getAnimations = function () {
+    return [];
+  };
+}

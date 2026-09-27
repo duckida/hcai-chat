@@ -4,11 +4,25 @@
 
 | | |
 |---|---|
-| **Phase** | P0 — Baseline |
+| **Phase** | **P1 complete** → next: P2 (mechanical decomposition) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
+| **Current test suite** | 31 files / **423 tests passing**, 22.6s — lint, format and `next build` all clean |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
+
+## Findings from P1 — read before writing components
+
+1. **Two primitive layers coexist.** New code imports `@/components/primitives` (React Aria). The old `@/components/ui` (Radix) stays untouched until P9 — replacing it early breaks the still-Radix tree.
+2. **RAC popovers are modal in v1.21.1.** Opening a menu/select `aria-hidden`s the app container (there is no `isNonModal` prop in this version). Consequences:
+   - While a popover is open, query the trigger with `getByRole(..., { hidden: true })`.
+   - Covered by the test *"restores the trigger to the accessibility tree after closing"* — if that ever fails, the app is permanently hidden from assistive technology.
+3. **`SelectionIndicator` requires a `SharedElementTransition` scope.** `Select` wraps its subtree in one (pure context provider, no DOM node). Without it, rendering a selected value throws.
+4. **`SelectItem` needs `textValue`** when children aren't a plain string. The wrapper auto-derives it for string children; pass `textValue` explicitly otherwise (RAC warns otherwise).
+5. **Radix's `data-open:animate-in` never fires on RAC modals** — RAC does not set `data-open` on `Modal`/`ModalOverlay`. Primitives use unconditional `animate-in fade-in-0` (opacity only, no zoom/slide).
+6. **jsdom lacks `Element.prototype.getAnimations`** — polyfilled in `vitest.setup.jsx` next to the existing Radix polyfills.
+7. **`MenuItem` owns its own `onAction`** (no key argument) — `MenuContent` also accepts `onAction`/`disabledKeys`/`ariaLabel` and forwards them to `Menu`.
+8. **Hover highlight moved from `focus:` to `data-hovered:`** — RAC does not move DOM focus on mouse hover the way Radix does. Both are set on items so either mechanism lights up the accent colour.
 
 ## How to work
 
@@ -35,7 +49,7 @@
 | Phase | Deliverable | Revert point |
 |---|---|---|
 | **P0** | Baseline, invariant checklist, file→phase inventory, sync SHA | ✔ |
-| **P1** | Foundations, ships nothing: `createStore`, Aria primitives, `ThreadScrollContainer`, `transport/chat-stream`, `storage/conversations` | ✔ |
+| **P1** ✅ | Foundations, ships nothing: `createStore` (15 tests) + `src/components/primitives/*` (23 tests) | ✔ |
 | **P2** | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + providers; `ChatLayout` → `Sidebar` / `Header` / `PanelSlot` | ✔ |
 | **P3** | Settings: store + dialog rewrite; delete `use-settings.js`; single-writer rule begins | ✔ |
 | **P4** | Models: store + `ModelPicker` (Aria `Select` vs nested `Menu` decided in P1) + `ContextUsage` | ✔ |
@@ -157,7 +171,8 @@ Nothing may be deleted except by the phase listed here.
 | `hooks/use-settings.js` | 58 | P3 | |
 | `hooks/use-media-query.js` | 30 | P1 | Trivial; re-home under `hooks/`. |
 | `components/layout/AppWrapper.jsx` | 18 | P2 | Becomes the provider root. |
-| `components/ui/*` | 904 | **P1** | Replaced wholesale by React Aria primitives. |
+| `components/ui/*` (Radix) | 904 | **P9** | Stays untouched until P9 — new components read `components/primitives/*` instead. Deleting early breaks the still-Radix old tree. |
+| `components/primitives/*` (Aria) | — | **P1** | New. Lives on a separate path so both layers can coexist. |
 
 ---
 
