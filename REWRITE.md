@@ -4,12 +4,30 @@
 
 | | |
 |---|---|
-| **Phase** | **P1 complete** → next: P2 (mechanical decomposition) |
+| **Phase** | **P2 complete** → next: P3 (settings store + dialog) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 31 files / **423 tests passing**, 22.6s — lint, format and `next build` all clean |
+| **Current test suite** | 32 files / **440 tests passing**, 23.9s — lint, format and `next build` all clean |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
+
+## P2 decomposition — where everything lives now
+
+| File | Lines | Contents |
+|---|---|---|
+| `src/app/page.js` | 15 | Thin route: re-exports `Home` → `ChatApp`. **`search/page.js` imports `Home` from here — keep the name.** |
+| `src/components/chat/ChatApp.jsx` | 389 | The former `page.js` body, verbatim. All state/effects/handlers. |
+| `src/components/chat/ChatLayout.jsx` | 171 | Shell: sidebar width/drag state, `<aside>`, composes `Header` + `main` + panel slot. |
+| `src/components/layout/SidebarContent.jsx` | 270 | Conversation list: search filter, rename, delete, long-press. **P5 seam.** |
+| `src/components/layout/Header.jsx` | 224 | Collapse button, mobile sheet, 4 feature toggles, `ModelPicker`, `ContextUsage`. **P4 seam.** |
+
+**Proved verbatim** with `diff` against `HEAD` — the only deltas are the seams themselves:
+`page.js→ChatApp` 1 line (function name) · `SidebarContent` 1 line (`export default`) ·
+`ToggleButton` 0 lines · header JSX 2 lines (`setSidebarOpen`/`setMobileSheetOpen` → props).
+
+**Deferred polish (do not sneak into a phase):** the four header toggles and the sidebar
+collapse button are icon-only with no `aria-label`. Adding labels is an a11y behaviour change
+— schedule it with the P9 primitive swap, not during a mechanical phase.
 
 ## Findings from P1 — read before writing components
 
@@ -50,7 +68,7 @@
 |---|---|---|
 | **P0** | Baseline, invariant checklist, file→phase inventory, sync SHA | ✔ |
 | **P1** ✅ | Foundations, ships nothing: `createStore` (15 tests) + `src/components/primitives/*` (23 tests) | ✔ |
-| **P2** | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + providers; `ChatLayout` → `Sidebar` / `Header` / `PanelSlot` | ✔ |
+| **P2** ✅ | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + thin shell; `ChatLayout` → `SidebarContent` / `Header`. 17 characterization tests added. | ✔ |
 | **P3** | Settings: store + dialog rewrite; delete `use-settings.js`; single-writer rule begins | ✔ |
 | **P4** | Models: store + `ModelPicker` (Aria `Select` vs nested `Menu` decided in P1) + `ContextUsage` | ✔ |
 | **P5** | Conversations: store + `Sidebar` + import/export + IDB migration test with seeded old records | ✔ |
@@ -149,8 +167,11 @@ Nothing may be deleted except by the phase listed here.
 
 | File | Lines | Phase | Notes |
 |---|---|---|---|
-| `app/page.js` | 389 | **P2** | God component. Split, then deleted in P2 — not P9. |
-| `components/chat/ChatLayout.jsx` | 575 | **P2** | Split into `Sidebar` / `Header` / `PanelSlot`. |
+| `app/page.js` | 15 | P2 ✅ | Now a thin re-export; the body moved to `ChatApp.jsx`. |
+| `components/chat/ChatApp.jsx` | 389 | P2 ✅ | The former `page.js` body. Thinned progressively in P3–P8. |
+| `components/chat/ChatLayout.jsx` | 171 | P2 ✅ | Shell only. Split out `layout/SidebarContent.jsx` and `layout/Header.jsx`. |
+| `layout/SidebarContent.jsx` | 270 | P2 ✅ | **P5** rewrites it with the conversations store. |
+| `layout/Header.jsx` | 224 | P2 ✅ | **P4** rewrites its ModelPicker/ContextUsage wiring. |
 | `components/chat/SettingsModal.jsx` | 661 | P3 | |
 | `components/chat/ImportDialog.jsx` | 240 | P5 | |
 | `lib/import-export.js` | 574 | P5 | Largest client lib file; keep `lib/settings.js` registry as input. |
