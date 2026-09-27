@@ -21,7 +21,6 @@ import { useChatStream } from "@/hooks/use-chat-stream";
 import { useConversations } from "@/hooks/use-conversations";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { useModels } from "@/hooks/use-models";
-import { useSettings } from "@/hooks/use-settings";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { getAllConversations } from "@/lib/db";
@@ -31,12 +30,18 @@ import {
   triggerDownload,
 } from "@/lib/import-export";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
+import { hydrateSettings, setSetting, useSettings } from "@/stores/settings";
 
 export default function ChatApp({
   initialQuery = null,
   initialSearchEnabled = false,
 } = {}) {
-  const { values: settings, setValue: setSetting } = useSettings();
+  const settings = useSettings();
+
+  useEffect(() => {
+    hydrateSettings();
+  }, []);
+
   const isDesktop = useIsDesktop();
   const { groupedModels, contextWindowMap, toolsSupportedMap } = useModels();
 
@@ -202,7 +207,7 @@ export default function ChatApp({
       setSetting("selectedModel", model);
       conversations.setConversationModel(model);
     },
-    [conversations, setSetting],
+    [conversations],
   );
 
   const handleExportAll = useCallback(async () => {
