@@ -1,4 +1,4 @@
-import { Brain, Cloud, Download, Key, Palette, Sliders } from "lucide-react";
+import { Brain, Cloud, Key, Palette, Sliders } from "lucide-react";
 
 export const SECTIONS = [
   {
@@ -30,11 +30,5 @@ export const SECTIONS = [
     label: "Behavior",
     description: "Defaults & metrics",
     icon: Sliders,
-  },
-  {
-    id: "data",
-    label: "Data",
-    description: "Import & export",
-    icon: Download,
   },
 ];

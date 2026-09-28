@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import AppearanceSection from "@/components/settings/AppearanceSection";
 import BehaviorSection from "@/components/settings/BehaviorSection";
 import ConnectionSection from "@/components/settings/ConnectionSection";
-import DataSection from "@/components/settings/DataSection";
 import ModelsSection from "@/components/settings/ModelsSection";
 import SandboxSection from "@/components/settings/SandboxSection";
 import {
@@ -43,8 +42,6 @@ export default function SettingsModal({
   onShowMetricsChange,
   maxTokens = 32000,
   onMaxTokensChange,
-  onImport,
-  onExportAll,
 }) {
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
@@ -143,10 +140,6 @@ export default function SettingsModal({
                   showMetrics={showMetrics}
                   onShowMetricsChange={onShowMetricsChange}
                 />
-              )}
-
-              {activeSection === "data" && (
-                <DataSection onImport={onImport} onExportAll={onExportAll} />
               )}
 
               <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row gap-2">

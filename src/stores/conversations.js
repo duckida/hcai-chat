@@ -192,23 +192,6 @@ export const conversationsActions = {
       model,
     });
   },
-
-  /**
-   * Replace the whole list (post-import refresh). The active conversation
-   * must keep pointing at something that exists: a refresh that dropped the
-   * conversation on screen used to leave a dangling id, so the message list
-   * showed a chat the sidebar no longer had.
-   */
-  replaceConversations(convs) {
-    const active = activeConversationRef.current;
-    const kept = convs.find((c) => c.id === active);
-    const next = kept ?? convs[0];
-    commit({
-      conversations: convs,
-      activeConversation: next?.id ?? null,
-      messages: next?.messages || [],
-    });
-  },
 };
 
 export function useConversations() {

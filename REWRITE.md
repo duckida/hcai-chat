@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P4 complete** → next: P5 (conversations: store + sidebar + import/export + IDB migration) |
+| **Phase** | **P5 complete** → next: P6 (turn store, stream, rAF coalescing) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 35 files / **484 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 34 files / **468 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -16,9 +16,9 @@
 | File | Lines | Contents |
 |---|---|---|
 | `src/app/page.js` | 15 | Thin route: re-exports `Home` → `ChatApp`. **`search/page.js` imports `Home` from here — keep the name.** |
-| `src/components/chat/ChatApp.jsx` | 389 | The former `page.js` body, verbatim. All state/effects/handlers. |
+| `src/components/chat/ChatApp.jsx` | 338 | The former `page.js` body, verbatim. All state/effects/handlers. |
 | `src/components/chat/ChatLayout.jsx` | 171 | Shell: sidebar width/drag state, `<aside>`, composes `Header` + `main` + panel slot. |
-| `src/components/layout/SidebarContent.jsx` | 270 | Conversation list: search filter, rename, delete, long-press. **P5 seam.** |
+| `src/components/layout/SidebarContent.jsx` | 319 | Conversation list: search filter, rename, delete, long-press. **P5 ✅** |
 | `src/components/layout/Header.jsx` | 193 | Collapse button, mobile sheet, 4 feature toggles, `ModelPicker`, `ContextUsage`. **P4 ✅** — model props dropped. |
 
 **Proved verbatim** with `diff` against `HEAD` — the only deltas are the seams themselves:
@@ -52,6 +52,62 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
 | `src/components/chat/ModelPicker.jsx` | Aria `Menu` + `MenuGroup`, one provider-grouped list at every breakpoint. Reads `grouped` itself but keeps `value`/`onChange`, because the header and Settings pick *different* models. |
 | `src/components/chat/ContextUsage.jsx` | Ring + tooltip. Takes `used`/`modelId`/`totalCost` and resolves the window from the store, so the ring hides itself until the catalog knows that model. |
 | `src/components/layout/Header.jsx` | Still owns the collapse button, mobile sheet and 4 toggles; no longer threads model data through the layout. |
+
+---
+
+## P5 decomposition — Conversations
+
+| File | Role |
+|---|---|
+| `src/stores/conversations.js` (211) | State `conversations` / `activeConversation` / `messages` / `hydrated`, plus `conversationsActions` as module-level stable functions. `commit()` writes state **and** mirrors the three refs in the same call. `hydrateConversations()` is guarded by an in-flight promise *and* the `hydrated` flag so any mount can call it, and performs the one-time localStorage → IndexedDB migration. `resetConversations()` for test isolation. |
+| `src/components/layout/SidebarContent.jsx` (319) | New Chat + search header, `ConversationRow`, Settings footer. `ui/scroll-area` → `overflow-y-auto min-h-0`; the list is a real `<ul>`/`<li>` with `aria-current` on the active row. |
+| `src/lib/db.js` (119) | Same schema, same four exports — one cached connection and a `withStore()` transaction helper. |
+| ~~`hooks/use-conversations.js`~~ | **Deleted** — single-writer: the store landed and the hook left in the same commit. |
+| ~~`lib/import-export.js`~~ · ~~`ImportDialog.jsx`~~ · ~~`settings/DataSection.jsx`~~ | **Removed, not rewritten** — see below. |
+
+### Import/export was cut, not ported
+
+The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/import-export.js`
+(574), `components/chat/ImportDialog.jsx` (240), `components/settings/DataSection.jsx` (66) and
+`import-export.test.js` (29 tests), plus the `Data` entry in `settings/sections.js`, the
+`onImport` / `onExportAll` prop chain `ChatApp → SettingsModal`, and `replaceConversations` — the
+store action that existed only to refresh the list after an import. Nothing else touched those
+paths, so no test needed changing. Restoring the feature means re-adding all of it from git
+history.
+
+---
+
+## Findings from P5 — read before touching conversations
+
+1. **The refs are module-level and mirrored synchronously.** `messagesRef.current` is read by the
+   stream loop in the same tick it mutates state, so syncing after render is too late. `commit()`
+   assigns `conversationsRef` / `messagesRef` / `activeConversationRef` from the state it just
+   wrote. `setMessages` takes a value or an updater but always resolves the new array *outside*
+   the updater — React 19 may defer or re-run updaters, and a write must never depend on an
+   assignment made inside one.
+2. **The active id must always reference a conversation that exists.** Two paths break this if
+   ported naively: deleting a *background* row used to switch the view to `filtered[0]`, and a
+   refresh that dropped the conversation on screen used to leave a dangling id. The first is fixed
+   and tested; the second's only caller left with the import feature, so the rule now lives in
+   `deleteConversation` alone. Because the store is module-global, every test file touching it
+   needs `resetConversations()` in `beforeEach` or state leaks between tests.
+3. **`db.js` opened a new connection per call**, and `putConversation` runs on every streamed
+   token — that was a handshake per patch. It now caches one connection, invalidated by
+   `versionchange` / `close` and by a transaction that cannot even be created. **The test counts
+   `open()` calls through a stand-in factory**: `vi.spyOn(globalThis.indexedDB, "open")` does not
+   intercept fake-indexeddb, so a spy-based version of that test passes against the old
+   implementation too. Verified both ways — reverted, it reports 3; current code reports 1.
+4. **Adopt the parsed migration payload before any side effect.** `convs = JSON.parse(...)` has to
+   run before `removeItem` / `saveAllConversations`, or a throw in either discards conversations
+   already read. The original hid this: its bare `catch {}` swallowed the failure while keeping
+   the parsed array, so a later defensive `catch { convs = [] }` regressed it.
+5. **The sidebar's scroll container needed `min-h-0`.** Radix's `ScrollArea` root had none, so
+   `min-height: auto` refused to shrink and a long history could push the Settings button out of
+   view. The plain `overflow-y-auto min-h-0` div fixes it — same class of bug as P3 finding #3.
+6. **Conversation rows are `<li>`, not `<div>`.** `rowFor()` in `ChatLayout.test.jsx` is
+   `.closest("li")`. The active row carries `aria-current="true"`; the rename editor has labelled
+   save/cancel buttons; selecting another conversation cancels an in-flight rename; and an empty
+   search or empty history renders a message instead of a bare heading.
 
 ---
 
@@ -89,7 +145,7 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
    renders a fixed header; Settings puts its `DialogTitle` *inside* the sidebar nav
    (`hidden sm:flex`), and the test pins exactly one `getByText(/^Settings$/)`.
    **→ the Radix→Aria dialog swap is deferred to P9**, where all four consumers
-   (`SettingsModal`, `ChatApp`, `ImportDialog`, `CustomLink`) move together. The primitive
+   (`SettingsModal`, `ChatApp`, `CustomLink`) move together. The primitive
    needs context-registered `DialogTitle`/`DialogDescription` first — design it against all
    four at once, not piecemeal. Radix `Dialog` is also *not* on the anti-jank list (that is
    ScrollArea / framer-motion / tw-animate-css), so nothing is lost by waiting.
@@ -103,8 +159,8 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
    the bottom of every section — Save/Cancel included. Replaced `ScrollArea` with
    `overflow-y-auto min-h-0`. **This is a behavior change, not a refactor**: the smoke script
    must scroll Settings on a narrow viewport.
-4. **`ui/scroll-area` has two consumers left** — `MessageList` (P7) and `SidebarContent`
-   (P5). It dies with the last one.
+4. **`ui/scroll-area` has one consumer left** — `MessageList`, which dies in P7.
+   `SidebarContent` left it in P5.
 5. **Switches are switches now.** The old `Toggle` was a bare `<button>`: no `role`, no
    `aria-checked`, no label association. `SwitchRow` renders `role="switch"` + `aria-checked`
    + `<label for>`, so the name and state are announced and clicking the visible label
@@ -240,7 +296,7 @@ instead of patched mid-phase.
 | **P2** ✅ | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + thin shell; `ChatLayout` → `SidebarContent` / `Header`. 17 characterization tests added. | ✔ |
 | **P3** ✅ | Settings: `src/stores/settings.js` + dialog decomposed into `src/components/settings/*`; `hooks/use-settings.js` deleted (single-writer rule begins). 12 store tests + 4 switch tests. | ✔ |
 | **P4** ✅ | Models: `src/stores/models.js` + `hooks/use-models.js` **deleted**; `ModelPicker` on the Aria `Menu` (one markup path, provider groups, typeahead); `ContextUsage` resolves its own window. `groupedModels`/`contextWindowMap` leave the ChatApp→ChatLayout→Header chain. +35 tests. | ✔ |
-| **P5** | Conversations: store + `Sidebar` + import/export + IDB migration test with seeded old records | ✔ |
+| **P5** ✅ | Conversations: `src/stores/conversations.js` + `hooks/use-conversations.js` **deleted**; `SidebarContent` off `ui/scroll-area`; `db.js` caches one connection with seeded-record migration tests. **Import/export removed rather than rewritten** (−814 lines, −29 tests). +27 / −43 tests → **468 / 34 files**. | ✔ |
 | **P6** | Turn: `turn` store, `useChatTurn`, rAF delta coalescing; port SSE/attribution invariants | ✔ |
 | **P7** | Thread: message parts + scroll manager (keyboard-reachable) | ✔ |
 | **P8** | Composer + ArtifactPanel (CSS transitions replace framer-motion) | ✔ |
@@ -322,7 +378,7 @@ Nothing may be deleted except by the phase listed here.
 
 | File | Lines | Why it stays |
 |---|---|---|
-| `lib/settings.js` | 189 | Declarative registry of every persisted key + import validation. Single source of truth shared with `import-export`. Rewriting re-derives `f5ba29e`. |
+| `lib/settings.js` | 189 | Declarative registry of every persisted key. Single source of truth. Rewriting re-derives `f5ba29e`. |
 | `lib/utils.js` | 6 | `cn()` |
 | `lib/pricing.js` | 32 | `formatPrice` |
 | `lib/latex.js` | 41 | Delimiter normalization |
@@ -337,17 +393,18 @@ Nothing may be deleted except by the phase listed here.
 | File | Lines | Phase | Notes |
 |---|---|---|---|
 | `app/page.js` | 15 | P2 ✅ | Now a thin re-export; the body moved to `ChatApp.jsx`. |
-| `components/chat/ChatApp.jsx` | 389 | P2 ✅ | The former `page.js` body. Thinned progressively in P3–P8. |
+| `components/chat/ChatApp.jsx` | 338 | P2 ✅ | The former `page.js` body. Thinned progressively in P3–P8 (P5: import/export props/handlers gone). |
 | `components/chat/ChatLayout.jsx` | 171 | P2 ✅ | Shell only. Split out `layout/SidebarContent.jsx` and `layout/Header.jsx`. |
-| `layout/SidebarContent.jsx` | 270 | P2 ✅ | **P5** rewrites it with the conversations store. |
+| `layout/SidebarContent.jsx` | 319 | P2 ✅ / **P5 ✅** | Conversations store, no `ui/scroll-area`, `ConversationRow` extracted, `<ul>`/`<li>` + `aria-current` + empty states. |
 | `layout/Header.jsx` | 193 | P2 ✅ | **P4 ✅** ModelPicker/ContextUsage read the store; `groupedModels`/`contextWindowMap` props gone. |
-| `components/settings/*` | 741 | P3 ✅ | Replaces `components/chat/SettingsModal.jsx` (661): shell + 6 sections + shared chrome. **P4 ✅** `ModelsSection` takes no `groupedModels`; Settings calls `loadModels()` itself. |
-| `components/chat/ImportDialog.jsx` | 240 | P5 | |
-| `lib/import-export.js` | 574 | P5 | Largest client lib file; keep `lib/settings.js` registry as input. |
+| `components/settings/*` | 720 | P3 ✅ | Replaces `components/chat/SettingsModal.jsx` (661): shell + 6 sections + shared chrome. **P4 ✅** `ModelsSection` takes no `groupedModels`; Settings calls `loadModels()` itself. **P5 ✅** `DataSection.jsx` removed with the import/export feature (5 sections now). |
+| `components/chat/ImportDialog.jsx` | — | **Removed P5** | Feature never worked; deleted instead of rewritten. |
+| `lib/import-export.js` | — | **Removed P5** | Feature never worked; deleted instead of rewritten. |
+| `components/settings/DataSection.jsx` | — | **Removed P5** | Settings "Data" section (import/export buttons) — removed with the feature. |
 | `components/chat/ModelPicker.jsx` | 77 | P4 ✅ | Aria `Menu` + `MenuGroup`; one markup path for both breakpoints. |
 | `components/chat/ContextUsage.jsx` | 105 | P4 ✅ | `max` prop → `modelId`; window comes from the store. Tooltip swap to `primitives/` is still P9. |
 | `hooks/use-models.js` | — | P4 ✅ | **Deleted** — replaced by `src/stores/models.js` (single-writer rule). |
-| `hooks/use-conversations.js` | 211 | P5 | |
+| `hooks/use-conversations.js` | 211 | P5 ✅ | **Deleted** — replaced by `src/stores/conversations.js` (single-writer rule). |
 | `lib/db.js` | 68 | P5 | Same schema; migration test with seeded records. |
 | `hooks/use-chat-stream.js` | 579 | P6 | Port its 106 lines of test assertions first. |
 | `lib/api-client.js` | 371 | P6 | Empty-EOF retry semantics; assertions port first. |

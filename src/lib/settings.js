@@ -4,7 +4,7 @@
  * Every persisted preference is declared exactly once here: its in-memory
  * key, its localStorage key, its default, and how the stored string is
  * parsed. Anything reading or writing a setting goes through these helpers
- * (page.js hooks, import-export) so the key list can never drift.
+ * (settings consumers) so the key list can never drift.
  *
  * Hydration rule: defaults are SSR-safe; the stored value is only read
  * inside a mount effect, never during render.

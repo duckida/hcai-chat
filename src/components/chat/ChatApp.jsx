@@ -5,7 +5,6 @@ import { Toaster, toast } from "sonner";
 import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
-import ImportDialog from "@/components/chat/ImportDialog";
 import MessageList from "@/components/chat/MessageList";
 import SettingsModal from "@/components/settings/SettingsModal";
 import { Button } from "@/components/ui/button";
@@ -21,12 +20,6 @@ import { useChatStream } from "@/hooks/use-chat-stream";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
-import { getAllConversations } from "@/lib/db";
-import {
-  exportAllToZip,
-  generateExportFilename,
-  triggerDownload,
-} from "@/lib/import-export";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
 import { useConversations } from "@/stores/conversations";
 import { loadModels, useModels } from "@/stores/models";
@@ -86,7 +79,6 @@ export default function ChatApp({
   const [artifactFullscreen, setArtifactFullscreen] = useState(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [hasE2bKey, setHasE2bKey] = useState(false);
 
   const initialSearchEnabledRef = useRef(initialSearchEnabled);
@@ -210,44 +202,6 @@ export default function ChatApp({
     [conversations],
   );
 
-  const handleExportAll = useCallback(async () => {
-    try {
-      const blob = await exportAllToZip({
-        includeChats: true,
-        includeSettings: true,
-      });
-      triggerDownload(blob, generateExportFilename());
-      toast.success("Export complete");
-    } catch (error) {
-      toast.error(`Export failed: ${error.message || "Unknown error"}`);
-    }
-  }, []);
-
-  const handleImport = useCallback(() => {
-    setIsImportDialogOpen(true);
-  }, []);
-
-  const handleImportComplete = useCallback(
-    async (result) => {
-      toast.success(
-        `Imported ${result.chats.imported} conversation(s)` +
-          (result.chats.replaced > 0
-            ? `, replaced ${result.chats.replaced}`
-            : "") +
-          (result.settings ? " (settings imported)" : ""),
-      );
-      // Refresh conversations from DB; incremental writes mean the DB is now
-      // authoritative and cannot be clobbered by a pending save.
-      try {
-        const convs = await getAllConversations();
-        conversations.replaceConversations(convs);
-      } catch (error) {
-        console.error("Failed to refresh conversations after import:", error);
-      }
-    },
-    [conversations],
-  );
-
   // Auto-send initial query from URL params (/search?q=...). Web search is
   // forced on for this send when the page was opened with ?search=true.
   // Intentionally depends only on the query (stream.send identity changes
@@ -349,13 +303,6 @@ export default function ChatApp({
         onShowMetricsChange={(v) => setSetting("showMetrics", v)}
         maxTokens={settings.maxTokens}
         onMaxTokensChange={(v) => setSetting("maxTokens", v)}
-        onImport={handleImport}
-        onExportAll={handleExportAll}
-      />
-      <ImportDialog
-        isOpen={isImportDialogOpen}
-        onClose={() => setIsImportDialogOpen(false)}
-        onImportComplete={handleImportComplete}
       />
       <Dialog open={isBalanceModalOpen} onOpenChange={setIsBalanceModalOpen}>
         <DialogContent showCloseButton={false}>

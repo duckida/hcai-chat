@@ -258,38 +258,6 @@ describe("conversations store", () => {
     );
   });
 
-  it("replaces the whole list after an import", async () => {
-    db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() => useConversations());
-    await act(async () => {});
-
-    const imported = [sampleConversation({ id: "imported", title: "Imported" })];
-    act(() => {
-      result.current.replaceConversations(imported);
-    });
-    expect(result.current.conversations).toEqual(imported);
-    // The refresh dropped conv-1, so the view follows it rather than
-    // leaving an id the sidebar no longer has.
-    expect(result.current.activeConversation).toBe("imported");
-    expect(result.current.messages).toEqual(imported[0].messages);
-  });
-
-  it("keeps the current conversation through a refresh that still contains it", async () => {
-    db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() => useConversations());
-    await act(async () => {});
-
-    const refreshed = [
-      sampleConversation({ title: "Renamed upstream" }),
-      sampleConversation({ id: "other" }),
-    ];
-    act(() => {
-      result.current.replaceConversations(refreshed);
-    });
-    expect(result.current.activeConversation).toBe("conv-1");
-    expect(result.current.messages).toEqual(refreshed[0].messages);
-  });
-
   it("ignores renames with an empty title", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
     const { result } = renderHook(() => useConversations());
