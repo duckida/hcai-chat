@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -169,6 +169,22 @@ describe("SidebarContent conversations", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /Settings/ }));
     expect(props.onApiKeyClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes the mobile nav sheet when Settings is opened", async () => {
+    const props = baseProps();
+    render(<ChatLayout {...props} />);
+
+    await userEvent.click(headerButtons()[1]);
+    const sheet = screen.getByRole("dialog");
+    expect(within(sheet).getByRole("button", { name: /Settings/ })).toBeInTheDocument();
+
+    await userEvent.click(within(sheet).getByRole("button", { name: /Settings/ }));
+
+    expect(props.onApiKeyClick).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
   });
 
   it("selects a conversation when its title is clicked", async () => {

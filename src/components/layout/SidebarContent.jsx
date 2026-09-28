@@ -252,7 +252,10 @@ export default function SidebarContent({
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg"
-          onClick={onApiKeyClick}
+          onClick={() => {
+            onApiKeyClick();
+            onSheetClose?.();
+          }}
         >
           <Key className="w-4 h-4 opacity-70" />
           <span className="text-[13px] font-semibold">Settings</span>
