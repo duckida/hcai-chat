@@ -2,7 +2,6 @@ import ModelPicker from "@/components/chat/ModelPicker";
 import { SectionHeading, SectionLabel } from "@/components/settings/chrome";
 
 export default function ModelsSection({
-  groupedModels,
   titleGenerationModel,
   onTitleGenerationModelChange,
   maxTokens,
@@ -18,7 +17,6 @@ export default function ModelsSection({
       <div className="space-y-3">
         <SectionLabel>Title Generation Model</SectionLabel>
         <ModelPicker
-          groupedModels={groupedModels}
           value={titleGenerationModel}
           onChange={onTitleGenerationModelChange}
           triggerClassName="w-full justify-between border-border bg-muted rounded-xl px-4 h-12 font-medium text-sm"

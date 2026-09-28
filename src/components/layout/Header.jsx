@@ -69,7 +69,6 @@ export default function Header({
   sidebarContent,
   selectedModel,
   onModelChange,
-  groupedModels = {},
   thinkingEnabled,
   onThinkingChange,
   artifactsEnabled,
@@ -80,7 +79,6 @@ export default function Header({
   onAgentModeChange,
   artifactFullscreen = false,
   contextUsage = 0,
-  contextWindowMap = {},
   toolsSupported = true,
   hasE2bKey = false,
   totalCost = 0,
@@ -172,11 +170,7 @@ export default function Header({
               </ToggleButton>
             </div>
 
-            <ModelPicker
-              groupedModels={groupedModels}
-              value={selectedModel}
-              onChange={onModelChange}
-            />
+            <ModelPicker value={selectedModel} onChange={onModelChange} />
           </>
         )}
       </div>
@@ -185,7 +179,7 @@ export default function Header({
         <div className="flex items-center shrink-0">
           <ContextUsage
             used={contextUsage}
-            max={contextWindowMap[selectedModel] || 0}
+            modelId={selectedModel}
             totalCost={totalCost}
           />
         </div>

@@ -17,13 +17,13 @@ import {
   DialogContent,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { useModels } from "@/hooks/use-models";
 import {
   getStoredApiKey,
   getStoredE2bApiKey,
   setStoredApiKey,
   setStoredE2bApiKey,
 } from "@/lib/api-client";
+import { loadModels } from "@/stores/models";
 
 export default function SettingsModal({
   isOpen,
@@ -53,7 +53,11 @@ export default function SettingsModal({
   const [error, setError] = useState("");
   const [activeSection, setActiveSection] = useState("connection");
 
-  const { groupedModels } = useModels();
+  // Settings has to be able to fetch the catalog by itself: it is rendered
+  // without the app shell in tests, so the request must originate here.
+  useEffect(() => {
+    loadModels();
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -118,7 +122,6 @@ export default function SettingsModal({
 
               {activeSection === "models" && (
                 <ModelsSection
-                  groupedModels={groupedModels}
                   titleGenerationModel={titleGenerationModel}
                   onTitleGenerationModelChange={onTitleGenerationModelChange}
                   maxTokens={maxTokens}

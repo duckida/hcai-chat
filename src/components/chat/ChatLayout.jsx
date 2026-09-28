@@ -19,7 +19,6 @@ export default function ChatLayout({
   onSearchChange,
   selectedModel,
   onModelChange,
-  groupedModels = {},
   thinkingEnabled,
   onThinkingChange,
   artifactsEnabled,
@@ -33,7 +32,6 @@ export default function ChatLayout({
   children,
   artifactFullscreen = false,
   contextUsage = 0,
-  contextWindowMap = {},
   toolsSupported = true,
   hasE2bKey = false,
   totalCost = 0,
@@ -139,7 +137,6 @@ export default function ChatLayout({
           sidebarContent={sidebarContent}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
-          groupedModels={groupedModels}
           thinkingEnabled={thinkingEnabled}
           onThinkingChange={onThinkingChange}
           artifactsEnabled={artifactsEnabled}
@@ -150,7 +147,6 @@ export default function ChatLayout({
           onAgentModeChange={onAgentModeChange}
           artifactFullscreen={artifactFullscreen}
           contextUsage={contextUsage}
-          contextWindowMap={contextWindowMap}
           toolsSupported={toolsSupported}
           hasE2bKey={hasE2bKey}
           totalCost={totalCost}

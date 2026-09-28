@@ -8,13 +8,15 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatPrice } from "@/lib/pricing";
+import { useModels } from "@/stores/models";
 
 function formatNumber(n) {
   return n.toLocaleString();
 }
 
-export default function ContextUsage({ used, max, totalCost }) {
+export default function ContextUsage({ used, modelId, totalCost }) {
   const [isOpen, setIsOpen] = useState(false);
+  const max = useModels((s) => (modelId ? s.contextWindows[modelId] || 0 : 0));
 
   if (!max || max <= 0) return null;
 

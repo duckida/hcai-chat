@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P3 complete** → next: P4 (models: store + `ModelPicker` + `ContextUsage`) |
+| **Phase** | **P4 complete** → next: P5 (conversations: store + sidebar + import/export + IDB migration) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 32 files / **449 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 35 files / **484 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -19,7 +19,7 @@
 | `src/components/chat/ChatApp.jsx` | 389 | The former `page.js` body, verbatim. All state/effects/handlers. |
 | `src/components/chat/ChatLayout.jsx` | 171 | Shell: sidebar width/drag state, `<aside>`, composes `Header` + `main` + panel slot. |
 | `src/components/layout/SidebarContent.jsx` | 270 | Conversation list: search filter, rename, delete, long-press. **P5 seam.** |
-| `src/components/layout/Header.jsx` | 224 | Collapse button, mobile sheet, 4 feature toggles, `ModelPicker`, `ContextUsage`. **P4 seam.** |
+| `src/components/layout/Header.jsx` | 193 | Collapse button, mobile sheet, 4 feature toggles, `ModelPicker`, `ContextUsage`. **P4 ✅** — model props dropped. |
 
 **Proved verbatim** with `diff` against `HEAD` — the only deltas are the seams themselves:
 `page.js→ChatApp` 1 line (function name) · `SidebarContent` 1 line (`export default`) ·
@@ -43,6 +43,45 @@ collapse button are icon-only with no `aria-label`. Adding labels is an a11y beh
 
 `hooks/use-settings.js` was **deleted in the same commit** as `src/stores/settings.js` (P3a) —
 single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.test.js`.
+
+## P4 decomposition — Models
+
+| File | Role |
+|---|---|
+| `src/stores/models.js` | The catalog. `loadModels()` shares one request and skips a loaded catalog; `normalizeModelCatalog` / `splitModelName` are pure and unit-tested; `getContextWindow(id)` for non-React callers; `resetModels()` for test isolation. State: `grouped`, `contextWindows`, `toolsSupported`, `status` (`idle`/`loading`/`ready`/`error`). |
+| `src/components/chat/ModelPicker.jsx` | Aria `Menu` + `MenuGroup`, one provider-grouped list at every breakpoint. Reads `grouped` itself but keeps `value`/`onChange`, because the header and Settings pick *different* models. |
+| `src/components/chat/ContextUsage.jsx` | Ring + tooltip. Takes `used`/`modelId`/`totalCost` and resolves the window from the store, so the ring hides itself until the catalog knows that model. |
+| `src/components/layout/Header.jsx` | Still owns the collapse button, mobile sheet and 4 toggles; no longer threads model data through the layout. |
+
+---
+
+## Findings from P4 — read before touching the model catalog
+
+1. **The catalog left the prop chain.** `groupedModels` and `contextWindowMap` no longer travel
+   `ChatApp → ChatLayout → Header → ModelPicker/ContextUsage`; both components read
+   `@/stores/models` directly. `toolsSupported` **stays** a ChatApp-owned prop — it gates the
+   header toggles, which is app logic rather than catalog data.
+2. **An Aria trigger must be an Aria button.** `MenuTrigger` hands its trigger `onPress` and a
+   ref; a raw `<button>` silently ignores `onPress` and the menu never opens (it surfaced as
+   `Unable to find role="menu"`, not as a click failure). `ModelPicker`'s trigger is now the
+   primitives `Button`.
+3. **`ModelPicker` is one markup path.** The desktop submenu and the tap-to-expand mobile
+   accordion are gone, replaced by a single provider-grouped list that typeaheads at every
+   breakpoint. **`components/ui/dropdown-menu` now has zero consumers** — it dies in P9.
+4. **Catalog dedupe keeps the first record for an id.** The old `new Map(...)` kept the *last*,
+   so a partial duplicate overwrote `supported_parameters` and silently flipped tool support
+   off. First-wins is the safer default; a test pins it.
+5. **Radix tooltips render twice** — the visible bubble plus a visually-hidden
+   `role="tooltip"` duplicate — so `getByText` reports two matches. Assert with
+   `within(screen.getByRole("tooltip"))`.
+6. **`ContextUsage` resolves its own window.** It takes `modelId`, not `max`; an unknown model
+   still renders nothing, matching the old `contextWindowMap[id] || 0` behaviour.
+7. **`SettingsModal` still originates the catalog fetch** (P3 finding #2 preserved), now by
+   calling `loadModels()` in a mount effect. Because the store is module-global, any test that
+   asserts `fetch("/api/models")` must call `resetModels()` first or the store is already
+   `ready` and skips the request.
+
+---
 
 ## Findings from P3 — read before touching dialogs
 
@@ -156,11 +195,39 @@ held the fixed port so every later run died at launch.
   land in the transcript and get read as this run's outcome.
 - **Do not query a bare `[role="dialog"]`.** On mobile the nav sheet is also a dialog; anchor
   on the one containing `Save and Connect`.
-- **Do not diff against pre-send text, and do not wait on text alone.** The empty-state
-  heading disappears when the message is sent (so the page can shrink when a reply arrives),
-  and the thinking block shows a static `Thinking` label with no changing text for as long as
-  the model reasons. Baseline after send, completion signal = the bouncing
-  `output[aria-label="Thinking"]` disappearing.
+- **Do not measure the reply by text growth, and do not wait on text alone.** The empty-state
+  heading disappears when the message is sent (so the page can *shrink* when a reply arrives),
+  and a reply can land faster than the baseline snapshot. The thinking block also shows a
+  static `Thinking` label with no changing text for as long as the model reasons, so a
+  "transcript stopped changing" wait fires mid-thought. Completion requires **all three**:
+  an assistant row exists (`.msg-row` containing `svg.lucide-sparkles` — `EmptyState` uses the
+  same icon but is not a `.msg-row`), the transcript is quiet for 2 reads, and no
+  `output[aria-label="Thinking"]` is present. Early-exit on `API Error` so failures do not
+  burn the full 90s budget.
+- **Clean up Chromium outside the `try` that can throw.** The debugging-endpoint poll runs
+  before any `try`, so a slow start used to escape `finally` and leak a browser; leaked
+  browsers then starved the next launch until it timed out. Cleanup now wraps the spawn, with a
+  `SIGKILL` fallback and a sweep of profiles whose owning pid is gone.
+
+---
+
+## Out-of-scope defects observed — reported, deliberately not fixed
+
+Both surfaced in the P4 smoke run. `src/app/api/*` and the root layout are outside this
+rewrite's charter (frontend only), and upstream owns those files — so they are recorded here
+instead of patched mid-phase.
+
+1. **Conversation titles never generate — every new chat is titled "New Chat".**
+   `src/app/api/chat/route.js` passes both `instructions: systemPrompt` and
+   `messages: processedMessages` on the non-stream path. `generateTitle` (`src/lib/api-client.js`)
+   sends a `role: "system"` message, which survives sanitization into `processedMessages`, and
+   the AI SDK rejects it: `AI_InvalidPromptError: System messages are not allowed in the prompt
+   or messages fields. Use the instructions option instead.` → `POST /api/chat` **500** on every
+   title request (the streaming turn itself is unaffected). Reproduced on every live smoke run.
+2. **`src/app/layout.js:36` passes a *string* to React's `onError`.**
+   `onError="this.onerror=null;this.remove();"` on the Simple Analytics `<script>`. React expects
+   a function, so every page load logs `Expected onError listener to be a function, instead got a
+   value of `string` type` — and the fallback that removes a failed script tag never runs.
 
 ---
 
@@ -172,7 +239,7 @@ held the fixed port so every later run died at launch.
 | **P1** ✅ | Foundations, ships nothing: `createStore` (15 tests) + `src/components/primitives/*` (23 tests) | ✔ |
 | **P2** ✅ | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + thin shell; `ChatLayout` → `SidebarContent` / `Header`. 17 characterization tests added. | ✔ |
 | **P3** ✅ | Settings: `src/stores/settings.js` + dialog decomposed into `src/components/settings/*`; `hooks/use-settings.js` deleted (single-writer rule begins). 12 store tests + 4 switch tests. | ✔ |
-| **P4** | Models: store + `ModelPicker` (Aria `Select` vs nested `Menu` decided in P1) + `ContextUsage` | ✔ |
+| **P4** ✅ | Models: `src/stores/models.js` + `hooks/use-models.js` **deleted**; `ModelPicker` on the Aria `Menu` (one markup path, provider groups, typeahead); `ContextUsage` resolves its own window. `groupedModels`/`contextWindowMap` leave the ChatApp→ChatLayout→Header chain. +35 tests. | ✔ |
 | **P5** | Conversations: store + `Sidebar` + import/export + IDB migration test with seeded old records | ✔ |
 | **P6** | Turn: `turn` store, `useChatTurn`, rAF delta coalescing; port SSE/attribution invariants | ✔ |
 | **P7** | Thread: message parts + scroll manager (keyboard-reachable) | ✔ |
@@ -273,13 +340,13 @@ Nothing may be deleted except by the phase listed here.
 | `components/chat/ChatApp.jsx` | 389 | P2 ✅ | The former `page.js` body. Thinned progressively in P3–P8. |
 | `components/chat/ChatLayout.jsx` | 171 | P2 ✅ | Shell only. Split out `layout/SidebarContent.jsx` and `layout/Header.jsx`. |
 | `layout/SidebarContent.jsx` | 270 | P2 ✅ | **P5** rewrites it with the conversations store. |
-| `layout/Header.jsx` | 224 | P2 ✅ | **P4** rewrites its ModelPicker/ContextUsage wiring. |
-| `components/settings/*` | 741 | P3 ✅ | Replaces `components/chat/SettingsModal.jsx` (661): shell + 6 sections + shared chrome. **P4** rewrites `ModelsSection`/`AppearanceSection` wiring. |
+| `layout/Header.jsx` | 193 | P2 ✅ | **P4 ✅** ModelPicker/ContextUsage read the store; `groupedModels`/`contextWindowMap` props gone. |
+| `components/settings/*` | 741 | P3 ✅ | Replaces `components/chat/SettingsModal.jsx` (661): shell + 6 sections + shared chrome. **P4 ✅** `ModelsSection` takes no `groupedModels`; Settings calls `loadModels()` itself. |
 | `components/chat/ImportDialog.jsx` | 240 | P5 | |
 | `lib/import-export.js` | 574 | P5 | Largest client lib file; keep `lib/settings.js` registry as input. |
-| `components/chat/ModelPicker.jsx` | 124 | P4 | Aria primitive decision in P1. |
-| `components/chat/ContextUsage.jsx` | 104 | P4 | |
-| `hooks/use-models.js` | 82 | P4 | |
+| `components/chat/ModelPicker.jsx` | 77 | P4 ✅ | Aria `Menu` + `MenuGroup`; one markup path for both breakpoints. |
+| `components/chat/ContextUsage.jsx` | 105 | P4 ✅ | `max` prop → `modelId`; window comes from the store. Tooltip swap to `primitives/` is still P9. |
+| `hooks/use-models.js` | — | P4 ✅ | **Deleted** — replaced by `src/stores/models.js` (single-writer rule). |
 | `hooks/use-conversations.js` | 211 | P5 | |
 | `lib/db.js` | 68 | P5 | Same schema; migration test with seeded records. |
 | `hooks/use-chat-stream.js` | 579 | P6 | Port its 106 lines of test assertions first. |

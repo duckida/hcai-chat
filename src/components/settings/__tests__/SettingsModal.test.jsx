@@ -10,6 +10,7 @@ vi.mock("next-themes", () => ({
   ThemeProvider: ({ children }) => children,
 }));
 
+import { resetModels } from "@/stores/models";
 import SettingsModal from "../SettingsModal";
 
 const TEST_MODEL = "google/gemini-3.1-flash-lite";
@@ -37,6 +38,7 @@ const goToSection = async (user, label) => {
 
 beforeEach(() => {
   localStorage.clear();
+  resetModels();
   vi.restoreAllMocks();
   mockSetTheme.mockClear();
   mockThemeState = {

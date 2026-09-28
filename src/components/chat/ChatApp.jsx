@@ -20,7 +20,6 @@ import {
 import { useChatStream } from "@/hooks/use-chat-stream";
 import { useConversations } from "@/hooks/use-conversations";
 import { useIsDesktop } from "@/hooks/use-media-query";
-import { useModels } from "@/hooks/use-models";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { getAllConversations } from "@/lib/db";
@@ -30,6 +29,7 @@ import {
   triggerDownload,
 } from "@/lib/import-export";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
+import { loadModels, useModels } from "@/stores/models";
 import { hydrateSettings, setSetting, useSettings } from "@/stores/settings";
 
 export default function ChatApp({
@@ -40,16 +40,18 @@ export default function ChatApp({
 
   useEffect(() => {
     hydrateSettings();
+    loadModels();
   }, []);
 
   const isDesktop = useIsDesktop();
-  const { groupedModels, contextWindowMap, toolsSupportedMap } = useModels();
 
   const conversations = useConversations({
     selectedModel: settings.selectedModel,
   });
 
-  const toolsSupported = toolsSupportedMap[settings.selectedModel] ?? true;
+  const toolsSupported = useModels(
+    (s) => s.toolsSupported[settings.selectedModel] ?? true,
+  );
 
   const stream = useChatStream({
     conversations,
@@ -278,7 +280,6 @@ export default function ChatApp({
         onRenameConversation={conversations.renameConversation}
         selectedModel={settings.selectedModel}
         onModelChange={handleModelChange}
-        groupedModels={groupedModels}
         thinkingEnabled={settings.thinkingEnabled}
         onThinkingChange={(v) => setSetting("thinkingEnabled", v)}
         artifactsEnabled={settings.artifactsEnabled}
@@ -291,7 +292,6 @@ export default function ChatApp({
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         contextUsage={stream.contextUsage}
-        contextWindowMap={contextWindowMap}
         toolsSupported={toolsSupported}
         totalCost={totalCost}
         rightPanel={
