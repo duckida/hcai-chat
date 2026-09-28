@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import net from "node:net";
 
 const BASE_URL = process.env.SMOKE_URL ?? "http://localhost:3000";
@@ -25,6 +25,18 @@ const PROFILE_DIR = `/tmp/opencode/hcai-smoke-${process.pid}`;
 
 // Start clean so persisted state cannot be mistaken for this run's result.
 rmSync(PROFILE_DIR, { recursive: true, force: true });
+
+// Sweep profiles left behind by runs whose process is gone. A profile only
+// matters while the pid that owns it is alive.
+try {
+  for (const entry of readdirSync("/tmp/opencode")) {
+    const match = entry.match(/^hcai-smoke-(\d+)$/);
+    if (!match || Number(match[1]) === process.pid) continue;
+    if (!existsSync(`/proc/${match[1]}`)) {
+      rmSync(`/tmp/opencode/${entry}`, { recursive: true, force: true });
+    }
+  }
+} catch {}
 
 // Credentials for the live model turn. Never printed, never written to the
 // repo: supply via env, or drop the key in a gitignored .smoke-key.
@@ -133,81 +145,90 @@ function connect(url) {
 
 async function main() {
   const proc = launchChromium();
-  const target = await pageTarget();
-  const { send, close, opened } = connect(target.webSocketDebuggerUrl);
-  await opened;
+  let close = () => {};
 
-  await send("Page.enable");
-  await send("Runtime.enable");
+  // Everything below the spawn sits inside this try. Connecting to the
+  // debugging endpoint throws while chromium is still coming up, and a
+  // failure there used to escape the cleanup below — every such run leaked a
+  // browser process until the next launch starved and timed out.
+  try {
+    const target = await pageTarget();
+    const connection = connect(target.webSocketDebuggerUrl);
+    close = connection.close;
+    const { send, opened } = connection;
+    await opened;
 
-  const evalJs = async (expression) => {
-    const r = await send("Runtime.evaluate", {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    });
-    if (r.exceptionDetails) {
-      throw new Error(
-        r.exceptionDetails.exception?.description ?? r.exceptionDetails.text,
-      );
-    }
-    return r.result.value;
-  };
+    await send("Page.enable");
+    await send("Runtime.enable");
 
-  const waitFor = async (fn, timeout = 20000, interval = 250) => {
-    const start = Date.now();
-    let lastErr = "";
-    while (Date.now() - start < timeout) {
-      try {
-        const v = await fn();
-        if (v) return v;
-      } catch (e) {
-        lastErr = e.message;
+    const evalJs = async (expression) => {
+      const r = await send("Runtime.evaluate", {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (r.exceptionDetails) {
+        throw new Error(
+          r.exceptionDetails.exception?.description ?? r.exceptionDetails.text,
+        );
       }
-      await sleep(interval);
-    }
-    throw new Error(`timeout waiting${lastErr ? `: ${lastErr}` : ""}`);
-  };
+      return r.result.value;
+    };
 
-  const setViewport = (width, height, mobile = false) =>
-    send("Emulation.setDeviceMetricsOverride", {
-      width,
-      height,
-      deviceScaleFactor: 1,
-      mobile,
-    });
+    const waitFor = async (fn, timeout = 20000, interval = 250) => {
+      const start = Date.now();
+      let lastErr = "";
+      while (Date.now() - start < timeout) {
+        try {
+          const v = await fn();
+          if (v) return v;
+        } catch (e) {
+          lastErr = e.message;
+        }
+        await sleep(interval);
+      }
+      throw new Error(`timeout waiting${lastErr ? `: ${lastErr}` : ""}`);
+    };
 
-  // Wait for the app shell AND for client hydration to settle, so assertions
-  // against hydration-driven state (theme classes) are not read too early.
-  const navigate = async (settleMs = 2500) => {
-    await send("Page.navigate", { url: BASE_URL });
-    await waitFor(
-      () =>
-        evalJs(
-          `Boolean(document.querySelector('header') && document.querySelector('textarea, button'))`,
-        ),
-      30000,
-    );
-    await sleep(settleMs);
-  };
+    const setViewport = (width, height, mobile = false) =>
+      send("Emulation.setDeviceMetricsOverride", {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile,
+      });
 
-  const find = (selector, text) =>
-    `[...document.querySelectorAll(${JSON.stringify(selector)})].find(e => (e.textContent||'').includes(${JSON.stringify(text)}))`;
+    // Wait for the app shell AND for client hydration to settle, so assertions
+    // against hydration-driven state (theme classes) are not read too early.
+    const navigate = async (settleMs = 2500) => {
+      await send("Page.navigate", { url: BASE_URL });
+      await waitFor(
+        () =>
+          evalJs(
+            `Boolean(document.querySelector('header') && document.querySelector('textarea, button'))`,
+          ),
+        30000,
+      );
+      await sleep(settleMs);
+    };
 
-  const click = async (expression, label) => {
-    const ok = await evalJs(
-      `(() => { const el = ${expression}; if (!el) return false; el.scrollIntoView({block:'center'}); el.click(); return true; })()`,
-    );
-    if (!ok) throw new Error(`element not found for click: ${label}`);
-    await sleep(450);
-    return true;
-  };
+    const find = (selector, text) =>
+      `[...document.querySelectorAll(${JSON.stringify(selector)})].find(e => (e.textContent||'').includes(${JSON.stringify(text)}))`;
 
-  const htmlClass = () => evalJs(`document.documentElement.className`);
+    const click = async (expression, label) => {
+      const ok = await evalJs(
+        `(() => { const el = ${expression}; if (!el) return false; el.scrollIntoView({block:'center'}); el.click(); return true; })()`,
+      );
+      if (!ok) throw new Error(`element not found for click: ${label}`);
+      await sleep(450);
+      return true;
+    };
 
-  const typeInto = async (selector, text) =>
-    evalJs(
-      `(() => {
+    const htmlClass = () => evalJs(`document.documentElement.className`);
+
+    const typeInto = async (selector, text) =>
+      evalJs(
+        `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return false;
         const proto = el instanceof HTMLTextAreaElement
@@ -217,11 +238,11 @@ async function main() {
         el.dispatchEvent(new Event('input', { bubbles: true }));
         return true;
       })()`,
-    );
+      );
 
-  const pressEnter = (selector) =>
-    evalJs(
-      `(() => {
+    const pressEnter = (selector) =>
+      evalJs(
+        `(() => {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) return false;
         for (const type of ['keydown', 'keypress', 'keyup']) {
@@ -229,39 +250,39 @@ async function main() {
         }
         return true;
       })()`,
-    );
+      );
 
-  const pageText = () => evalJs(PAGE_TEXT);
+    const pageText = () => evalJs(PAGE_TEXT);
 
-  // On mobile the nav sheet is itself a [role="dialog"], so a bare
-  // [role="dialog"] query resolves to the wrong layer. Anchor every settings
-  // interaction on the dialog that actually contains the footer.
-  const SETTINGS_DIALOG = `[...document.querySelectorAll('[role="dialog"]')].find(d => (d.textContent||'').includes('Save and Connect'))`;
-  const hasSettingsDialog = () => evalJs(`Boolean(${SETTINGS_DIALOG})`);
+    // On mobile the nav sheet is itself a [role="dialog"], so a bare
+    // [role="dialog"] query resolves to the wrong layer. Anchor every settings
+    // interaction on the dialog that actually contains the footer.
+    const SETTINGS_DIALOG = `[...document.querySelectorAll('[role="dialog"]')].find(d => (d.textContent||'').includes('Save and Connect'))`;
+    const hasSettingsDialog = () => evalJs(`Boolean(${SETTINGS_DIALOG})`);
 
-  const openSettings = async () => {
-    if (await hasSettingsDialog()) return;
-    await evalJs(
-      `(() => { const b = [...document.querySelectorAll('header button')].find(x => x.querySelector('svg.lucide-menu')); if (b && getComputedStyle(b).display !== 'none') { b.click(); return true; } return false; })()`,
-    );
-    await sleep(500);
-    await click(find("button", "Settings"), "Settings button");
-    await waitFor(hasSettingsDialog, 10000);
-    await sleep(400);
-  };
+    const openSettings = async () => {
+      if (await hasSettingsDialog()) return;
+      await evalJs(
+        `(() => { const b = [...document.querySelectorAll('header button')].find(x => x.querySelector('svg.lucide-menu')); if (b && getComputedStyle(b).display !== 'none') { b.click(); return true; } return false; })()`,
+      );
+      await sleep(500);
+      await click(find("button", "Settings"), "Settings button");
+      await waitFor(hasSettingsDialog, 10000);
+      await sleep(400);
+    };
 
-  const closeDialog = async () => {
-    await evalJs(`(() => {
+    const closeDialog = async () => {
+      await evalJs(`(() => {
       const d = ${SETTINGS_DIALOG};
       if (!d) return false;
       const btn = [...d.querySelectorAll('button')].find(b => (b.textContent||'').trim().toLowerCase() === 'cancel');
       if (btn) { btn.click(); return true; } return false;
     })()`);
-    await sleep(600);
-  };
+      await sleep(600);
+    };
 
-  const gotoSection = async (label) => {
-    const ok = await evalJs(`(() => {
+    const gotoSection = async (label) => {
+      const ok = await evalJs(`(() => {
       const d = ${SETTINGS_DIALOG};
       if (!d) return false;
       const b = [...d.querySelectorAll('button')].find(x => (x.textContent||'').trim().startsWith(${JSON.stringify(label)}));
@@ -270,11 +291,10 @@ async function main() {
       b.click();
       return true;
     })()`);
-    if (!ok) throw new Error(`section not found: ${label}`);
-    await sleep(400);
-  };
+      if (!ok) throw new Error(`section not found: ${label}`);
+      await sleep(400);
+    };
 
-  try {
     // ---- 1. loads -------------------------------------------------------
     await setViewport(1280, 900);
     await navigate();
@@ -429,32 +449,37 @@ async function main() {
       check("user message is sent", sent);
 
       if (sent) {
-        // Measure growth from the transcript AFTER the user turn landed: the
-        // empty-state heading disappears on send, so a pre-send baseline makes
-        // a reply that did arrive look like it shrank the page.
-        const afterSend = await pageText();
-        // A thinking block shows a static "Thinking" label while the model
-        // reasons, so text alone can sit still for many seconds. Treat the
-        // bouncing indicator as the streaming signal instead of guessing.
+        // Either signal alone can be true before the turn is over: text
+        // stalls while the model reasons (the thinking block shows a static
+        // "Thinking" label), and the assistant row mounts before its text
+        // finishes streaming. Completion needs all three.
+        const hasAssistantRow = () =>
+          evalJs(
+            `[...document.querySelectorAll('.msg-row')].some(r => r.querySelector('svg.lucide-sparkles'))`,
+          );
         const stillStreaming = () =>
           evalJs(
             `Boolean((document.querySelector('main') || document).querySelector('output[aria-label="Thinking"]'))`,
           );
 
-        let prev = afterSend;
+        let prev = await pageText();
         let quiet = 0;
+        let answered = false;
+        let streaming = true;
         const started = Date.now();
-        while (Date.now() - started < 90000 && quiet < 2) {
+        while (
+          Date.now() - started < 90000 &&
+          !/API Error/.test(prev) &&
+          !(answered && quiet >= 2 && !streaming)
+        ) {
           await sleep(1500);
-          const streaming = await stillStreaming();
           const now = await pageText();
-          quiet = !streaming && now === prev ? quiet + 1 : 0;
+          streaming = await stillStreaming();
+          answered = await hasAssistantRow();
+          quiet = now === prev ? quiet + 1 : 0;
           prev = now;
         }
         if (process.env.SMOKE_DEBUG) {
-          console.log(
-            `  dbg afterSend(${afterSend.length}): ${JSON.stringify(afterSend)}`,
-          );
           console.log(`  dbg prev(${prev.length}): ${JSON.stringify(prev)}`);
         }
         const err = prev.match(/API Error.{0,140}/s);
@@ -464,11 +489,11 @@ async function main() {
             `assistant turn errored — ${err[0].replace(/\s+/g, " ").trim()}`,
           );
         } else {
-          const grew = prev.length - afterSend.length;
+          const delivered = answered && quiet >= 2 && !streaming;
           check(
             "assistant reply streams back",
-            grew > 0,
-            `+${grew} chars, PONG=${/PONG/i.test(prev)} — ${prev.slice(-180)}`,
+            delivered,
+            `assistant=${answered} quiet=${quiet} streaming=${streaming} — ${prev.slice(-180)}`,
           );
         }
       }
@@ -489,6 +514,9 @@ async function main() {
     close();
     proc.kill("SIGTERM");
     await sleep(1500);
+    if (proc.exitCode === null && proc.signalCode === null)
+      proc.kill("SIGKILL");
+    await sleep(300);
     try {
       rmSync(PROFILE_DIR, { recursive: true, force: true });
     } catch {}
