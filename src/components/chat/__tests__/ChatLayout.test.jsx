@@ -38,7 +38,7 @@ const baseProps = (overrides = {}) => ({
 const headerButtons = () =>
   Array.from(document.querySelector("header").querySelectorAll("button"));
 
-const rowFor = (title) => screen.getByText(title).closest("div");
+const rowFor = (title) => screen.getByText(title).closest("li");
 
 function SearchHarness(props) {
   const [query, setQuery] = useState("");
@@ -233,5 +233,57 @@ describe("SidebarContent conversations", () => {
     render(<ChatLayout {...props} />);
     await userEvent.click(within(rowFor("Second chat")).getByLabelText("Delete"));
     expect(props.onDeleteConversation).toHaveBeenCalledWith("c2");
+  });
+
+  it("marks the active conversation for assistive technology", () => {
+    render(<ChatLayout {...baseProps()} />);
+    expect(rowFor("First chat")).toHaveAttribute("aria-current", "true");
+    expect(rowFor("Second chat")).not.toHaveAttribute("aria-current");
+  });
+
+  it("cancels an in-flight rename when another conversation is picked", async () => {
+    const props = baseProps();
+    render(<ChatLayout {...props} />);
+
+    await userEvent.click(within(rowFor("First chat")).getByLabelText("Rename"));
+    expect(screen.getByDisplayValue("First chat")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Second chat"));
+
+    expect(props.onRenameConversation).not.toHaveBeenCalled();
+    expect(screen.queryByDisplayValue("First chat")).not.toBeInTheDocument();
+    expect(props.onSelectConversation).toHaveBeenCalledWith("c2");
+  });
+
+  it("saves a rename through the labelled save button", async () => {
+    const props = baseProps();
+    render(<ChatLayout {...props} />);
+
+    await userEvent.click(within(rowFor("First chat")).getByLabelText("Rename"));
+    const editor = screen.getByLabelText("Rename First chat");
+    await userEvent.clear(editor);
+    await userEvent.type(editor, "Kept");
+    await userEvent.click(screen.getByRole("button", { name: "Save rename" }));
+
+    expect(props.onRenameConversation).toHaveBeenCalledWith("c1", "Kept");
+    expect(screen.queryByLabelText("Rename First chat")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state when the search matches nothing", async () => {
+    render(<SearchHarness {...baseProps()} />);
+
+    await userEvent.type(
+      screen.getByPlaceholderText("Search chats..."),
+      "nothing",
+    );
+
+    expect(screen.getByText("No chats match your search")).toBeInTheDocument();
+    expect(screen.queryByText("First chat")).not.toBeInTheDocument();
+    expect(screen.queryByText("Second chat")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty state when there are no conversations", () => {
+    render(<SearchHarness {...baseProps({ conversations: [] })} />);
+    expect(screen.getByText("No chats yet")).toBeInTheDocument();
   });
 });
