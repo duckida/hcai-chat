@@ -93,7 +93,7 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
 1. `git fetch origin` → review `git log <sync-sha>..origin/main -- <files I own>`.
 2. Work **one phase**. Everything touched by that phase is finished before moving on.
 3. `npm test`, `npm run lint`, `npm run build` all green.
-4. Run the smoke script (below).
+4. Run the smoke script: `npm run dev` on :3000, then `node scripts/smoke.mjs`.
 5. Commit (one commit per phase, revertable on its own) and push.
 6. Record the new origin sync SHA.
 
@@ -101,10 +101,42 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
 
 - `npm test` — full suite passes (baseline 385).
 - `npm run lint` && `npm run build` — no errors.
-- Smoke script: new chat → stream a reply → reload page → conversation persists → switch conversations mid-stream (reply stays on its own conversation) → open Settings → toggle dark mode → reopen page (setting stuck).
+- Smoke script: `node scripts/smoke.mjs` — see **Smoke** below.
 - `git diff <phase-start> --stat` touches only files assigned to that phase.
 
 **Kill criterion:** if a phase runs past ~2× its estimate, stop at the seam, commit what's green, and re-scope rather than pushing through.
+
+## Smoke — `scripts/smoke.mjs`
+
+Drives Chromium over CDP (Node ≥ 22 ships a global `WebSocket`, so there is no
+browser-automation dependency to install). Needs `npm run dev` on :3000.
+
+```
+node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
+```
+
+| # | Check | Verifies |
+|---|---|---|
+| 1 | app loads with header and controls | shell renders |
+| 2 | selecting Sunrise adds `theme-sunrise` to `<html>` | `setSetting` applies the class live |
+| 3 | `theme-sunrise` survives a reload | **`hydrateSettings` reads storage on mount** |
+| 4 | dark mode survives a reload | next-themes FOUC path |
+| 5 | Save/Cancel reachable at 360×640 | **the P3b scroll fix — measures real overflow** |
+| 6 | composer accepts input / message is sent | `ChatInput` + Enter submit |
+| 7 | assistant reply streams back | live model turn |
+| 8 | sent message survives reload | IndexedDB persistence |
+
+**SKIP vs FAIL:** check 7 is `SKIP` when the browser profile has no Hack Club API key
+(`API Error API key not found`) — a missing credential is a prerequisite, not a regression.
+Everything else runs without credentials. **P2–P3 runs: 8 ok / 1 skipped / 0 failed.**
+
+Two traps this script encodes (both bit us once):
+
+- **Do not assert hydration state at fixed delay.** The theme class lands ~1.5s after load;
+  assert with `waitFor`, never once after `sleep`.
+- **Do not match your own probe text.** The composer message contains `PONG`, so a naive
+  `transcript.includes("PONG")` passes even when the model errored. Wait for the transcript to
+  stop growing, then look for `API Error` first.
 
 ---
 
