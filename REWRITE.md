@@ -7,7 +7,7 @@
 | **Phase** | **P3 complete** → next: P4 (models: store + `ModelPicker` + `ContextUsage`) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 32 files / **448 tests passing** — lint, format and `next build` all clean |
+| **Current test suite** | 32 files / **449 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -74,6 +74,13 @@ single-writer rule. Its 8 assertions moved to `src/stores/__tests__/settings.tes
 6. **P3a caught a shipped-but-unshipped bug**: `applyThemeClass` added the raw theme name
    (`sunrise`) instead of the class name (`theme-sunrise`) — both colour themes would have
    silently stopped applying. Ported tests, not the hook, caught it.
+7. **The mobile nav sheet stayed open over Settings (real bug, now fixed).** "New Chat"
+   called `onNewChat()` *and* `onSheetClose?.()`; Settings called only `onApiKeyClick`, so
+   tapping it at mobile width left the sheet stacked under the dialog — two competing
+   `[role="dialog"]` layers, which is how the smoke script first noticed. Now closes like
+   every other sidebar action. Regression test: `ChatLayout.test.jsx` →
+   *"closes the mobile nav sheet when Settings is opened"*. **Consequence for the smoke:**
+   never query a bare `[role="dialog"]` — resolve the one that contains `Save and Connect`.
 
 ## Findings from P1 — read before writing components
 
@@ -118,25 +125,42 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | # | Check | Verifies |
 |---|---|---|
 | 1 | app loads with header and controls | shell renders |
-| 2 | selecting Sunrise adds `theme-sunrise` to `<html>` | `setSetting` applies the class live |
-| 3 | `theme-sunrise` survives a reload | **`hydrateSettings` reads storage on mount** |
-| 4 | dark mode survives a reload | next-themes FOUC path |
-| 5 | Save/Cancel reachable at 360×640 | **the P3b scroll fix — measures real overflow** |
-| 6 | composer accepts input / message is sent | `ChatInput` + Enter submit |
-| 7 | assistant reply streams back | live model turn |
-| 8 | sent message survives reload | IndexedDB persistence |
+| 2 | smoke credentials seeded | live turn is a real assertion, not a SKIP; **length only, value never printed** |
+| 3 | selecting Sunrise adds `theme-sunrise` to `<html>` | `setSetting` applies the class live |
+| 4 | `theme-sunrise` survives a reload | **`hydrateSettings` reads storage on mount** |
+| 5 | dark mode survives a reload | next-themes FOUC path |
+| 6 | Save/Cancel reachable at 360×640 | **the P3b scroll fix — measures real overflow** |
+| 7 | composer accepts input | `ChatInput` accepts typing |
+| 8 | user message is sent | Enter submit |
+| 9 | assistant reply streams back | live model turn + `ResponseMetrics` |
+| 10 | sent message survives reload | IndexedDB persistence |
 
-**SKIP vs FAIL:** check 7 is `SKIP` when the browser profile has no Hack Club API key
-(`API Error API key not found`) — a missing credential is a prerequisite, not a regression.
-Everything else runs without credentials. **P2–P3 runs: 8 ok / 1 skipped / 0 failed.**
+**Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
+`.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
+and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
+`git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
+credential is a prerequisite, not a regression. **Current: 10 ok / 0 skipped / 0 failed.**
 
-Two traps this script encodes (both bit us once):
+**Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
+debug port, both cleaned up afterwards. A shared profile once let the previous run's
+`API Error` transcript be read as this run's result, and a crashed run's orphan Chromium once
+held the fixed port so every later run died at launch.
+
+**Five traps this script encodes (each one produced a false alarm first):**
 
 - **Do not assert hydration state at fixed delay.** The theme class lands ~1.5s after load;
   assert with `waitFor`, never once after `sleep`.
 - **Do not match your own probe text.** The composer message contains `PONG`, so a naive
-  `transcript.includes("PONG")` passes even when the model errored. Wait for the transcript to
-  stop growing, then look for `API Error` first.
+  `transcript.includes("PONG")` passes even when the model errored. Look for `API Error` first.
+- **Do not reuse a browser profile between runs.** Persisted conversations from the last run
+  land in the transcript and get read as this run's outcome.
+- **Do not query a bare `[role="dialog"]`.** On mobile the nav sheet is also a dialog; anchor
+  on the one containing `Save and Connect`.
+- **Do not diff against pre-send text, and do not wait on text alone.** The empty-state
+  heading disappears when the message is sent (so the page can shrink when a reply arrives),
+  and the thinking block shows a static `Thinking` label with no changing text for as long as
+  the model reasons. Baseline after send, completion signal = the bouncing
+  `output[aria-label="Thinking"]` disappearing.
 
 ---
 

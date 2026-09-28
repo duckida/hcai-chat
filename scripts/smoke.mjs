@@ -1,8 +1,42 @@
 import { spawn } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import net from "node:net";
 
 const BASE_URL = process.env.SMOKE_URL ?? "http://localhost:3000";
-const DEBUG_PORT = Number(process.env.SMOKE_PORT ?? 9333);
-const PROFILE_DIR = "/tmp/opencode/hcai-smoke-profile";
+
+// Unique profile and port per run. A shared profile let conversations from
+// an earlier run bleed into the next one, and a fixed port meant a stray
+// chromium from a crashed run made every later run fail to start.
+function freePort() {
+  return new Promise((resolve, reject) => {
+    const srv = net.createServer();
+    srv.on("error", reject);
+    srv.listen(0, "127.0.0.1", () => {
+      const { port } = srv.address();
+      srv.close(() => resolve(port));
+    });
+  });
+}
+
+const DEBUG_PORT = process.env.SMOKE_PORT
+  ? Number(process.env.SMOKE_PORT)
+  : await freePort();
+const PROFILE_DIR = `/tmp/opencode/hcai-smoke-${process.pid}`;
+
+// Start clean so persisted state cannot be mistaken for this run's result.
+rmSync(PROFILE_DIR, { recursive: true, force: true });
+
+// Credentials for the live model turn. Never printed, never written to the
+// repo: supply via env, or drop the key in a gitignored .smoke-key.
+function smokeApiKey() {
+  const fromEnv = process.env.SMOKE_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  try {
+    return readFileSync(".smoke-key", "utf8").trim();
+  } catch {
+    return "";
+  }
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -199,29 +233,44 @@ async function main() {
 
   const pageText = () => evalJs(PAGE_TEXT);
 
+  // On mobile the nav sheet is itself a [role="dialog"], so a bare
+  // [role="dialog"] query resolves to the wrong layer. Anchor every settings
+  // interaction on the dialog that actually contains the footer.
+  const SETTINGS_DIALOG = `[...document.querySelectorAll('[role="dialog"]')].find(d => (d.textContent||'').includes('Save and Connect'))`;
+  const hasSettingsDialog = () => evalJs(`Boolean(${SETTINGS_DIALOG})`);
+
   const openSettings = async () => {
+    if (await hasSettingsDialog()) return;
     await evalJs(
       `(() => { const b = [...document.querySelectorAll('header button')].find(x => x.querySelector('svg.lucide-menu')); if (b && getComputedStyle(b).display !== 'none') { b.click(); return true; } return false; })()`,
     );
     await sleep(500);
     await click(find("button", "Settings"), "Settings button");
-    await waitFor(() =>
-      evalJs(`Boolean(document.querySelector('[role="dialog"]'))`),
-    );
+    await waitFor(hasSettingsDialog, 10000);
     await sleep(400);
   };
 
   const closeDialog = async () => {
-    await evalJs(
-      `(() => { const el = document.querySelector('[role="dialog"]'); if (!el) return false;
-        const btn = [...el.querySelectorAll('button')].find(b => (b.textContent||'').trim().toLowerCase() === 'cancel');
-        if (btn) { btn.click(); return true; } return false; })()`,
-    );
+    await evalJs(`(() => {
+      const d = ${SETTINGS_DIALOG};
+      if (!d) return false;
+      const btn = [...d.querySelectorAll('button')].find(b => (b.textContent||'').trim().toLowerCase() === 'cancel');
+      if (btn) { btn.click(); return true; } return false;
+    })()`);
     await sleep(600);
   };
 
   const gotoSection = async (label) => {
-    await click(find('nav button, [role="dialog"] button', label), label);
+    const ok = await evalJs(`(() => {
+      const d = ${SETTINGS_DIALOG};
+      if (!d) return false;
+      const b = [...d.querySelectorAll('button')].find(x => (x.textContent||'').trim().startsWith(${JSON.stringify(label)}));
+      if (!b) return false;
+      b.scrollIntoView({ block: 'center' });
+      b.click();
+      return true;
+    })()`);
+    if (!ok) throw new Error(`section not found: ${label}`);
     await sleep(400);
   };
 
@@ -234,11 +283,30 @@ async function main() {
       await evalJs(`Boolean(document.querySelector('header'))`),
     );
 
+    // Seed credentials into this headless profile (it is separate from any
+    // browser the user drives by hand), then reload so the settings store
+    // hydrates. The value is never echoed.
+    const apiKey = smokeApiKey();
+    if (apiKey) {
+      await evalJs(
+        `localStorage.setItem("hack_club_ai_key", ${JSON.stringify(apiKey)})`,
+      );
+      await navigate();
+      const len =
+        (await evalJs(`localStorage.getItem("hack_club_ai_key")`))?.length ?? 0;
+      check("smoke credentials seeded", len > 0, `key length ${len}`);
+    } else {
+      skip(
+        "smoke credentials seeded",
+        "no SMOKE_API_KEY env var and no .smoke-key file",
+      );
+    }
+
     // ---- 2. colour theme applies to <html> ------------------------------
     await openSettings();
     await gotoSection("Appearance");
     await click(
-      `[...document.querySelectorAll('[role="dialog"] [role="combobox"]')][0]`,
+      `(${SETTINGS_DIALOG}).querySelector('[role="combobox"]')`,
       "theme select trigger",
     );
     await waitFor(
@@ -286,7 +354,10 @@ async function main() {
     // ---- 4. dark mode persists -----------------------------------------
     await openSettings();
     await gotoSection("Appearance");
-    await click(find('[role="dialog"] label', "Dark"), "Dark color mode");
+    await click(
+      `[...(${SETTINGS_DIALOG}).querySelectorAll('label')].find(e => (e.textContent||'').includes('Dark'))`,
+      "Dark color mode",
+    );
     await waitFor(
       () => evalJs(`document.documentElement.classList.contains('dark')`),
       5000,
@@ -306,7 +377,7 @@ async function main() {
     await openSettings();
     await gotoSection("Sandbox");
     const scrollReport = await evalJs(`(() => {
-      const dialog = document.querySelector('[role="dialog"]');
+      const dialog = ${SETTINGS_DIALOG};
       if (!dialog) return { found: false, reason: 'no dialog' };
       const save = [...dialog.querySelectorAll('button')].find(b => (b.textContent||'').includes('Save and Connect'));
       if (!save) return { found: false, reason: 'no save button' };
@@ -339,7 +410,6 @@ async function main() {
     // ---- 6. chat sends and a response comes back ------------------------
     const probe = "Reply with exactly the word PONG and nothing else.";
     await navigate();
-    const baseline = await pageText();
     const canType = await typeInto("textarea", probe);
     check("composer accepts input", canType);
     if (canType) {
@@ -359,26 +429,46 @@ async function main() {
       check("user message is sent", sent);
 
       if (sent) {
-        let stable = 0;
-        let prev = "";
+        // Measure growth from the transcript AFTER the user turn landed: the
+        // empty-state heading disappears on send, so a pre-send baseline makes
+        // a reply that did arrive look like it shrank the page.
+        const afterSend = await pageText();
+        // A thinking block shows a static "Thinking" label while the model
+        // reasons, so text alone can sit still for many seconds. Treat the
+        // bouncing indicator as the streaming signal instead of guessing.
+        const stillStreaming = () =>
+          evalJs(
+            `Boolean((document.querySelector('main') || document).querySelector('output[aria-label="Thinking"]'))`,
+          );
+
+        let prev = afterSend;
+        let quiet = 0;
         const started = Date.now();
-        while (Date.now() - started < 60000 && stable < 3) {
-          await sleep(1000);
+        while (Date.now() - started < 90000 && quiet < 2) {
+          await sleep(1500);
+          const streaming = await stillStreaming();
           const now = await pageText();
-          stable = now === prev ? stable + 1 : 0;
+          quiet = !streaming && now === prev ? quiet + 1 : 0;
           prev = now;
+        }
+        if (process.env.SMOKE_DEBUG) {
+          console.log(
+            `  dbg afterSend(${afterSend.length}): ${JSON.stringify(afterSend)}`,
+          );
+          console.log(`  dbg prev(${prev.length}): ${JSON.stringify(prev)}`);
         }
         const err = prev.match(/API Error.{0,140}/s);
         if (err) {
           skip(
             "assistant reply streams back",
-            `no credentials in this browser profile — ${err[0].replace(/\s+/g, " ").trim()}`,
+            `assistant turn errored — ${err[0].replace(/\s+/g, " ").trim()}`,
           );
         } else {
+          const grew = prev.length - afterSend.length;
           check(
             "assistant reply streams back",
-            prev.length > baseline.length + probe.length,
-            prev.slice(baseline.length, baseline.length + 160),
+            grew > 0,
+            `+${grew} chars, PONG=${/PONG/i.test(prev)} — ${prev.slice(-180)}`,
           );
         }
       }
@@ -398,6 +488,10 @@ async function main() {
   } finally {
     close();
     proc.kill("SIGTERM");
+    await sleep(1500);
+    try {
+      rmSync(PROFILE_DIR, { recursive: true, force: true });
+    } catch {}
   }
 
   const failed = results.filter((r) => r.state === "fail");
