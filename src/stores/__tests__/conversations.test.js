@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useConversations } from "@/hooks/use-conversations";
 import * as db from "@/lib/db";
+import { resetConversations, useConversations } from "@/stores/conversations";
 
 vi.mock("@/lib/db", () => ({
   getAllConversations: vi.fn(),
@@ -21,18 +21,18 @@ const sampleConversation = (overrides = {}) => ({
   ...overrides,
 });
 
-describe("useConversations", () => {
+describe("conversations store", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    resetConversations();
   });
 
   it("loads conversations on mount", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
+
     expect(db.getAllConversations).toHaveBeenCalled();
     expect(result.current.conversations).toHaveLength(1);
     expect(result.current.activeConversation).toBe("conv-1");
@@ -41,11 +41,21 @@ describe("useConversations", () => {
     ]);
   });
 
+  it("does not reload once hydrated", async () => {
+    db.getAllConversations.mockResolvedValue([]);
+    renderHook(() => useConversations());
+    await act(async () => {});
+    expect(db.getAllConversations).toHaveBeenCalledTimes(1);
+
+    const { unmount } = renderHook(() => useConversations());
+    await act(async () => {});
+    expect(db.getAllConversations).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
   it("creates a new conversation with defaults", async () => {
     db.getAllConversations.mockResolvedValue([]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     let created;
@@ -69,9 +79,7 @@ describe("useConversations", () => {
         messages: [{ role: "user", content: "old chat content" }],
       }),
     ]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
@@ -83,9 +91,7 @@ describe("useConversations", () => {
 
   it("persists updates incrementally without rewriting the store", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
@@ -104,9 +110,7 @@ describe("useConversations", () => {
       sampleConversation({ id: "b", createdAt: "2025-01-01T00:00:00.000Z" }),
     ];
     db.getAllConversations.mockResolvedValue(convs);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
     expect(result.current.activeConversation).toBe("a");
 
@@ -117,16 +121,34 @@ describe("useConversations", () => {
     expect(result.current.conversations[0].id).toBe("b");
     expect(result.current.activeConversation).toBe("b");
     expect(db.deleteConversation).toHaveBeenCalledWith("a");
-    // State transitions happen outside any updater: the active conversation
-    // is set to a concrete replacement, not computed inside setConversations.
     expect(result.current.messages).toEqual(convs[1].messages);
+  });
+
+  it("keeps the conversation on screen when a background row is deleted", async () => {
+    const convs = [
+      sampleConversation({ id: "a", createdAt: "2025-01-02T00:00:00.000Z" }),
+      sampleConversation({
+        id: "b",
+        createdAt: "2025-01-01T00:00:00.000Z",
+        messages: [{ role: "user", content: "b content" }],
+      }),
+    ];
+    db.getAllConversations.mockResolvedValue(convs);
+    const { result } = renderHook(() => useConversations());
+    await act(async () => {});
+    expect(result.current.activeConversation).toBe("a");
+
+    act(() => {
+      result.current.deleteConversation("b");
+    });
+    expect(result.current.activeConversation).toBe("a");
+    expect(result.current.messages).toEqual(convs[0].messages);
+    expect(db.deleteConversation).toHaveBeenCalledWith("b");
   });
 
   it("falls back to an empty active conversation when the last one is deleted", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
@@ -147,9 +169,7 @@ describe("useConversations", () => {
       }),
     ];
     db.getAllConversations.mockResolvedValue(convs);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
@@ -169,9 +189,7 @@ describe("useConversations", () => {
     const legacy = [sampleConversation()];
     localStorage.setItem("conversations", JSON.stringify(legacy));
 
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     expect(result.current.conversations).toEqual(legacy);
@@ -180,24 +198,52 @@ describe("useConversations", () => {
     expect(db.saveAllConversations).toHaveBeenCalledWith(legacy);
   });
 
+  it("migrates records that predate the current schema", async () => {
+    db.getAllConversations.mockResolvedValue([]);
+    const legacy = [
+      {
+        id: "ancient",
+        title: "Old chat",
+        createdAt: "2023-05-04T00:00:00.000Z",
+        messages: [{ role: "user", content: "from another era" }],
+      },
+    ];
+    localStorage.setItem("conversations", JSON.stringify(legacy));
+
+    const { result } = renderHook(() => useConversations());
+    await act(async () => {});
+
+    expect(result.current.conversations[0]).toEqual(legacy[0]);
+    expect(result.current.activeConversation).toBe("ancient");
+    expect(result.current.messages).toEqual(legacy[0].messages);
+    expect(db.saveAllConversations).toHaveBeenCalledWith(legacy);
+  });
+
   it("does not migrate when IndexedDB already holds data", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
     localStorage.setItem("conversations", JSON.stringify([{ id: "stale" }]));
 
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     expect(result.current.conversations[0].id).toBe("conv-1");
     expect(db.saveAllConversations).not.toHaveBeenCalled();
   });
 
+  it("survives a corrupt legacy payload and still hydrates", async () => {
+    db.getAllConversations.mockResolvedValue([]);
+    localStorage.setItem("conversations", "{not json");
+
+    const { result } = renderHook(() => useConversations());
+    await act(async () => {});
+
+    expect(result.current.conversations).toEqual([]);
+    expect(result.current.hydrated).toBe(true);
+  });
+
   it("updates the active conversation's model", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
@@ -214,9 +260,7 @@ describe("useConversations", () => {
 
   it("replaces the whole list after an import", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     const imported = [sampleConversation({ id: "imported", title: "Imported" })];
@@ -224,19 +268,51 @@ describe("useConversations", () => {
       result.current.replaceConversations(imported);
     });
     expect(result.current.conversations).toEqual(imported);
+    // The refresh dropped conv-1, so the view follows it rather than
+    // leaving an id the sidebar no longer has.
+    expect(result.current.activeConversation).toBe("imported");
+    expect(result.current.messages).toEqual(imported[0].messages);
+  });
+
+  it("keeps the current conversation through a refresh that still contains it", async () => {
+    db.getAllConversations.mockResolvedValue([sampleConversation()]);
+    const { result } = renderHook(() => useConversations());
+    await act(async () => {});
+
+    const refreshed = [
+      sampleConversation({ title: "Renamed upstream" }),
+      sampleConversation({ id: "other" }),
+    ];
+    act(() => {
+      result.current.replaceConversations(refreshed);
+    });
     expect(result.current.activeConversation).toBe("conv-1");
+    expect(result.current.messages).toEqual(refreshed[0].messages);
   });
 
   it("ignores renames with an empty title", async () => {
     db.getAllConversations.mockResolvedValue([sampleConversation()]);
-    const { result } = renderHook(() =>
-      useConversations({ selectedModel: "xiaomi/mimo-v2.5" }),
-    );
+    const { result } = renderHook(() => useConversations());
     await act(async () => {});
 
     act(() => {
       result.current.renameConversation("conv-1", "  ");
     });
     expect(result.current.conversations[0].title).toBe("Test");
+  });
+
+  it("never rewrites the whole store on a single change", async () => {
+    db.getAllConversations.mockResolvedValue([sampleConversation()]);
+    const { result } = renderHook(() => useConversations());
+    await act(async () => {});
+
+    act(() => {
+      result.current.setMessages([{ role: "assistant", content: "ok" }]);
+    });
+    expect(result.current.messages).toEqual([
+      { role: "assistant", content: "ok" },
+    ]);
+    expect(db.saveAllConversations).not.toHaveBeenCalled();
+    expect(db.putConversation).not.toHaveBeenCalled();
   });
 });

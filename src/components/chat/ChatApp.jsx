@@ -18,7 +18,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useChatStream } from "@/hooks/use-chat-stream";
-import { useConversations } from "@/hooks/use-conversations";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
@@ -29,6 +28,7 @@ import {
   triggerDownload,
 } from "@/lib/import-export";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
+import { useConversations } from "@/stores/conversations";
 import { loadModels, useModels } from "@/stores/models";
 import { hydrateSettings, setSetting, useSettings } from "@/stores/settings";
 
@@ -45,9 +45,7 @@ export default function ChatApp({
 
   const isDesktop = useIsDesktop();
 
-  const conversations = useConversations({
-    selectedModel: settings.selectedModel,
-  });
+  const conversations = useConversations();
 
   const toolsSupported = useModels(
     (s) => s.toolsSupported[settings.selectedModel] ?? true,

@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useChatStream } from "@/hooks/use-chat-stream";
-import { useConversations } from "@/hooks/use-conversations";
+import { resetConversations, useConversations } from "@/stores/conversations";
 
 vi.mock("@/lib/api-client", async () => {
   // Keep the real module: the streaming internals call getStoredApiKey
@@ -74,9 +74,7 @@ function makeAbortableStreamResponse(partialText, deltaCount) {
 // the conversations object, so rendering them separately would capture a
 // stale snapshot and never see state updates.
 function useHarness(overrides = {}) {
-  const conversations = useConversations({
-    selectedModel: "xiaomi/mimo-v2.5",
-  });
+  const conversations = useConversations();
   const stream = useChatStream({
     conversations,
     activeConversation: conversations.activeConversation,
@@ -112,6 +110,7 @@ describe("useChatStream", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    resetConversations();
     localStorage.setItem("hack_club_ai_key", "sk-hc-test-key");
     localStorage.setItem("e2b_api_key", "e2b-test-key");
     vi.stubGlobal("fetch", () => {});
