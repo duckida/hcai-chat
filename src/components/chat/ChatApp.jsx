@@ -16,7 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { useChatStream } from "@/hooks/use-chat-stream";
+import { useChatTurn } from "@/hooks/use-chat-turn";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
@@ -44,12 +44,7 @@ export default function ChatApp({
     (s) => s.toolsSupported[settings.selectedModel] ?? true,
   );
 
-  const stream = useChatStream({
-    conversations,
-    activeConversation: conversations.activeConversation,
-    messagesRef: conversations.messagesRef,
-    setMessages: conversations.setMessages,
-    patchConversation: conversations.patchConversation,
+  const stream = useChatTurn({
     selectedModel: settings.selectedModel,
     titleGenerationModel: settings.titleGenerationModel,
     thinkingEnabled: settings.thinkingEnabled,
@@ -215,6 +210,11 @@ export default function ChatApp({
         if (initialSearchEnabledRef.current) {
           setSetting("webSearchEnabled", true);
         }
+        // send() resolves its target from the conversations store at call
+        // time, which is whichever conversation hydration restored. The search
+        // page opens its own chat, so claim one first instead of appending an
+        // unrelated query to the user's most recent conversation.
+        handleNewChat();
         stream.send(initialQuery, []);
       }
     }, 200);

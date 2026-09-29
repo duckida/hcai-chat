@@ -1,7 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useChatStream } from "@/hooks/use-chat-stream";
+import { useChatTurn } from "@/hooks/use-chat-turn";
 import { resetConversations, useConversations } from "@/stores/conversations";
+import { resetTurn } from "@/stores/turn";
 
 vi.mock("@/lib/api-client", async () => {
   // Keep the real module: the streaming internals call getStoredApiKey
@@ -70,17 +71,12 @@ function makeAbortableStreamResponse(partialText, deltaCount) {
   };
 }
 
-// Both hooks must render inside one component: the stream hook closes over
-// the conversations object, so rendering them separately would capture a
-// stale snapshot and never see state updates.
+// Conversation state lives in the conversations store and turn state in the
+// turn store, so the two hooks observe the same modules even though they are
+// separate callers.
 function useHarness(overrides = {}) {
   const conversations = useConversations();
-  const stream = useChatStream({
-    conversations,
-    activeConversation: conversations.activeConversation,
-    messagesRef: conversations.messagesRef,
-    setMessages: conversations.setMessages,
-    patchConversation: conversations.patchConversation,
+  const stream = useChatTurn({
     selectedModel: "xiaomi/mimo-v2.5",
     titleGenerationModel: "qwen/qwen3.6-flash",
     thinkingEnabled: true,
@@ -106,11 +102,14 @@ async function setup(overrides = {}) {
   return result;
 }
 
-describe("useChatStream", () => {
+describe("useChatTurn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     resetConversations();
+    // Turn state is module-level now, so a committed error or a stuck
+    // isLoading would otherwise leak into the next test.
+    resetTurn();
     localStorage.setItem("hack_club_ai_key", "sk-hc-test-key");
     localStorage.setItem("e2b_api_key", "e2b-test-key");
     vi.stubGlobal("fetch", () => {});

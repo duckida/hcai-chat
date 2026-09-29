@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   generateTitle,
@@ -9,6 +9,22 @@ import {
 } from "@/lib/api-client";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
+import {
+  activeConversationRef,
+  conversationsActions,
+  conversationsRef,
+  messagesRef,
+} from "@/stores/conversations";
+import {
+  appendTurnDelta,
+  beginTurn,
+  clearTurnDeltas,
+  readTurnDeltas,
+  resetTurn,
+  setTurn,
+  updateSandboxTools,
+  useTurn,
+} from "@/stores/turn";
 
 function createId() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) {
@@ -30,15 +46,15 @@ function estimateOutputTokens(chars) {
  *
  * Usage is attributed to the conversation that started the request, so
  * switching chats mid-stream never bills the wrong one. Final deltas come
- * from live accumulators rather than render snapshots, so the tail of a
- * stream is never dropped between the last chunk and the commit.
+ * from the turn store's live accumulators rather than render snapshots, so
+ * the tail of a stream is never dropped between the last chunk and the
+ * commit.
+ *
+ * Conversation state is read from the conversations store rather than passed
+ * in: both live in the same module graph, so threading five props through
+ * ChatApp only created a second place for a stale copy to come from.
  */
-export function useChatStream({
-  conversations,
-  activeConversation,
-  messagesRef,
-  setMessages,
-  patchConversation,
+export function useChatTurn({
   selectedModel,
   titleGenerationModel,
   thinkingEnabled,
@@ -49,44 +65,20 @@ export function useChatStream({
   toolsSupported,
   isDesktop,
 }) {
-  const [streamingContent, setStreamingContent] = useState("");
-  const [streamingThinking, setStreamingThinking] = useState("");
-  const [streamingError, setStreamingError] = useState(null);
-  const [streamingSandboxTools, setStreamingSandboxTools] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [streamingConversationId, setStreamingConversationId] = useState(null);
-  const [contextUsage, setContextUsage] = useState(0);
+  const turn = useTurn();
 
-  const isStreamingComplete = useRef(false);
+  // Per-instance guards: state lives in the store, but a double-submit latch
+  // and the usage attribution cursor must not survive into the next mount.
   const isSubmittingRef = useRef(false);
+  const isStreamingComplete = useRef(false);
   const activeUsageConversationRef = useRef(null);
   const lastUsageRef = useRef(null);
   const predictedOutputTokensRef = useRef(0);
 
-  const resetStreamingState = useCallback(() => {
-    setStreamingContent("");
-    setStreamingThinking("");
-    setStreamingError(null);
-    setStreamingSandboxTools([]);
-    setStreamingConversationId(null);
-    setContextUsage(0);
-    lastUsageRef.current = null;
-    predictedOutputTokensRef.current = 0;
+  const resetForConversation = useCallback((conversation) => {
+    resetTurn();
+    setTurn({ contextUsage: conversation?.contextUsage || 0 });
   }, []);
-
-  const resetForConversation = useCallback(
-    (conversation) => {
-      resetStreamingState();
-      setContextUsage(conversation?.contextUsage || 0);
-      lastUsageRef.current = conversation?.contextUsage
-        ? {
-            inputTokens: conversation.contextUsage,
-            outputTokens: 0,
-          }
-        : null;
-    },
-    [resetStreamingState],
-  );
 
   const send = useCallback(
     async (content, files = []) => {
@@ -103,10 +95,10 @@ export function useChatStream({
         return;
       }
 
-      let currentId = activeConversation;
+      let currentId = activeConversationRef.current;
       if (!currentId) {
         currentId = createId();
-        const conversation = {
+        conversationsActions.newConversation({
           id: currentId,
           title: "New Chat",
           createdAt: new Date().toISOString(),
@@ -114,11 +106,10 @@ export function useChatStream({
           artifactPanelOpen: artifactsEnabled && isDesktop,
           model: selectedModel,
           contextUsage: 0,
-        };
-        conversations.newConversation(conversation);
-        resetStreamingState();
+        });
+        resetTurn();
       } else {
-        conversations.selectConversation(currentId);
+        conversationsActions.selectConversation(currentId);
       }
 
       // Track usage against the conversation this message belongs to, so
@@ -128,8 +119,8 @@ export function useChatStream({
 
       const e2bApiKey = getStoredE2bApiKey();
       const sandboxId =
-        conversations.conversationsRef.current.find((c) => c.id === currentId)
-          ?.sandboxId || null;
+        conversationsRef.current.find((c) => c.id === currentId)?.sandboxId ||
+        null;
 
       // Upload files to bucky
       let fileUrls = [];
@@ -216,14 +207,12 @@ export function useChatStream({
         userMessage = { role: "user", content };
       }
       const updatedMessages = [...messagesRef.current, userMessage];
-      setMessages(updatedMessages);
-      resetStreamingState();
-      setIsLoading(true);
-      setStreamingConversationId(currentId);
-      patchConversation(currentId, { messages: updatedMessages });
+      conversationsActions.setMessages(updatedMessages);
+      beginTurn(currentId);
+      conversationsActions.patchConversation(currentId, {
+        messages: updatedMessages,
+      });
 
-      let fullResponse = "";
-      let fullThinking = "";
       let sources = [];
       let metrics = null;
       const sandboxResults = [];
@@ -239,10 +228,12 @@ export function useChatStream({
         const finalMessages = extraMessage
           ? [...updatedMessages, extraMessage]
           : updatedMessages;
-        if (conversations.activeConversationRef.current === currentId) {
-          setMessages(finalMessages);
+        if (activeConversationRef.current === currentId) {
+          conversationsActions.setMessages(finalMessages);
         }
-        patchConversation(currentId, { messages: finalMessages });
+        conversationsActions.patchConversation(currentId, {
+          messages: finalMessages,
+        });
         return finalMessages;
       };
 
@@ -259,10 +250,14 @@ export function useChatStream({
           if (!actual) return;
           const total = (actual.inputTokens || 0) + (actual.outputTokens || 0);
           if (activeUsageConversationRef.current === currentId) {
-            setContextUsage(total);
+            setTurn({ contextUsage: total });
           }
           const usageFor = activeUsageConversationRef.current || currentId;
-          if (usageFor) patchConversation(usageFor, { contextUsage: total });
+          if (usageFor) {
+            conversationsActions.patchConversation(usageFor, {
+              contextUsage: total,
+            });
+          }
         };
 
         const bumpPredictedUsage = (chars) => {
@@ -273,20 +268,20 @@ export function useChatStream({
           const total =
             inputBase + outputBase + predictedOutputTokensRef.current;
           if (activeUsageConversationRef.current === currentId) {
-            setContextUsage(total);
+            setTurn({ contextUsage: total });
           }
         };
 
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
           snapToActualUsage();
-          setStreamingError({
-            title: "API Error",
-            details: `[${selectedModel}] ${error.message}`,
+          clearTurnDeltas({
+            streamingError: {
+              title: "API Error",
+              details: `[${selectedModel}] ${error.message}`,
+            },
+            isLoading: false,
           });
-          setIsLoading(false);
-          setStreamingContent("");
-          setStreamingThinking("");
 
           const errorMessage = {
             role: "assistant",
@@ -303,23 +298,23 @@ export function useChatStream({
           // Use the live accumulators, not a render snapshot: the final
           // deltas must never be dropped just because the component has not
           // re-rendered since the last chunk arrived.
-          const finalContent = fullResponse;
-          const finalThinking = fullThinking;
+          const { content: finalContent, thinking: finalThinking } =
+            readTurnDeltas();
 
           if (!finalContent && !finalThinking) {
             const errorMsg = {
               title: "API Error",
               details: `No response received from model "${selectedModel}". The model may be overloaded or unavailable.`,
             };
-            setStreamingError(errorMsg);
+            clearTurnDeltas({
+              streamingError: errorMsg,
+              isLoading: false,
+            });
             const errorMessage = {
               role: "assistant",
               content: "",
               error: errorMsg,
             };
-            setStreamingContent("");
-            setStreamingThinking("");
-            setIsLoading(false);
             commitMessages(errorMessage);
             return;
           }
@@ -338,15 +333,12 @@ export function useChatStream({
             metrics,
           };
 
-          setStreamingContent("");
-          setStreamingThinking("");
-          setIsLoading(false);
+          clearTurnDeltas({ isLoading: false });
           const finalMessages = commitMessages(assistantMessage);
 
-          const currentConversation =
-            conversations.conversationsRef.current.find(
-              (c) => c.id === currentId,
-            );
+          const currentConversation = conversationsRef.current.find(
+            (c) => c.id === currentId,
+          );
           const patch = { messages: finalMessages };
           if (
             currentConversation?.title === "New Chat" &&
@@ -354,19 +346,13 @@ export function useChatStream({
           ) {
             patch.title = await generateTitle(content, titleGenerationModel);
           }
-          patchConversation(currentId, patch);
+          conversationsActions.patchConversation(currentId, patch);
           snapToActualUsage();
         };
 
         const onChunk = (chunk, type) => {
           bumpPredictedUsage(chunk.length);
-          if (type === "thinking") {
-            fullThinking += chunk;
-            setStreamingThinking(fullThinking);
-          } else {
-            fullResponse += chunk;
-            setStreamingContent(fullResponse);
-          }
+          appendTurnDelta(type, chunk);
         };
 
         const onToolCall = (call) => {
@@ -377,7 +363,7 @@ export function useChatStream({
           if (!needsAgentMode) return;
 
           if (call.name && SANDBOX_TOOL_NAMES.includes(call.name)) {
-            setStreamingSandboxTools((prev) => {
+            updateSandboxTools((prev) => {
               const exists = prev.find((t) => t.index === call.index);
               if (exists) {
                 return prev.map((t) =>
@@ -405,7 +391,7 @@ export function useChatStream({
               ];
             });
           } else if (call.arguments) {
-            setStreamingSandboxTools((prev) =>
+            updateSandboxTools((prev) =>
               prev.map((t) =>
                 t.index === call.index
                   ? { ...t, code: t.code + call.arguments }
@@ -415,7 +401,7 @@ export function useChatStream({
           }
 
           if (call.complete) {
-            setStreamingSandboxTools((prev) => {
+            updateSandboxTools((prev) => {
               const existing = prev.find((t) => t.index === call.index);
               if (!existing || !SANDBOX_TOOL_NAMES.includes(existing.tool))
                 return prev;
@@ -433,10 +419,12 @@ export function useChatStream({
 
         const onSandboxResult = (result) => {
           if (result.sandboxId) {
-            patchConversation(currentId, { sandboxId: result.sandboxId });
+            conversationsActions.patchConversation(currentId, {
+              sandboxId: result.sandboxId,
+            });
           }
           sandboxResults.push({ ...result, conversationId: currentId });
-          setStreamingSandboxTools((prev) => {
+          updateSandboxTools((prev) => {
             const lastRunning = [...prev]
               .reverse()
               .find((t) => t.status === "running" || t.status === "writing");
@@ -498,9 +486,13 @@ export function useChatStream({
             const total =
               (metricsData.inputTokens || 0) + (metricsData.outputTokens || 0);
             const usageFor = activeUsageConversationRef.current;
-            if (usageFor) patchConversation(usageFor, { contextUsage: total });
+            if (usageFor) {
+              conversationsActions.patchConversation(usageFor, {
+                contextUsage: total,
+              });
+            }
             if (usageFor === currentId) {
-              setContextUsage(total);
+              setTurn({ contextUsage: total });
             }
           },
           maxTokens,
@@ -513,32 +505,30 @@ export function useChatStream({
             // The non-streaming retry regenerates the whole answer. Drop the
             // partial text the dead stream already accumulated, otherwise the
             // replay appends to it and the response appears twice.
-            fullResponse = "";
-            fullThinking = "";
             sources = [];
             metrics = null;
             sandboxResults.length = 0;
             isStreamingComplete.current = false;
-            setStreamingContent("");
-            setStreamingThinking("");
-            setStreamingSandboxTools([]);
+            clearTurnDeltas({ streamingSandboxTools: [] });
           },
         });
-      } catch (_error) {
+      } catch (error) {
         isStreamingComplete.current = true;
-        const errorMsg = {
-          title: "Error",
-          details: _error.message || "An unexpected error occurred.",
-        };
-        setStreamingError(errorMsg);
-        setIsLoading(false);
-        setStreamingContent("");
-        setStreamingThinking("");
+        clearTurnDeltas({
+          streamingError: {
+            title: "Error",
+            details: error.message || "An unexpected error occurred.",
+          },
+          isLoading: false,
+        });
 
         const errorMessage = {
           role: "assistant",
           content: "",
-          error: errorMsg,
+          error: {
+            title: "Error",
+            details: error.message || "An unexpected error occurred.",
+          },
         };
         commitMessages(errorMessage);
       } finally {
@@ -546,17 +536,11 @@ export function useChatStream({
       }
     },
     [
-      activeConversation,
       agentModeEnabled,
       artifactsEnabled,
-      conversations,
       isDesktop,
       maxTokens,
-      messagesRef,
-      patchConversation,
-      resetStreamingState,
       selectedModel,
-      setMessages,
       thinkingEnabled,
       titleGenerationModel,
       toolsSupported,
@@ -566,14 +550,13 @@ export function useChatStream({
 
   return {
     send,
-    isLoading,
-    streamingContent,
-    streamingThinking,
-    streamingError,
-    streamingSandboxTools,
-    streamingConversationId,
-    contextUsage,
-    setContextUsage,
+    isLoading: turn.isLoading,
+    streamingContent: turn.streamingContent,
+    streamingThinking: turn.streamingThinking,
+    streamingError: turn.streamingError,
+    streamingSandboxTools: turn.streamingSandboxTools,
+    streamingConversationId: turn.streamingConversationId,
+    contextUsage: turn.contextUsage,
     resetForConversation,
   };
 }
