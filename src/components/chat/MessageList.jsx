@@ -1,15 +1,8 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import {
-  useCallback,
-  useDeferredValue,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { useMemo } from "react";
+import { useThreadScroll } from "@/hooks/use-thread-scroll";
 import { hasRenderableContent } from "@/lib/messages";
 import EmptyState from "./message/EmptyState";
 import ErrorMessage from "./message/ErrorMessage";
@@ -37,11 +30,10 @@ export default function MessageList({
   showSandboxOutput = true,
   showMetrics = true,
 }) {
-  const scrollRef = useRef(null);
-  const [userScrolledAway, setUserScrolledAway] = useState(false);
-
-  const deferredStreamingContent = useDeferredValue(streamingContent);
-  const deferredStreamingThinking = useDeferredValue(streamingThinking);
+  const activeMessages = useMemo(
+    () => (messages || []).filter(hasRenderableContent),
+    [messages],
+  );
 
   // Only the stream owned by the conversation on screen may render — a stream
   // running for another conversation must never leak its text, thinking,
@@ -53,19 +45,14 @@ export default function MessageList({
   const isStreaming =
     streamVisible && !!(streamingContent || streamingThinking || isLoading);
 
-  // While the stream is live, render the deferred values (they lag the raw
-  // buffers by at most one render, purely for responsiveness). The instant the
-  // stream ends, isLoading and the raw buffers clear in the same batch that
-  // commits the persisted assistant message, so the stream row disappears on
-  // exactly the frame the persisted message appears — no latches, no stale
-  // tails, no duplicated rows. The commit is built from live accumulators, so
-  // the tail is never dropped here.
-  const renderedStreamingContent = isStreaming
-    ? (deferredStreamingContent ?? "")
-    : "";
-  const renderedStreamingThinking = isStreaming
-    ? (deferredStreamingThinking ?? "")
-    : "";
+  // The stream row shows exactly what is live: the instant the turn ends,
+  // isLoading and the streaming values clear in the same batch that commits
+  // the persisted assistant message, so the row disappears on exactly the
+  // frame the persisted message appears — no latches, no stale tails, no
+  // duplicated rows. The committed answer is built from the store's live
+  // accumulators, so the tail is never dropped.
+  const renderedStreamingContent = isStreaming ? streamingContent : "";
+  const renderedStreamingThinking = isStreaming ? streamingThinking : "";
 
   const liveStreamingError = streamVisible ? streamingError : null;
   const liveSandboxTools = useMemo(
@@ -73,68 +60,36 @@ export default function MessageList({
     [streamVisible, streamingSandboxTools],
   );
 
-  const handleScroll = useCallback(() => {
-    if (!scrollRef.current) return;
-    const { scrollHeight, scrollTop, clientHeight } = scrollRef.current;
-    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-    const wasAway = distanceFromBottom > 100;
-    setUserScrolledAway((prev) => (prev !== wasAway ? wasAway : prev));
-  }, []);
-
-  // Auto-scroll only when the user hasn't scrolled away
-  useEffect(() => {
-    if (
-      scrollRef.current &&
-      !userScrolledAway &&
-      (messages.length > 0 ||
-        renderedStreamingContent ||
-        renderedStreamingThinking ||
-        liveStreamingError ||
-        liveSandboxTools.length > 0 ||
-        isLoading)
-    ) {
-      scrollRef.current.scrollToBottom();
-    }
-  }, [
-    messages,
-    renderedStreamingContent,
-    renderedStreamingThinking,
-    liveStreamingError,
-    liveSandboxTools,
-    isLoading,
-    userScrolledAway,
-  ]);
-
-  // Reset scroll-away state when streaming ends
-  const prevIsStreaming = useRef(false);
-  useEffect(() => {
-    if (prevIsStreaming.current && !isStreaming) {
-      setUserScrolledAway(false);
-    }
-    prevIsStreaming.current = isStreaming;
-  }, [isStreaming]);
-
-  const activeMessages = useMemo(
-    () => (messages || []).filter(hasRenderableContent),
-    [messages],
-  );
-
-  const hasStreamingMessage =
-    !!renderedStreamingContent ||
-    !!renderedStreamingThinking ||
-    liveSandboxTools.length > 0;
+  const { scrollRef, userScrolledAway, handleScroll, scrollToBottom } =
+    useThreadScroll({ isStreaming });
 
   const hasContent =
-    activeMessages.length > 0 || hasStreamingMessage || !!liveStreamingError;
+    activeMessages.length > 0 ||
+    !!renderedStreamingContent ||
+    !!renderedStreamingThinking ||
+    liveSandboxTools.length > 0 ||
+    !!liveStreamingError;
 
   const completedTool = liveSandboxTools.find((t) => t.status === "complete");
 
   return (
     <div className="flex-1 h-full relative min-h-0 min-w-0">
-      <ScrollArea
+      {/*
+        A labelled section rather than a bare scroll box: a scrollable area has
+        to be reachable and labelled, or it is invisible to anyone navigating
+        by keyboard or by landmark. `scrollbar-gutter: stable` reserves the
+        scrollbar's width for the life of the conversation, so the thread
+        cannot shift sideways the moment the first long answer makes it
+        scrollable. `overscroll-contain` stops a trackpad that reaches the top
+        or bottom from taking the rest of the page with it.
+      */}
+      {/* biome-ignore-start lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable for arrow-key scrolling (WCAG 2.1.1) */}
+      <section
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full min-w-0 selection:bg-accent"
+        aria-label="Conversation"
+        tabIndex={0}
+        className="h-full min-h-0 min-w-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable] selection:bg-accent"
       >
         <div className="py-4 min-w-0">
           {!hasContent ? (
@@ -208,14 +163,12 @@ export default function MessageList({
             </>
           )}
         </div>
-      </ScrollArea>
+      </section>
+      {/* biome-ignore-end lint/a11y/noNoninteractiveTabindex: see above */}
       {userScrolledAway && isStreaming && (
         <button
           type="button"
-          onClick={() => {
-            scrollRef.current?.scrollToBottom();
-            setUserScrolledAway(false);
-          }}
+          onClick={scrollToBottom}
           className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 rounded-full bg-background border border-border shadow-lg px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
         >
           <ChevronDown className="h-3.5 w-3.5" />

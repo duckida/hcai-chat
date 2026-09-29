@@ -3,6 +3,17 @@ import { describe, expect, it } from "vitest";
 import MessageList from "../MessageList";
 
 describe("MessageList", () => {
+  it("exposes the thread as a labelled, focusable scroll region", () => {
+    render(<MessageList messages={[]} />);
+
+    const thread = screen.getByRole("region", { name: "Conversation" });
+    // A scrollable area that is not focusable cannot be scrolled without a
+    // pointing device, and an unlabelled one is invisible to landmark
+    // navigation.
+    expect(thread).toHaveAttribute("tabindex", "0");
+    expect(thread.className).toContain("overflow-y-auto");
+  });
+
   it("renders an empty state when no messages are present", () => {
     render(<MessageList messages={[]} />);
     expect(screen.getByText(/hack club ai/i)).toBeInTheDocument();
