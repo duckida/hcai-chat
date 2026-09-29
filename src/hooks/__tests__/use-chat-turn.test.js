@@ -245,6 +245,25 @@ describe("useChatTurn", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("restores context usage for the conversation it is reset to", async () => {
+    // ChatApp resets the turn on every conversation switch with the restored
+    // conversation, so this is what stops one chat's usage leaking onto the
+    // ring of the next one.
+    const result = await setup();
+
+    act(() => {
+      result.result.current.stream.resetForConversation({ contextUsage: 4500 });
+    });
+    expect(result.result.current.stream.contextUsage).toBe(4500);
+
+    act(() => {
+      result.result.current.stream.resetForConversation(null);
+    });
+    expect(result.result.current.stream.contextUsage).toBe(0);
+    expect(result.result.current.stream.streamingContent).toBe("");
+    expect(result.result.current.stream.streamingError).toBeNull();
+  });
+
   it("scopes the stream to its conversation and clears it on reset", async () => {
     let resolveStream;
     vi.stubGlobal(

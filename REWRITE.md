@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P5 complete** → next: P6 (turn store, stream, rAF coalescing) |
+| **Phase** | **P6 complete** → next: P7 (Thread, scroll manager) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 34 files / **468 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 36 files / **488 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -74,6 +74,50 @@ The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/
 store action that existed only to refresh the list after an import. Nothing else touched those
 paths, so no test needed changing. Restoring the feature means re-adding all of it from git
 history.
+
+---
+
+## Findings from P6 — read before touching the stream
+
+1. **`sse-parser.test.js` tested a copy of itself.** There was no `src/lib/sse-parser.js`; the
+   test pasted its own `dispatchFrame`/`flushFrames` and asserted against *those*, so it could not
+   have caught a regression in the parser `api-client` actually runs. It is now a module that
+   `api-client` imports, and the test exercises the real thing. (The real parser was still covered
+   indirectly by `api-client.test.js`'s mocked streams — the defect was the duplicated test, not
+   an untested parser.)
+2. **That copy hid a dormant CRLF bug.** The scanner matched only `"\n\n"` while its own comment
+   claimed `"\r\n\r\n"` support. One trailing CRLF frame survived by luck — it was dispatched from
+   the leftover buffer at EOF — but several frames in one buffer decoded to an empty conversation.
+   Verified by running the old implementation against the input. The extracted parser splits on
+   `\r\n\r\n`, `\n\n` and `\r\r`.
+3. **I was sure a second bug existed and it did not.** I reasoned that a complete frame ahead of a
+   truncated one was lost at EOF, wrote it up, then ran the old parser: it passes, because
+   `flushFrames` runs on every read. The case is pinned as a regression test and is *not* claimed
+   as a fix. **Prove a bug by failing a test against the old code, not by reasoning about it.**
+4. **`send()` kept two copies of every response.** `fullResponse`/`fullThinking` existed only
+   because React state lags a render. The turn store's buffers are now the single copy and the
+   commit reads them directly, so "use the live accumulators, not a render snapshot" is enforced
+   structurally instead of by discipline.
+5. **Dropping the `activeConversation` prop nearly broke `/search`.** `send()` used to resolve its
+   target from the prop captured at render time, and ChatApp's auto-send effect captures `stream`
+   on mount — before hydration resolves — so it always opened a new chat. Reading the store at
+   call time instead made it append to whichever conversation hydration restored, putting an
+   unrelated search query into the user's most recent chat. Fixed by claiming the conversation
+   explicitly in ChatApp (which is what the old behavior amounted to); `ChatApp.test.jsx`
+   reproduces the race — hydration resolves in a microtask, well inside the 200 ms timer — and
+   fails if the call is removed. **Any prop a stale closure was accidentally relying on needs an
+   explicit replacement, not just a store read.**
+6. **Turn state is module-level now, so tests need `resetTurn()` in `beforeEach`** — the same rule
+   as the conversations store (P5 finding 2). A committed error or a stuck `isLoading` otherwise
+   leaks into the next test.
+7. **Test files are never linted or formatted.** `biome.json` excludes `**/__tests__` and
+   `**/*.test.*`, so `npm run lint` and `npm run format` skip all 36 test files — `biome check
+   <test file>` reports "No files were processed". Pre-existing config; left alone, but it means
+   the format gate only covers source.
+8. **`predictContextUsage` and `setContextUsage` are separate functions on purpose.** A predicted
+   total is coalesced onto the frame; a server-reported one is written immediately and drops the
+   buffered prediction first, so a flush scheduled during the last chunk cannot overwrite the real
+   number with the estimate.
 
 ---
 
@@ -297,7 +341,7 @@ instead of patched mid-phase.
 | **P3** ✅ | Settings: `src/stores/settings.js` + dialog decomposed into `src/components/settings/*`; `hooks/use-settings.js` deleted (single-writer rule begins). 12 store tests + 4 switch tests. | ✔ |
 | **P4** ✅ | Models: `src/stores/models.js` + `hooks/use-models.js` **deleted**; `ModelPicker` on the Aria `Menu` (one markup path, provider groups, typeahead); `ContextUsage` resolves its own window. `groupedModels`/`contextWindowMap` leave the ChatApp→ChatLayout→Header chain. +35 tests. | ✔ |
 | **P5** ✅ | Conversations: `src/stores/conversations.js` + `hooks/use-conversations.js` **deleted**; `SidebarContent` off `ui/scroll-area`; `db.js` caches one connection with seeded-record migration tests. **Import/export removed rather than rewritten** (−814 lines, −29 tests). +27 / −43 tests → **468 / 34 files**. | ✔ |
-| **P6** | Turn: `turn` store, `useChatTurn`, rAF delta coalescing; port SSE/attribution invariants | ✔ |
+| **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
 | **P7** | Thread: message parts + scroll manager (keyboard-reachable) | ✔ |
 | **P8** | Composer + ArtifactPanel (CSS transitions replace framer-motion) | ✔ |
 | **P9** | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters | ✔ |
@@ -315,24 +359,24 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 
 ### Streaming & turns
 
-- [ ] Stream renders **only** for the conversation that initiated it — never for the one you switched to. (`8aa44a6`)
-- [ ] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`)
-- [ ] SSE fallback to non-streaming does **not** duplicate the response; partial accumulators are cleared first. (`74b8ad3`)
-- [ ] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`)
-- [ ] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`)
-- [ ] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`)
-- [ ] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`)
-- [ ] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`)
-- [ ] `streamChatCompletion` is awaited by every caller. (`a957c70`)
-- [ ] Scrolling stays possible **while** streaming. (`fa45ae0`)
-- [ ] Error placeholders are stripped from history sent to the model. (`be48b7f`)
+- [x] Stream renders **only** for the conversation that initiated it — never for the one you switched to. (`8aa44a6`) — `use-chat-turn` "scopes the stream to its conversation and clears it on reset"; `MessageList` "hides the stream, its text, and its placeholder when they belong to another conversation"
+- [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
+- [x] SSE fallback to non-streaming does **not** duplicate the response; partial accumulators are cleared first. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the non-streaming fallback"; `api-client` "fires onFallbackStart before replaying the regenerated text"
+- [x] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`) — four `api-client` tests (retry / no retry on thinking / on error event / on tool result)
+- [ ] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation half covered ("commits the final deltas even if a chunk has not re-rendered"); **the across-turns context half has no test yet**
+- [x] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`) — conversations store "assigns messagesRef synchronously on creation" / "selects a conversation and syncs its messages"
+- [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`
+- [ ] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`) — errors shown, and a thinking-only turn commits; **"into the next turn" is not directly asserted**
+- [ ] `streamChatCompletion` is awaited by every caller. (`a957c70`) — structurally true (one caller, `await`ed); **not a test**
+- [ ] Scrolling stays possible **while** streaming. (`fa45ae0`) — **no test**; belongs with P7's scroll manager
+- [x] Error placeholders are stripped from history sent to the model. (`be48b7f`) — `api-client` "strips error placeholders and empty assistant records from the POSTed messages" (and the non-streaming fallback variant)
 
 ### Context usage & cost
 
-- [ ] Context usage restores on load, attributes to the **initiating** conversation, and fills incrementally while streaming. (`5ca90d2`)
-- [ ] Resets on new chat; stale values don't leak on conversation switch. (`dc4c323`)
-- [ ] Total chat cost appears in the context tooltip. (`5c0818c`)
-- [ ] Ring turns yellow at 75%, red at 90%.
+- [x] Context usage restores on load, attributes to the **initiating** conversation, and fills incrementally while streaming. (`5ca90d2`) — `use-chat-turn` "attributes usage to the conversation that started the request"; "restores context usage for the conversation it is reset to"; turn store "coalesces a burst of deltas into a single frame notification" (publishes the predicted total)
+- [x] Resets on new chat; stale values don't leak on conversation switch. (`dc4c323`) — turn store `beginTurn` asserts `contextUsage: 0`; `resetForConversation(null)` clears it
+- [x] Total chat cost appears in the context tooltip. (`5c0818c`) — `ContextUsage` "shows the cost only when there is one"
+- [x] Ring turns yellow at 75%, red at 90%. — `ContextUsage` "turns the ring amber at 75% and red at 90%"
 
 ### Features & gating
 
@@ -406,8 +450,11 @@ Nothing may be deleted except by the phase listed here.
 | `hooks/use-models.js` | — | P4 ✅ | **Deleted** — replaced by `src/stores/models.js` (single-writer rule). |
 | `hooks/use-conversations.js` | 211 | P5 ✅ | **Deleted** — replaced by `src/stores/conversations.js` (single-writer rule). |
 | `lib/db.js` | 68 | P5 | Same schema; migration test with seeded records. |
-| `hooks/use-chat-stream.js` | 579 | P6 | Port its 106 lines of test assertions first. |
-| `lib/api-client.js` | 371 | P6 | Empty-EOF retry semantics; assertions port first. |
+| `hooks/use-chat-stream.js` | 579 | **P6 ✅** | **Replaced** by `hooks/use-chat-turn.js` (`useChatStream` deleted). The `fullResponse`/`fullThinking` twin accumulators collapsed into the store's buffers; 5 conversation props and the unused `setContextUsage` dropped from its surface. Test file renamed, all 15 tests ported unchanged. |
+| `hooks/use-chat-turn.js` | 563 | **P6 ✅** | New. Reads the conversations store directly instead of taking it as props. |
+| `stores/turn.js` | 134 | **P6 ✅** | New. Live buffers + exactly one store notification per animation frame. 11 tests. |
+| `lib/sse-parser.js` | 66 | **P6 ✅** | New — existed only as a copy pasted inside its own test. |
+| `lib/api-client.js` | 371 | **P6 ✅** | De-nested into `buildRequestBody` / `postChat` / `createFrameRouter` / `streamOnce` / `replayOnce`; the `doStream`↔`doFallback` recursion is gone. Every export and the empty-EOF retry semantics unchanged — its 34 tests were never edited. |
 | `components/chat/MessageList.jsx` | 227 | P7 | |
 | `components/chat/message/*` | 1093 | P7 | Message, StreamingMessage, MessageRow, MessageParts, ThinkingBlock, SourcesBlock, StreamingSandboxBlock, SandboxFiles, sandbox-files-client, ErrorMessage, EmptyState |
 | `components/chat/ChatInput.jsx` | 342 | P8 | |
@@ -428,7 +475,7 @@ Nothing may be deleted except by the phase listed here.
 | # | Fix | Phase |
 |---|---|---|
 | 1 | Plain `overflow-y-auto` + `scrollbar-gutter: stable` (replaces Radix `ScrollArea`) | P7 |
-| 2 | rAF-coalesced streaming deltas — one DOM update per frame | P6 |
+| 2 | rAF-coalesced streaming deltas — one DOM update per frame | **P6 ✅** |
 | 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | P8 / P9 |
 | 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | P7 / P8 |
 | 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | P8 |
