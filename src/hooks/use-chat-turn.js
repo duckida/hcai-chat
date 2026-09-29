@@ -19,9 +19,10 @@ import {
   appendTurnDelta,
   beginTurn,
   clearTurnDeltas,
+  predictContextUsage,
   readTurnDeltas,
   resetTurn,
-  setTurn,
+  setContextUsage,
   updateSandboxTools,
   useTurn,
 } from "@/stores/turn";
@@ -77,7 +78,7 @@ export function useChatTurn({
 
   const resetForConversation = useCallback((conversation) => {
     resetTurn();
-    setTurn({ contextUsage: conversation?.contextUsage || 0 });
+    setContextUsage(conversation?.contextUsage || 0);
   }, []);
 
   const send = useCallback(
@@ -250,7 +251,7 @@ export function useChatTurn({
           if (!actual) return;
           const total = (actual.inputTokens || 0) + (actual.outputTokens || 0);
           if (activeUsageConversationRef.current === currentId) {
-            setTurn({ contextUsage: total });
+            setContextUsage(total);
           }
           const usageFor = activeUsageConversationRef.current || currentId;
           if (usageFor) {
@@ -268,7 +269,7 @@ export function useChatTurn({
           const total =
             inputBase + outputBase + predictedOutputTokensRef.current;
           if (activeUsageConversationRef.current === currentId) {
-            setTurn({ contextUsage: total });
+            predictContextUsage(total);
           }
         };
 
@@ -492,7 +493,7 @@ export function useChatTurn({
               });
             }
             if (usageFor === currentId) {
-              setTurn({ contextUsage: total });
+              setContextUsage(total);
             }
           },
           maxTokens,
