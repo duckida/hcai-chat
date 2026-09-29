@@ -1,50 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { createSseParser, parseSseFrame } from "@/lib/sse-parser";
 
 const toChunk = (s) => new TextEncoder().encode(s);
+
 const delta = (content) =>
   `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
 
 const parse = (chunks) => {
-  const onChunk = [];
+  const seen = [];
+  const parser = createSseParser((event) => {
+    seen.push(event.choices?.[0]?.delta?.content || "");
+  });
   const decoder = new TextDecoder();
-  let buffer = "";
-  const dispatchFrame = (raw) => {
-    if (!raw.startsWith("data: ")) return;
-    const data = raw.slice(6);
-    if (data === "[DONE]") return;
-    try {
-      const parsed = JSON.parse(data);
-      onChunk.push(parsed.choices?.[0]?.delta?.content || "");
-    } catch {}
-  };
-  const flushFrames = () => {
-    let start = 0;
-    let idx = 0;
-    while (idx < buffer.length) {
-      if (buffer[idx] === "\n" && buffer[idx + 1] === "\n") {
-        dispatchFrame(buffer.slice(start, idx).trim());
-        start = idx + 2;
-        idx += 2;
-        continue;
-      }
-      if (buffer[idx] === "\r") {
-        idx++;
-        continue;
-      }
-      idx++;
-    }
-    buffer = buffer.slice(start);
-  };
-  for (const value of chunks) {
-    buffer += decoder.decode(value, { stream: true });
-    flushFrames();
+  for (const bytes of chunks) {
+    parser.write(decoder.decode(bytes, { stream: true }));
   }
-  buffer += decoder.decode(undefined);
-  if (buffer) dispatchFrame(buffer.trim());
-  return onChunk.filter(Boolean).join("");
+  parser.write(decoder.decode());
+  parser.end();
+  return seen.filter(Boolean).join("");
 };
 
-describe("SSE parser (event framing)", () => {
+describe("sse-parser frame splitting", () => {
   it("parses a single complete frame", () => {
     expect(parse([toChunk(delta("Hello "))])).toBe("Hello ");
   });
@@ -74,7 +50,7 @@ describe("SSE parser (event framing)", () => {
   });
 
   it("does not discard a frame missing trailing blank line on EOF", () => {
-    // No trailing \n\n — final frame still dispatched from leftover buffer.
+    // No trailing \n\n — the leftover buffer is still dispatched by end().
     expect(parse([toChunk("data: " + JSON.stringify({ foo: "bar" }))])).toBe(
       "",
     );
@@ -82,9 +58,78 @@ describe("SSE parser (event framing)", () => {
 
   it("tolerates \\r\\n line endings", () => {
     const stream =
-      'data: ' +
+      "data: " +
       JSON.stringify({ choices: [{ delta: { content: "X" } }] }) +
       "\r\n\r\n";
     expect(parse([toChunk(stream)])).toBe("X");
+  });
+
+  it("splits several CRLF-terminated frames in one buffer", () => {
+    const crlf = (content) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\r\n\r\n`;
+    // The old boundary check only looked for \n\n, so this decoded to nothing.
+    expect(parse([toChunk(crlf("one") + crlf("two"))])).toBe("onetwo");
+  });
+
+  it("splits CR-only frame boundaries", () => {
+    const cr = (content) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\r\r`;
+    expect(parse([toChunk(cr("a") + cr("b"))])).toBe("ab");
+  });
+
+  it("keeps a complete frame that precedes a truncated one at EOF", () => {
+    // Verified against the previous scanner too: it also passes, because
+    // flushFrames runs on every read. Pinned here so the EOF path cannot
+    // regress into dispatching the whole leftover buffer as one frame.
+    const complete = delta("kept");
+    const truncated = 'data: {"choices": [{"delta": {"content": "cut';
+    expect(parse([toChunk(complete + truncated)])).toBe("kept");
+  });
+});
+
+describe("sse-parser buffering", () => {
+  it("holds a partial frame until its boundary arrives", () => {
+    const events = [];
+    const parser = createSseParser((event) => events.push(event));
+
+    parser.write(delta("Hel").slice(0, -4));
+    expect(events).toHaveLength(0);
+    expect(parser.pending).not.toBe("");
+
+    parser.write(delta("Hel").slice(-4));
+    expect(events).toHaveLength(1);
+    expect(events[0].choices[0].delta.content).toBe("Hel");
+  });
+
+  it("dispatches the final frame even without a trailing blank line", () => {
+    const events = [];
+    const parser = createSseParser((event) => events.push(event));
+
+    parser.write(delta("tail").trimEnd());
+    expect(events).toHaveLength(0);
+
+    parser.end();
+    expect(events).toHaveLength(1);
+    expect(events[0].choices[0].delta.content).toBe("tail");
+    expect(parser.pending).toBe("");
+  });
+});
+
+describe("parseSseFrame", () => {
+  it("decodes a data payload", () => {
+    expect(parseSseFrame('data: {"type":"usage","usage":{}}')).toEqual({
+      type: "usage",
+      usage: {},
+    });
+  });
+
+  it("returns null for anything that is not a decodable data frame", () => {
+    expect(parseSseFrame(": keepalive comment")).toBeNull();
+    expect(parseSseFrame("event: message")).toBeNull();
+    expect(parseSseFrame("data: [DONE]")).toBeNull();
+    expect(parseSseFrame("")).toBeNull();
+    expect(parseSseFrame("   ")).toBeNull();
+    // Cut mid-JSON by a dropped connection: cannot be salvaged, must not throw.
+    expect(parseSseFrame('data: {"choices": [')).toBeNull();
   });
 });

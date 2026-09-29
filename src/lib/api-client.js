@@ -1,4 +1,5 @@
 import { sanitizeMessages } from "./messages";
+import { createSseParser } from "./sse-parser";
 
 const API_KEY_STORAGE_KEY = "hack_club_ai_key";
 const E2B_API_KEY_STORAGE_KEY = "e2b_api_key";
@@ -79,9 +80,7 @@ export const generateTitle = async (
     });
 
     if (response.ok) {
-      // Since we set stream: false, the API now returns JSON
       const data = await response.json();
-      // Extract the title from the response
       const title = data.text || data.choices?.[0]?.message?.content || "";
       if (title) {
         return title.trim().replace(/^["']|["']$/g, "");
@@ -92,22 +91,218 @@ export const generateTitle = async (
   return `${message.slice(0, 30)}...`;
 };
 
+function buildRequestBody({
+  model,
+  messages,
+  apiKey,
+  thinking,
+  artifacts,
+  maxTokens,
+  agentMode,
+  conversationId,
+  e2bApiKey,
+  sandboxId,
+  tools,
+  toolChoice,
+}) {
+  const body = {
+    model,
+    messages,
+    apiKey,
+    think: !!thinking,
+    artifacts,
+  };
+
+  if (maxTokens) body.max_tokens = maxTokens;
+
+  if (agentMode) {
+    body.agentMode = true;
+    if (conversationId) body.conversationId = conversationId;
+    if (e2bApiKey) body.e2bApiKey = e2bApiKey;
+    if (sandboxId) body.sandboxId = sandboxId;
+  }
+
+  if (tools && Array.isArray(tools) && tools.length > 0) {
+    body.tools = tools;
+    body.tool_choice = toolChoice;
+  }
+
+  return body;
+}
+
+async function postChat(body, model, stream) {
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, stream }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(
+      getErrorMessage(
+        errorData,
+        `Chat API Error (${response.status}) using model "${model}"`,
+      ),
+    );
+  }
+
+  return response;
+}
+
+/**
+ * Turns decoded SSE frames into callback calls and remembers what the stream
+ * actually delivered. That record is the retry decision: a clean EOF with
+ * nothing in it means the response was dropped upstream before its first
+ * delta, and tool results count as delivered because their work already
+ * happened server-side and must never be re-run.
+ */
+function createFrameRouter({
+  model,
+  onChunk,
+  onError,
+  onToolCall,
+  onSearchResult,
+  onMetrics,
+  onSandboxResult,
+}) {
+  const delivered = {
+    content: false,
+    thinking: false,
+    toolCall: false,
+    serverEvent: false,
+    serverError: false,
+  };
+
+  const route = (event) => {
+    if (event.type === "usage") {
+      onMetrics?.(event.usage);
+      return;
+    }
+
+    if (event.type === "error") {
+      delivered.serverError = true;
+      onError(
+        new Error(
+          event.error || `Server error during streaming with model "${model}"`,
+        ),
+      );
+      return;
+    }
+
+    if (event.type === "search_result") {
+      if (!onSearchResult) return;
+      delivered.serverEvent = true;
+      onSearchResult(event.sources || [], event.content || "");
+      return;
+    }
+
+    if (event.type === "sandbox_result") {
+      if (!onSandboxResult) return;
+      delivered.serverEvent = true;
+      onSandboxResult(event);
+      return;
+    }
+
+    const delta = event.choices?.[0]?.delta || {};
+
+    if (delta.content) {
+      delivered.content = true;
+      onChunk(delta.content, "content");
+    }
+    if (delta.thinking) {
+      delivered.thinking = true;
+      onChunk(delta.thinking, "thinking");
+    }
+    if (delta.tool_calls && onToolCall) {
+      delivered.toolCall = true;
+      for (const toolCall of delta.tool_calls) {
+        onToolCall({
+          index: toolCall.index,
+          id: toolCall.id,
+          name: toolCall.function?.name || "",
+          arguments: toolCall.function?.arguments || "",
+          complete: !!toolCall.id,
+        });
+      }
+    }
+  };
+
+  const anyDelivered = () =>
+    delivered.content ||
+    delivered.thinking ||
+    delivered.toolCall ||
+    delivered.serverEvent ||
+    delivered.serverError;
+
+  return { route, anyDelivered };
+}
+
+/**
+ * Read the SSE body to its end, reporting whether the stream turned out to be
+ * empty. A partial frame left in the buffer at EOF cannot be salvaged, so it is
+ * dispatched as-is and ignored if it does not parse — we complete the message
+ * with what we have rather than hanging.
+ */
+async function streamOnce(body, router, model, onComplete) {
+  const response = await postChat(body, model, true);
+
+  const parser = createSseParser(router.route);
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      parser.write(decoder.decode());
+      parser.end();
+      break;
+    }
+    parser.write(decoder.decode(value, { stream: true }));
+  }
+
+  if (!router.anyDelivered()) return true;
+
+  await onComplete?.();
+  return false;
+}
+
+async function replayOnce(body, model, handlers) {
+  const { onChunk, onError, onComplete, onSandboxResult, onFallbackStart } =
+    handlers;
+  try {
+    // The non-streaming retry regenerates the whole answer, so callers must
+    // discard whatever the dead stream already accumulated — otherwise the
+    // replay appends to it and the response appears twice.
+    onFallbackStart?.();
+    const response = await postChat(body, model, false);
+    const data = await response.json();
+
+    if (data.text) {
+      onChunk(data.text, "content");
+    }
+    if (Array.isArray(data.sandboxResults) && onSandboxResult) {
+      for (const sandboxResult of data.sandboxResults) {
+        onSandboxResult(sandboxResult);
+      }
+    }
+    await onComplete?.();
+  } catch (error) {
+    onError(error);
+  }
+}
+
 /**
  * Stream a chat completion from /api/chat.
  *
- * Takes a single options object so call sites stay readable as new
- * parameters are added. Frames are split on blank-line SSE boundaries:
- * a partial frame (bytes cut mid-JSON by a dropped connection) stays in
- * the buffer until more data arrives rather than being silently dropped.
+ * Takes a single options object so call sites stay readable as new parameters
+ * are added. Frames are split on blank-line SSE boundaries, so a partial frame
+ * (bytes cut mid-JSON by a dropped connection) waits in the buffer for more
+ * data instead of being silently dropped.
  *
- * If the SSE transport fails (e.g. the proxy's QUIC error), the request
- * is retried once with `stream: false` and the JSON result is replayed
- * through the same callbacks. The same retry runs when the stream ends
- * cleanly but delivered nothing at all (response dropped upstream).
- * The retry regenerates the whole answer, so
- * onFallbackStart fires first and any partially-streamed content must be
- * discarded — otherwise the replayed text is appended to the partial text
- * and the answer appears twice in one message.
+ * If the SSE transport fails (e.g. the proxy's QUIC error), or the stream ends
+ * cleanly but delivered nothing at all, the request is retried **once** with
+ * `stream: false` and the JSON result is replayed through the same callbacks.
  *
  * @param {object} options
  */
@@ -142,230 +337,53 @@ export const streamChatCompletion = async ({
     return;
   }
 
-  // Drop any records that would break a request (e.g. assistant error
+  // Drop records that would break a request (e.g. assistant error
   // placeholders saved into history). These stay visible in the UI but must
   // never be replayed to the model.
-  const cleanMessages = sanitizeMessages(messages);
-
-  // What the stream actually delivered — used to detect a response that was
-  // dropped upstream before any delta arrived.
-  let sawContent = false;
-  let sawThinking = false;
-  let sawToolCall = false;
-  let sawServerError = false;
-  let sawServerSideEvent = false;
-
-  const body = {
+  const body = buildRequestBody({
     model,
-    messages: cleanMessages,
+    messages: sanitizeMessages(messages),
     apiKey,
-    think: !!thinking,
+    thinking,
     artifacts,
-  };
-  if (maxTokens) body.max_tokens = maxTokens;
-  if (agentMode) {
-    body.agentMode = true;
-    if (conversationId) body.conversationId = conversationId;
-    if (e2bApiKey) body.e2bApiKey = e2bApiKey;
-    if (sandboxId) body.sandboxId = sandboxId;
+    maxTokens,
+    agentMode,
+    conversationId,
+    e2bApiKey,
+    sandboxId,
+    tools,
+    toolChoice,
+  });
+
+  const router = createFrameRouter({
+    model,
+    onChunk,
+    onError,
+    onToolCall,
+    onSearchResult,
+    onMetrics,
+    onSandboxResult,
+  });
+
+  let needsReplay = false;
+  try {
+    needsReplay = await streamOnce(body, router, model, onComplete);
+  } catch (error) {
+    console.warn(
+      "[stream] Streaming failed, falling back to non-streaming:",
+      error.message,
+    );
+    needsReplay = true;
   }
 
-  if (tools && Array.isArray(tools) && tools.length > 0) {
-    body.tools = tools;
-    body.tool_choice = toolChoice;
+  // Exactly one replay, whichever path asked for it.
+  if (needsReplay) {
+    await replayOnce(body, model, {
+      onChunk,
+      onError,
+      onComplete,
+      onSandboxResult,
+      onFallbackStart,
+    });
   }
-
-  const doStream = async () => {
-    try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, stream: true }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          getErrorMessage(
-            errorData,
-            `Chat API Error (${response.status}) using model "${model}"`,
-          ),
-        );
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      const dispatchFrame = (raw) => {
-        const trimmed = raw.trim();
-        if (!trimmed.startsWith("data: ")) return;
-        const data = trimmed.slice(6);
-        if (data === "[DONE]") return;
-        try {
-          const parsed = JSON.parse(data);
-
-          // Usage metrics from server
-          if (parsed.type === "usage" && onMetrics) {
-            onMetrics(parsed.usage);
-            return;
-          }
-
-          // Error event from server
-          if (parsed.type === "error") {
-            sawServerError = true;
-            onError(
-              new Error(
-                parsed.error ||
-                  `Server error during streaming with model "${model}"`,
-              ),
-            );
-            return;
-          }
-
-          // Search result metadata from server-side tool execution
-          if (parsed.type === "search_result" && onSearchResult) {
-            sawServerSideEvent = true;
-            onSearchResult(parsed.sources || [], parsed.content || "");
-            return;
-          }
-
-          // Sandbox execution result
-          if (parsed.type === "sandbox_result" && onSandboxResult) {
-            sawServerSideEvent = true;
-            onSandboxResult(parsed);
-            return;
-          }
-
-          const delta = parsed.choices?.[0]?.delta || {};
-          const content = delta.content || "";
-          const thinking = delta.thinking || "";
-
-          if (content) {
-            sawContent = true;
-            onChunk(content, "content");
-          }
-          if (thinking) {
-            sawThinking = true;
-            onChunk(thinking, "thinking");
-          }
-
-          if (delta.tool_calls && onToolCall) {
-            sawToolCall = true;
-            for (const toolCall of delta.tool_calls) {
-              onToolCall({
-                index: toolCall.index,
-                id: toolCall.id,
-                name: toolCall.function?.name || "",
-                arguments: toolCall.function?.arguments || "",
-                complete: !!toolCall.id,
-              });
-            }
-          }
-        } catch (_error) {
-          // Ignore malformed or partial frames until more stream data arrives.
-        }
-      };
-
-      // Split on blank-line event boundaries. A frame is only complete once we
-      // hit "\n\n" (or "\r\n\r\n"), so trailing partial data stays in the
-      // buffer until the next read — nothing is silently dropped on EOF.
-      const flushFrames = () => {
-        let frameStart = 0;
-        let idx = 0;
-        while (idx < buffer.length) {
-          if (buffer[idx] === "\n" && buffer[idx + 1] === "\n") {
-            const raw = buffer.slice(frameStart, idx);
-            frameStart = idx + 2;
-            dispatchFrame(raw.trim());
-            idx += 2;
-            continue;
-          }
-          if (buffer[idx] === "\r") {
-            idx++;
-            continue;
-          }
-          idx++;
-        }
-        buffer = buffer.slice(frameStart);
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          buffer += decoder.decode(undefined);
-          // Process any final complete frame that arrived without a trailing
-          // blank line. A genuinely partial frame (mid-JSON cut by a dropped
-          // connection) cannot be salvaged — skip it so we still complete the
-          // message with what we have rather than hanging.
-          if (buffer) dispatchFrame(buffer.trim());
-          // A clean EOF with nothing delivered at all — no text, no
-          // reasoning, no tool calls, no server-side tool results, no
-          // server error — means the response was dropped upstream before
-          // its first delta. Retry once through the non-streaming path
-          // instead of committing an empty turn. Tool results count as
-          // delivered: their work already happened server-side and must
-          // never be re-run.
-          if (
-            !sawContent &&
-            !sawThinking &&
-            !sawToolCall &&
-            !sawServerSideEvent &&
-            !sawServerError
-          ) {
-            await doFallback();
-          } else {
-            await onComplete?.();
-          }
-          break;
-        }
-
-        buffer += decoder.decode(value, { stream: true });
-        flushFrames();
-      }
-    } catch (error) {
-      // If streaming fails (e.g. QUIC protocol error), fall back to non-streaming
-      console.warn(
-        "[stream] Streaming failed, falling back to non-streaming:",
-        error.message,
-      );
-      await doFallback();
-    }
-  };
-
-  const doFallback = async () => {
-    try {
-      onFallbackStart?.();
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...body, stream: false }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          getErrorMessage(
-            errorData,
-            `Chat API Error (${response.status}) using model "${model}"`,
-          ),
-        );
-      }
-
-      const data = await response.json();
-      if (data.text) {
-        onChunk(data.text, "content");
-      }
-      if (Array.isArray(data.sandboxResults) && onSandboxResult) {
-        for (const sandboxResult of data.sandboxResults) {
-          onSandboxResult(sandboxResult);
-        }
-      }
-      await onComplete?.();
-    } catch (error) {
-      onError(error);
-    }
-  };
-
-  return doStream();
 };
