@@ -25,11 +25,14 @@ function TooltipTrigger({ ...props }) {
 function TooltipContent({ className, sideOffset = 0, children, ...props }) {
   return (
     <TooltipPrimitive.Portal>
+      {/* Opacity only: the side-anchored `slide-in-from-*` utilities came from
+          `tw-animate-css`, and P9 removed that dependency. A panel that appears
+          over the text being read should not also translate. */}
       <TooltipPrimitive.Content
         data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
-          "z-50 inline-flex w-fit max-w-xs origin-(--radix-tooltip-content-transform-origin) items-center gap-1.5 rounded-xl bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-lg data-[state=delayed-open]:data-[state=delayed-open]:animate-hcai-fade-in-fast data-[state=instant-open]:animate-hcai-fade-in-fast data-closed:animate-hcai-fade-out",
+          "z-50 inline-flex w-fit max-w-xs origin-(--radix-tooltip-content-transform-origin) items-center gap-1.5 rounded-xl bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-lg data-[state=delayed-open]:animate-hcai-fade-in-fast data-[state=instant-open]:animate-hcai-fade-in-fast data-closed:animate-hcai-fade-out",
           className,
         )}
         {...props}

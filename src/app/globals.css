@@ -1,5 +1,12 @@
 @import "tailwindcss";
-@import "shadcn/tailwind.css";
+
+/*
+ * Previously this imported `shadcn/tailwind.css`, which shipped nine
+ * `@custom-variant data-*` shorthands and two Radix accordion keyframes. The
+ * accordion is not used here, and eight of the nine variants had no usages.
+ * The two that are used are declared below instead, so the stylesheet no
+ * longer resolves through a package that is not a dependency.
+ */
 @import "streamdown/styles.css";
 
 @font-face {
@@ -82,6 +89,22 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* React Aria sets data-disabled / data-state="closed" on menus, listboxes and
+   overlays; these shorthands are what let a component style those states. */
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
 @theme inline {
   --font-sans: var(--font-inter);
   --font-mono:
@@ -161,14 +184,23 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
-  /**
-   * Opacity-only entrance. Deliberately not a slide or a zoom: both animate
-   * transform, and anything that moves during mount is something the thread
-   * underneath has to re-layout behind. These replaced `tw-animate-css`, whose
-   * `animate-in`/`fade-in-0` pairing also offered a `zoom-in-95` that the
-   * tooltip was using. Named `hcai-` so it can never collide with a library's
-   * own keyframes again.
-   */
+}
+
+/**
+ * Motion tokens live in a plain `@theme`, not in the `@theme inline` block
+ * above. `inline` emits the custom property but does **not** generate the
+ * matching `animate-*` utility, so those classes were silently inert: the
+ * variable reached `:root` and nothing referenced it. Verified by contrast —
+ * a token added to a plain `@theme` produces rules, the same token in
+ * `@theme inline` produces none.
+ *
+ * Opacity only, deliberately. A slide or a zoom animates transform, and
+ * anything that moves on mount is something the thread underneath has to
+ * re-layout behind. These replaced `tw-animate-css`, whose `animate-in` /
+ * `fade-in-0` pairing also offered the `zoom-in-95` the tooltip was using.
+ * Named `hcai-` so it can never collide with a library's keyframes again.
+ */
+@theme {
   --animate-hcai-fade-in: hcai-fade-in 200ms ease-out both;
   --animate-hcai-fade-in-slow: hcai-fade-in 300ms ease-out both;
   /* Overlays (dialog, menu, popover, select, tooltip) fade in at 100ms. */
