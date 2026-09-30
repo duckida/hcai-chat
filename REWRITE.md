@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Phase** | **P9 in progress** — `ui/` is down to one file. Migrated: button, input, label, select, dialog, sheet, and the whole dead-directory sweep. `shadcn` CLI + `components.json` deleted. **Kept:** `ui/tooltip.jsx` and `radix-ui` (see the RAC tooltip finding). |
+| **Phase** | **P10 in progress** — `AGENTS.md` rewritten, storage contracts pinned, import/export orphan deleted, motion bug fixed. Open: CLS baseline unrecoverable, 13 invariants untested, tooltip migration, anti-jank item 5. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
 | **Current test suite** | 38 files / **522 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
@@ -464,7 +464,7 @@ instead of patched mid-phase.
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
 | **P9** ✅ | Delete legacy. `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria; six orphaned `ui/` files deleted; `shadcn` CLI + `components.json` gone; `framer-motion` and `tw-animate-css` dropped. `ui/tooltip.jsx` + `radix-ui` are the **only** holdouts left, and they are not blocked — see the P9 finding: the Aria tooltip works, my earlier probe used the wrong composition. | ✔ |
-| **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
+| **P10** ⏳ | Verify. Done: `AGENTS.md` rewritten (it documented six `api-client` exports that do not exist, an AI SDK major two behind, and a deleted `components.json`); storage-key / IndexedDB-schema / credential-URL contracts pinned; the import/export orphan deleted; the inert motion system found and fixed; 17 invariants checked. **Open: the CLS baseline was never captured at P0, so "CLS vs baseline" is unrecoverable** — measure current values only; 13 invariants still untested; the tooltip migration is unblocked but undone (4 call sites, would remove the last `radix-ui` import); anti-jank item 5, the panel grid track. | |
 
 **Single-writer rule:** an old hook is deleted in the same commit that lands its store. They never coexist. Legacy components that still need the data read it through a one-way adapter, enumerated here and deleted in P9.
 
