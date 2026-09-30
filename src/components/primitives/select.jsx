@@ -57,7 +57,7 @@ function SelectPopover({ className, children, align = "bottom", ...props }) {
     <Popover
       data-slot="select-content"
       className={cn(
-        "relative z-50 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-4xl border border-border bg-popover text-popover-foreground shadow-xl animate-in duration-100 fade-in-0",
+        "relative z-50 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-4xl border border-border bg-popover text-popover-foreground shadow-xl animate-hcai-fade-in-fast",
         className,
       )}
       align={align}

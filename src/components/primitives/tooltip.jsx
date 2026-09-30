@@ -9,7 +9,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const tooltipClasses =
-  "z-50 inline-flex w-fit max-w-xs items-center gap-1.5 rounded-xl bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 animate-in duration-100 fade-in-0 outline-none **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-lg";
+  "z-50 inline-flex w-fit max-w-xs items-center gap-1.5 rounded-xl bg-foreground px-3 py-1.5 text-xs text-background has-data-[slot=kbd]:pr-1.5 animate-hcai-fade-in-fast outline-none **:data-[slot=kbd]:relative **:data-[slot=kbd]:isolate **:data-[slot=kbd]:z-50 **:data-[slot=kbd]:rounded-lg";
 
 function TooltipTrigger({ ...props }) {
   return <TooltipTriggerPrimitive data-slot="tooltip-trigger" {...props} />;

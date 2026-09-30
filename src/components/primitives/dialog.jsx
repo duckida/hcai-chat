@@ -114,7 +114,7 @@ function Dialog({
       onOpenChange={onOpenChange}
       isDismissable
       className={cn(
-        "fixed inset-0 isolate z-50 animate-in bg-black/30 fade-in-0 duration-100 supports-backdrop-filter:backdrop-blur-sm",
+        "fixed inset-0 isolate z-50 animate-hcai-fade-in-fast supports-backdrop-filter:backdrop-blur-sm",
       )}
     >
       <Modal className="fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2">

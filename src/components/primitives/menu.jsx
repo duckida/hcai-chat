@@ -15,7 +15,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const menuContentClasses =
-  "z-50 w-(--trigger-width) min-w-48 overflow-x-hidden overflow-y-auto rounded-3xl bg-popover p-1.5 text-popover-foreground shadow-lg ring-1 ring-foreground/5 animate-in duration-100 fade-in-0 outline-none dark:ring-foreground/10";
+  "z-50 w-(--trigger-width) min-w-48 overflow-x-hidden overflow-y-auto rounded-3xl bg-popover p-1.5 text-popover-foreground shadow-lg ring-1 ring-foreground/5 animate-hcai-fade-in-fast outline-none dark:ring-foreground/10";
 
 const menuItemClasses =
   "group/menu-item relative flex cursor-default items-center gap-2.5 rounded-2xl px-3 py-2 text-sm font-medium outline-hidden select-none focus:bg-accent focus:text-accent-foreground data-hovered:bg-accent data-hovered:text-accent-foreground data-focused:bg-accent data-focused:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-9.5 data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive dark:data-[variant=destructive]:focus:bg-destructive/20 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive";

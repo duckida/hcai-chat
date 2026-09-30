@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "streamdown/styles.css";
 
@@ -165,11 +164,16 @@
   /**
    * Opacity-only entrance. Deliberately not a slide or a zoom: both animate
    * transform, and anything that moves during mount is something the thread
-   * underneath has to re-layout behind. Named `hcai-` so it cannot collide
-   * with the enter keyframes `tw-animate-css` installs, which go away in P9.
+   * underneath has to re-layout behind. These replaced `tw-animate-css`, whose
+   * `animate-in`/`fade-in-0` pairing also offered a `zoom-in-95` that the
+   * tooltip was using. Named `hcai-` so it can never collide with a library's
+   * own keyframes again.
    */
   --animate-hcai-fade-in: hcai-fade-in 200ms ease-out both;
   --animate-hcai-fade-in-slow: hcai-fade-in 300ms ease-out both;
+  /* Overlays (dialog, menu, popover, select, tooltip) fade in at 100ms. */
+  --animate-hcai-fade-in-fast: hcai-fade-in 100ms ease-out both;
+  --animate-hcai-fade-out: hcai-fade-out 100ms ease-in both;
 }
 
 @keyframes hcai-fade-in {
@@ -178,6 +182,15 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+@keyframes hcai-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 
