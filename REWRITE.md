@@ -500,19 +500,19 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 - [ ] Artifacts are parsed and the panel opens **only** when the artifacts toggle is on. (`f3f3e4d`)
 - [ ] Web search + artifacts can be enabled **at the same time**. (`a2e4c60`)
 - [ ] Web search, agent mode and calculator are disabled for models without tool support. (`396a4f3`)
-- [ ] Import/export buttons live in Settings only, not the sidebar. (`1511ff4`)
-- [ ] LibreAssistant exports import; incompatible settings are skipped rather than crashing. (`f5ba29e`)
+- [x] ~~Import/export buttons live in Settings only, not the sidebar.~~ — **moot: feature deleted in P5**
+- [x] ~~LibreAssistant exports import; incompatible settings are skipped rather than crashing.~~ — **moot: feature deleted in P5.** The two `lib/settings.js` functions it left behind had no production consumer and were removed in P10, along with the five tests that were the only things referencing them.
 - [ ] Balance outage dialog offers the `openrouter/free` fallback. (`1f001b3`, `8e4489b`)
 
 ### Persistence & hydration
 
-- [ ] localStorage keys unchanged — users keep their settings. `hack_club_ai_key`, `e2b_api_key`, `color-mode`, `show_sandbox_code`, `show_sandbox_output`, `show_thinking`, `show_metrics`, `thinking_enabled`, `agent_mode_enabled`, `theme`, `model`, …
-- [ ] IDB store name, key path and record shape unchanged — existing conversations load. Migration test seeds pre-existing records.
+- [x] localStorage keys unchanged — users keep their settings. — `contracts.test.js` pins all 14 `storageKey` strings literally `hack_club_ai_key`, `e2b_api_key`, `color-mode`, `show_sandbox_code`, `show_sandbox_output`, `show_thinking`, `show_metrics`, `thinking_enabled`, `agent_mode_enabled`, `theme`, `model`, …
+- [x] IDB store name, key path and record shape unchanged — existing conversations load. — `contracts.test.js` asserts the store name and `keyPath: "id"` against a real opened database Migration test seeds pre-existing records.
 - [ ] Values read from localStorage hydrate in a mount effect, never during render (hydration mismatch). (AGENTS.md, `hasE2bKey` bug)
 
 ### Security & sandbox
 
-- [ ] Sandbox file downloads use the two-step token flow — the E2B key never appears in a URL. (`28787a7`)
+- [x] Sandbox file downloads use the two-step token flow — the E2B key never appears in a URL. — `contracts.test.js` asserts the key is in the POST body and absent from the navigating URL (`28787a7`)
 - [ ] Sandbox tool output stays gated behind the show-input / show-output settings.
 
 ### Layout & responsiveness

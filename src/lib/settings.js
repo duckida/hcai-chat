@@ -18,14 +18,12 @@ export const SETTINGS = [
     storageKey: "hack_club_ai_key",
     default: "",
     parse: String,
-    secret: true,
   },
   {
     key: "e2bApiKey",
     storageKey: "e2b_api_key",
     default: "",
     parse: String,
-    secret: true,
   },
   {
     key: "selectedModel",
@@ -135,39 +133,6 @@ export function writeSetting(key, value) {
       typeof value === "string" ? value : JSON.stringify(value),
     );
   } catch {}
-}
-
-/**
- * Serialize every persisted setting for export. Secrets are blanked so an
- * exported archive never contains an API key.
- */
-export function exportSettings() {
-  const out = {};
-  for (const setting of SETTINGS) {
-    const stored =
-      typeof window === "undefined"
-        ? null
-        : window.localStorage.getItem(setting.storageKey);
-    out[setting.key] = setting.secret ? "" : (stored ?? "");
-  }
-  return out;
-}
-
-/**
- * Apply imported settings, keyed by in-memory name. Only known keys are
- * accepted; values already use the storage serialization (JSON strings
- * where applicable), so they are written verbatim.
- */
-export function importSettings(values) {
-  if (!values || typeof values !== "object") return false;
-  let applied = false;
-  for (const setting of SETTINGS) {
-    const incoming = values[setting.key];
-    if (typeof incoming !== "string" || incoming === "") continue;
-    writeSetting(setting.key, incoming);
-    applied = true;
-  }
-  return applied;
 }
 
 function deserializeSetting(setting, stored) {
