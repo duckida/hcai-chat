@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P8 complete** → next: P9 (delete legacy: `ui/`, radix-ui, framer-motion, tw-animate-css, adapters) |
+| **Phase** | **P9 in progress** — button/input/label/select/dialog/sheet migrated, `ui/dropdown-menu` deleted. **Blocked on:** the tooltip, deliberately deferred (see below). |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 38 files / **518 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 38 files / **519 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -432,7 +432,7 @@ instead of patched mid-phase.
 | **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
-| **P9** | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters | ✔ |
+| **P9** ⏳ | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters. Done: `dropdown-menu` deleted (0 consumers); `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria. **Remaining: `tooltip`** — 4 consumers, and its `role="tooltip"` assertions cannot be made to pass under jsdom, so it needs its tests reworked on purpose rather than incidentally. | |
 | **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
 
 **Single-writer rule:** an old hook is deleted in the same commit that lands its store. They never coexist. Legacy components that still need the data read it through a one-way adapter, enumerated here and deleted in P9.

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/primitives/button";
+import { Dialog, DialogDescription } from "@/components/primitives/dialog";
 import AppearanceSection from "@/components/settings/AppearanceSection";
 import BehaviorSection from "@/components/settings/BehaviorSection";
 import ConnectionSection from "@/components/settings/ConnectionSection";
@@ -11,11 +12,6 @@ import {
   MobileSectionPills,
   SidebarNav,
 } from "@/components/settings/SectionNav";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-} from "@/components/ui/dialog";
 import {
   getStoredApiKey,
   getStoredE2bApiKey,
@@ -78,89 +74,91 @@ export default function SettingsModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden">
-        <DialogDescription className="sr-only">
-          Configure your AI connection, models, appearance, and behavior.
-        </DialogDescription>
-        <div className="flex flex-col sm:flex-row max-h-[90vh]">
-          <SidebarNav activeId={activeSection} onSelect={setActiveSection} />
-          <MobileSectionPills
-            activeId={activeSection}
-            onSelect={setActiveSection}
-          />
-          <div className="flex-1 min-h-0 w-full overflow-y-auto sm:max-h-[90vh]">
-            <div className="p-6 sm:p-8">
-              {activeSection === "connection" && (
-                <ConnectionSection
-                  apiKey={apiKey}
-                  onApiKeyChange={(value) => {
-                    setApiKey(value);
-                    setError("");
-                  }}
-                  error={error}
-                  showKey={showKey}
-                  onToggleShowKey={() => setShowKey((prev) => !prev)}
-                />
-              )}
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => !open && onClose()}
+      className="sm:max-w-2xl bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden"
+    >
+      <DialogDescription className="sr-only">
+        Configure your AI connection, models, appearance, and behavior.
+      </DialogDescription>
+      <div className="flex flex-col sm:flex-row max-h-[90vh]">
+        <SidebarNav activeId={activeSection} onSelect={setActiveSection} />
+        <MobileSectionPills
+          activeId={activeSection}
+          onSelect={setActiveSection}
+        />
+        <div className="flex-1 min-h-0 w-full overflow-y-auto sm:max-h-[90vh]">
+          <div className="p-6 sm:p-8">
+            {activeSection === "connection" && (
+              <ConnectionSection
+                apiKey={apiKey}
+                onApiKeyChange={(value) => {
+                  setApiKey(value);
+                  setError("");
+                }}
+                error={error}
+                showKey={showKey}
+                onToggleShowKey={() => setShowKey((prev) => !prev)}
+              />
+            )}
 
-              {activeSection === "sandbox" && (
-                <SandboxSection
-                  e2bApiKey={e2bApiKey}
-                  onE2bApiKeyChange={setE2bApiKey}
-                  showE2bKey={showE2bKey}
-                  onToggleShowE2bKey={() => setShowE2bKey((prev) => !prev)}
-                  showSandboxCode={showSandboxCode}
-                  onShowSandboxCodeChange={onShowSandboxCodeChange}
-                  showSandboxOutput={showSandboxOutput}
-                  onShowSandboxOutputChange={onShowSandboxOutputChange}
-                />
-              )}
+            {activeSection === "sandbox" && (
+              <SandboxSection
+                e2bApiKey={e2bApiKey}
+                onE2bApiKeyChange={setE2bApiKey}
+                showE2bKey={showE2bKey}
+                onToggleShowE2bKey={() => setShowE2bKey((prev) => !prev)}
+                showSandboxCode={showSandboxCode}
+                onShowSandboxCodeChange={onShowSandboxCodeChange}
+                showSandboxOutput={showSandboxOutput}
+                onShowSandboxOutputChange={onShowSandboxOutputChange}
+              />
+            )}
 
-              {activeSection === "models" && (
-                <ModelsSection
-                  titleGenerationModel={titleGenerationModel}
-                  onTitleGenerationModelChange={onTitleGenerationModelChange}
-                  maxTokens={maxTokens}
-                  onMaxTokensChange={onMaxTokensChange}
-                />
-              )}
+            {activeSection === "models" && (
+              <ModelsSection
+                titleGenerationModel={titleGenerationModel}
+                onTitleGenerationModelChange={onTitleGenerationModelChange}
+                maxTokens={maxTokens}
+                onMaxTokensChange={onMaxTokensChange}
+              />
+            )}
 
-              {activeSection === "appearance" && (
-                <AppearanceSection
-                  theme={paletteTheme}
-                  onThemeChange={onThemeChange}
-                />
-              )}
+            {activeSection === "appearance" && (
+              <AppearanceSection
+                theme={paletteTheme}
+                onThemeChange={onThemeChange}
+              />
+            )}
 
-              {activeSection === "behavior" && (
-                <BehaviorSection
-                  showThinking={showThinking}
-                  onShowThinkingChange={onShowThinkingChange}
-                  showMetrics={showMetrics}
-                  onShowMetricsChange={onShowMetricsChange}
-                />
-              )}
+            {activeSection === "behavior" && (
+              <BehaviorSection
+                showThinking={showThinking}
+                onShowThinkingChange={onShowThinkingChange}
+                showMetrics={showMetrics}
+                onShowMetricsChange={onShowMetricsChange}
+              />
+            )}
 
-              <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row gap-2">
-                <Button
-                  onClick={handleSave}
-                  className="w-full sm:flex-1 bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
-                >
-                  Save and Connect
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={onClose}
-                  className="w-full sm:w-auto sm:px-6 text-muted-foreground hover:text-foreground h-12 rounded-xl text-[13px] font-semibold"
-                >
-                  Cancel
-                </Button>
-              </div>
+            <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row gap-2">
+              <Button
+                onClick={handleSave}
+                className="w-full sm:flex-1 bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+              >
+                Save and Connect
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={onClose}
+                className="w-full sm:w-auto sm:px-6 text-muted-foreground hover:text-foreground h-12 rounded-xl text-[13px] font-semibold"
+              >
+                Cancel
+              </Button>
             </div>
           </div>
         </div>
-      </DialogContent>
+      </div>
     </Dialog>
   );
 }

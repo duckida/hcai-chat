@@ -7,15 +7,8 @@ import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
 import { Button } from "@/components/primitives/button";
+import { Dialog, DialogFooter } from "@/components/primitives/dialog";
 import SettingsModal from "@/components/settings/SettingsModal";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useChatTurn } from "@/hooks/use-chat-turn";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
@@ -290,33 +283,29 @@ export default function ChatApp({
         maxTokens={settings.maxTokens}
         onMaxTokensChange={(v) => setSetting("maxTokens", v)}
       />
-      <Dialog open={isBalanceModalOpen} onOpenChange={setIsBalanceModalOpen}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Hack Club AI is out of balance</DialogTitle>
-            <DialogDescription>
-              Hack Club AI is currently out of balance. Until then, you can use
-              openrouter/free which routes to an available free model
-              automatically.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setIsBalanceModalOpen(false)}
-            >
-              Skip
-            </Button>
-            <Button
-              onClick={() => {
-                handleModelChange("openrouter/free");
-                setIsBalanceModalOpen(false);
-              }}
-            >
-              Use it
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+      <Dialog
+        open={isBalanceModalOpen}
+        onOpenChange={setIsBalanceModalOpen}
+        title="Hack Club AI is out of balance"
+        description="Hack Club AI is currently out of balance. Until then, you can use openrouter/free which routes to an available free model automatically."
+        showCloseButton={false}
+      >
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setIsBalanceModalOpen(false)}
+          >
+            Skip
+          </Button>
+          <Button
+            onClick={() => {
+              handleModelChange("openrouter/free");
+              setIsBalanceModalOpen(false);
+            }}
+          >
+            Use it
+          </Button>
+        </DialogFooter>
       </Dialog>
       <Toaster position="top-center" richColors />
     </>

@@ -1,5 +1,12 @@
 export { Button, buttonVariants } from "./button";
-export { Dialog, DialogClose, DialogFooter, DialogHeader } from "./dialog";
+export {
+  Dialog,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "./dialog";
 export { Input } from "./input";
 export { Label } from "./label";
 export {

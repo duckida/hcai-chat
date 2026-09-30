@@ -5,12 +5,9 @@ import { useState } from "react";
 import { Button } from "@/components/primitives/button";
 import {
   Dialog,
-  DialogContent,
-  DialogDescription,
+  DialogClose,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/primitives/dialog";
 
 export default function CustomLink({ href, children }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -37,31 +34,23 @@ export default function CustomLink({ href, children }) {
       </a>
 
       {isExternal && (
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogContent className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle>External Link Warning</DialogTitle>
-              <DialogDescription>
-                You are about to leave this application and visit an external
-                website. Please ensure you trust the destination.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground font-mono bg-muted p-2 rounded border border-border">
-              {href}
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
-              <Button variant="ghost" onClick={() => setIsOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() =>
-                  window.open(href, "_blank", "noopener,noreferrer")
-                }
-              >
-                Continue
-              </Button>
-            </DialogFooter>
-          </DialogContent>
+        <Dialog
+          open={isOpen}
+          onOpenChange={setIsOpen}
+          title="External Link Warning"
+          description="You are about to leave this application and visit an external website. Please ensure you trust the destination."
+        >
+          <div className="py-4 overflow-hidden text-ellipsis whitespace-nowrap text-sm text-muted-foreground font-mono bg-muted p-2 rounded border border-border">
+            {href}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <DialogClose variant="ghost">Cancel</DialogClose>
+            <Button
+              onClick={() => window.open(href, "_blank", "noopener,noreferrer")}
+            >
+              Continue
+            </Button>
+          </DialogFooter>
         </Dialog>
       )}
     </>

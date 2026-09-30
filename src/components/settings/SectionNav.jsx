@@ -1,5 +1,5 @@
+import { DialogTitle } from "@/components/primitives/dialog";
 import { SECTIONS } from "@/components/settings/sections";
-import { DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 function SidebarNav({ activeId, onSelect }) {

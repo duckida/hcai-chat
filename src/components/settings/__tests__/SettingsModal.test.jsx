@@ -49,6 +49,16 @@ beforeEach(() => {
 });
 
 describe("SettingsModal", () => {
+  it("takes its accessible name from the title placed in the sidebar", async () => {
+    // The settings dialog does not pass a `title` prop: "Settings" is rendered
+    // inside its own section nav. That heading is what has to name the dialog,
+    // otherwise it is an unlabelled modal.
+    renderModal();
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /^settings$/i })).toBeInTheDocument();
+    });
+  });
+
   it("renders when isOpen is true", async () => {
     renderModal();
     await waitFor(() => {

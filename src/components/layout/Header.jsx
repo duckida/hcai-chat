@@ -12,12 +12,7 @@ import {
 import ContextUsage from "@/components/chat/ContextUsage";
 import ModelPicker from "@/components/chat/ModelPicker";
 import { Button } from "@/components/primitives/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import Sheet from "@/components/primitives/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -99,20 +94,23 @@ export default function Header({
           )}
         </Button>
         <div className="md:hidden">
-          <Sheet open={mobileSheetOpen} onOpenChange={onMobileSheetOpenChange}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <Menu className="w-5 h-5 text-muted-foreground" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent
-              side="left"
-              className="p-0 w-[260px] border-none"
-              showCloseButton={false}
-            >
-              <SheetTitle className="sr-only">Navigation</SheetTitle>
-              {sidebarContent}
-            </SheetContent>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => onMobileSheetOpenChange(true)}
+          >
+            <Menu className="w-5 h-5 text-muted-foreground" />
+          </Button>
+          <Sheet
+            open={mobileSheetOpen}
+            onOpenChange={onMobileSheetOpenChange}
+            side="left"
+            title="Navigation"
+            className="p-0 w-[260px] border-none"
+            showCloseButton={false}
+          >
+            {sidebarContent}
           </Sheet>
         </div>
       </div>
