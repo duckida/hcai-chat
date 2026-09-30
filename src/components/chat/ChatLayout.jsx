@@ -7,6 +7,20 @@ import SidebarContent from "@/components/layout/SidebarContent";
 const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 600;
+const DEFAULT_SIDEBAR_WIDTH = 260;
+
+/** The saved width, clamped, or null when there is nothing usable to read. */
+function readStoredSidebarWidth() {
+  try {
+    const saved = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    if (!saved) return null;
+    const parsed = parseInt(saved, 10);
+    if (Number.isNaN(parsed)) return null;
+    return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, parsed));
+  } catch {
+    return null;
+  }
+}
 
 export default function ChatLayout({
   onNewChat,
@@ -39,29 +53,29 @@ export default function ChatLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
 
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    if (typeof window === "undefined") return 260;
-    try {
-      const saved = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
-      return saved
-        ? Math.max(
-            MIN_SIDEBAR_WIDTH,
-            Math.min(MAX_SIDEBAR_WIDTH, parseInt(saved, 10)),
-          )
-        : 260;
-    } catch {
-      return 260;
-    }
-  });
+  // The stored width is read after mount, not in a state initialiser. An
+  // initialiser runs while rendering — including the server render — so a
+  // saved width made the first client paint disagree with the server's HTML,
+  // and the sidebar visibly jumped on load for anyone who had resized it.
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isSidebarWidthReady, setIsSidebarWidthReady] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const sidebarHandleRef = useRef(null);
 
-  // Persist the resized sidebar width for the next session.
   useEffect(() => {
+    setSidebarWidth(readStoredSidebarWidth() ?? DEFAULT_SIDEBAR_WIDTH);
+    setIsSidebarWidthReady(true);
+  }, []);
+
+  // Persist the resized sidebar width for the next session. Gated on the read
+  // having happened: without it, the first effect run would write the default
+  // over the stored value on its way to reading it.
+  useEffect(() => {
+    if (!isSidebarWidthReady) return;
     try {
       window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
     } catch {}
-  }, [sidebarWidth]);
+  }, [sidebarWidth, isSidebarWidthReady]);
 
   const resizeTo = useCallback((clientX) => {
     if (clientX == null) return;

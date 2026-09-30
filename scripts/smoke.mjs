@@ -469,6 +469,35 @@ async function main() {
       JSON.stringify(scrollReport),
     );
     await closeDialog();
+
+    // ---- 5b. no horizontal overflow -------------------------------------
+    // A flex or grid child with intrinsic content and no `min-w-0` pushes the
+    // page sideways, and the only symptom is a phone user swiping to find the
+    // composer. Measured on the chat itself, at the width that breaks first.
+    await sleep(400);
+    const overflow = await evalJs(`(() => {
+      const de = document.documentElement;
+      const widest = [...document.querySelectorAll('body *')]
+        .map((el) => ({
+          tag: el.tagName.toLowerCase(),
+          cls: (el.className && typeof el.className === 'string' ? el.className : '').slice(0, 40),
+          right: Math.round(el.getBoundingClientRect().right),
+        }))
+        .filter((e) => e.right > window.innerWidth + 1)
+        .sort((a, b) => b.right - a.right)
+        .slice(0, 3);
+      return {
+        viewport: window.innerWidth,
+        docScroll: de.scrollWidth,
+        bodyScroll: document.body.scrollWidth,
+        widest,
+      };
+    })()`);
+    check(
+      "no horizontal overflow on a 360px viewport",
+      overflow.docScroll <= overflow.viewport + 1,
+      JSON.stringify(overflow),
+    );
     await setViewport(1280, 900, false);
 
     // ---- 6. chat sends and a response comes back ------------------------
@@ -566,16 +595,13 @@ async function main() {
     // found, whether anything is hovering, and what is on screen.
     let tipText = "";
     try {
-      await waitFor(
-        async () => {
-          tipText = await evalJs(
-            `(() => { const t = document.querySelector('[role="tooltip"]');
+      await waitFor(async () => {
+        tipText = await evalJs(
+          `(() => { const t = document.querySelector('[role="tooltip"]');
               return t ? (t.textContent || '').trim() : ''; })()`,
-          );
-          return tipText.includes("% used");
-        },
-        6000,
-      );
+        );
+        return tipText.includes("% used");
+      }, 6000);
     } catch {}
     const detail = await evalJs(
       `(() => {
@@ -598,6 +624,49 @@ async function main() {
       "context ring tooltip opens on hover",
       tipText.includes("% used"),
       detail,
+    );
+
+    // ---- 12. cumulative layout shift ------------------------------------
+    // Measured on the most shift-prone moment there is: a conversation restored
+    // from IndexedDB, where the thread, the metrics strip and the context ring
+    // all appear after the first paint. A shift here is the user watching the
+    // answer they came to read slide.
+    //
+    // There is no P0 baseline to diff against — the number was never captured
+    // before the rewrite — so this asserts the published "good" threshold
+    // rather than pretending to compare. `buffered: true` picks up the shifts
+    // that happened before this observer was installed, which is all of them.
+    const cls = await evalJs(`(async () => {
+      const shifts = [];
+      const observer = new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+          if (!entry.hadRecentInput) shifts.push(entry);
+        }
+      });
+      observer.observe({ type: 'layout-shift', buffered: true });
+      await new Promise((r) => setTimeout(r, 600));
+      observer.disconnect();
+      const total = shifts.reduce((sum, e) => sum + e.value, 0);
+      const worst = shifts
+        .map((e) => ({
+          value: Number(e.value.toFixed(4)),
+          nodes: (e.sources || []).map((s) => {
+            const node = s && s.node;
+            if (!node || !node.tagName) return "?";
+            const cls = typeof node.className === "string"
+              ? "." + node.className.split(" ").slice(0, 3).join(".")
+              : "";
+            return node.tagName.toLowerCase() + cls;
+          }),
+        }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 3);
+      return { total: Number(total.toFixed(4)), count: shifts.length, worst };
+    })()`);
+    check(
+      "cumulative layout shift stays under 0.1",
+      cls.total < 0.1,
+      JSON.stringify(cls),
     );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);

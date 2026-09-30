@@ -93,6 +93,64 @@ describe("ChatLayout shell", () => {
     expect(localStorage.getItem("hcai_sidebar_width")).toBe("260");
   });
 
+  // The width is read after mount rather than in a state initialiser, because
+  // an initialiser also runs on the server — which made the first client paint
+  // disagree with the server HTML and the sidebar jump on every load.
+  describe("restoring a stored width", () => {
+    it("adopts the stored width after mounting", async () => {
+      localStorage.clear();
+      localStorage.setItem("hcai_sidebar_width", "340");
+
+      render(<ChatLayout {...baseProps()} />);
+
+      await waitFor(() => {
+        expect(document.querySelector("aside")).toHaveStyle({ width: "340px" });
+      });
+    });
+
+    it("leaves the stored width alone while restoring it", async () => {
+      // The write effect must not run before the read has happened, or the
+      // default is persisted over the saved value on the way past.
+      localStorage.clear();
+      localStorage.setItem("hcai_sidebar_width", "340");
+
+      render(<ChatLayout {...baseProps()} />);
+      await waitFor(() => {
+        expect(localStorage.getItem("hcai_sidebar_width")).toBe("340");
+      });
+    });
+
+    it("clamps a stored width from another screen size", async () => {
+      localStorage.clear();
+      // A width saved on a 4K display is unusable on a laptop, and one saved
+      // while the window was narrow is narrower than the minimum.
+      localStorage.setItem("hcai_sidebar_width", "4000");
+      const { unmount } = render(<ChatLayout {...baseProps()} />);
+      await waitFor(() => {
+        expect(document.querySelector("aside")).toHaveStyle({ width: "600px" });
+      });
+      unmount();
+
+      localStorage.setItem("hcai_sidebar_width", "10");
+      render(<ChatLayout {...baseProps()} />);
+      await waitFor(() => {
+        expect(document.querySelector("aside")).toHaveStyle({ width: "200px" });
+      });
+    });
+
+    it("ignores a stored width that is not a number", async () => {
+      localStorage.clear();
+      localStorage.setItem("hcai_sidebar_width", "wide please");
+
+      render(<ChatLayout {...baseProps()} />);
+
+      await waitFor(() => {
+        expect(localStorage.getItem("hcai_sidebar_width")).toBe("260");
+      });
+      expect(document.querySelector("aside")).toHaveStyle({ width: "260px" });
+    });
+  });
+
   it("resizes while the pointer is held and clamps to the limits", async () => {
     localStorage.clear();
     render(<ChatLayout {...baseProps()} />);

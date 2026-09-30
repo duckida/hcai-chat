@@ -124,7 +124,16 @@ export default function MessageList({ messages, activeConversation = null }) {
                 );
               })}
 
-              {(renderedStreamingContent || renderedStreamingThinking) && (
+              {/*
+                Sandbox tools count as content. The row used to appear only for
+                text or thinking, so a turn that wrote and ran code before the
+                model said anything showed an empty thread — the code and its
+                output were invisible until the reply arrived, which is the
+                whole point of watching a sandbox run.
+              */}
+              {(renderedStreamingContent ||
+                renderedStreamingThinking ||
+                liveSandboxTools.length > 0) && (
                 <StreamingMessage
                   streamingContent={renderedStreamingContent}
                   streamingThinking={renderedStreamingThinking}

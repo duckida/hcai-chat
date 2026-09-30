@@ -537,4 +537,91 @@ describe("useChatTurn", () => {
       result.result.current.conversations.messages.filter((m) => m.role === "user"),
     ).toHaveLength(1);
   });
+
+  // ---- across-turn context -------------------------------------------------
+  // The two invariants below are the halves of "the response is not truncated
+  // and prior conversation context is not lost across turns" (970d4da). The
+  // truncation half has its own test above; these cover the context half, which
+  // is a property of the *second* request, not the first.
+
+  it("sends the whole conversation, not just the newest message", async () => {
+    // If the second request carried only "and then?", the model would answer
+    // with no memory of the exchange that produced it — the failure mode is a
+    // plausible answer to the wrong question, so nothing on screen looks wrong.
+    const bodies = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        if (opts?.body) bodies.push(JSON.parse(opts.body));
+        return Promise.resolve(
+          makeStreamResponse([delta("ok"), "data: [DONE]\n\n"]),
+        );
+      }),
+    );
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("first question", []);
+    });
+    await act(async () => {
+      await result.result.current.stream.send("and then?", []);
+    });
+
+    const chatRequests = bodies.filter((b) => Array.isArray(b.messages));
+    // Two chat POSTs: the second must carry the first turn as history. (A
+    // title request also goes out; it has no `messages`.)
+    const followUp = chatRequests.at(-1);
+    expect(followUp.messages.map((m) => m.content)).toEqual([
+      "first question",
+      "ok",
+      "and then?",
+    ]);
+  });
+
+  it("carries a turn's reasoning into the next request", async () => {
+    // The API route turns a message's `thinking` into a reasoning part, so a
+    // turn that is dropped from the wire loses the model's own chain of
+    // thought. Nothing in the UI shows that loss — the next answer is simply
+    // a little worse.
+    const thinkingDelta = (text) =>
+      `data: ${JSON.stringify({ choices: [{ delta: { thinking: text } }] })}\n\n`;
+
+    const bodies = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        if (opts?.body) bodies.push(JSON.parse(opts.body));
+        return Promise.resolve(
+          makeStreamResponse([
+            thinkingDelta("I should count to three."),
+            delta("One."),
+            "data: [DONE]\n\n",
+          ]),
+        );
+      }),
+    );
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("count", []);
+    });
+
+    // It survives the commit...
+    const committed = result.result.current.conversations.messages.find(
+      (m) => m.role === "assistant",
+    );
+    expect(committed.thinking).toBe("I should count to three.");
+
+    // ...and it survives into the history the next turn sends.
+    await act(async () => {
+      await result.result.current.stream.send("again", []);
+    });
+
+    const followUp = bodies
+      .filter((b) => Array.isArray(b.messages))
+      .at(-1);
+    const carried = followUp.messages.find((m) => m.role === "assistant");
+    expect(carried.content).toBe("One.");
+    expect(carried.thinking).toBe("I should count to three.");
+  });
 });
