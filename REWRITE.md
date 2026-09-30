@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P6 complete** → next: P7 (Thread, scroll manager) |
+| **Phase** | **P7 complete** → next: P8 (Composer + ArtifactPanel) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 36 files / **488 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 37 files / **501 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -74,6 +74,41 @@ The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/
 store action that existed only to refresh the list after an import. Nothing else touched those
 paths, so no test needed changing. Restoring the feature means re-adding all of it from git
 history.
+
+---
+
+## Findings from P7 — read before touching the thread
+
+1. **`ui/scroll-area` had exactly one consumer.** Nothing imported `ScrollBar`, so replacing
+   `MessageList`'s container let the whole Radix file be deleted rather than left as dead
+   scaffolding for P9. Check the consumer count before assuming a primitive is load-bearing.
+2. **The scroll container was not keyboard-reachable.** Radix's viewport is not focusable, so the
+   thread could not be moved with arrow keys. It is now a labelled `<section tabIndex={0}>`.
+   Biome rejects both the role on a `div` and the `tabIndex`; the suppression has to be a
+   **single-line** `biome-ignore-start`/`-end` pair wrapping the element — a multi-line one parses
+   as a no-op and Biome then reports `suppressions/unused` instead of applying it.
+3. **Tail-following had a seven-entry dependency list.** messages, both deferred values, the
+   error, the tool array, `isLoading`, and the flag. Forgetting one silently stopped the stream
+   from scrolling. It now runs after every render, which is what "whenever this list changes"
+   actually means, and which is also what removed the need to reason about `useDeferredValue`:
+   P6c already caps the store at one update per frame, so the deferred value was a second lag
+   layer doing nothing.
+4. **`Message`'s `isStreaming` prop was dead.** `MessageList` passed `false` on every path and the
+   only use inside was `message.webSearch && !isStreaming`, so the branch could never be anything
+   but true. Found by grepping call sites, not by reading — it looked load-bearing.
+5. **Three copies of the Streamdown setup, two of the body class.** `Markdown.jsx` and
+   `useMessageText` now own them. The two text-preparation versions agreed only by accident:
+   one folded `normalizeLatexDelimiters` into both branches of its memo, the other normalised
+   after the branch. Same result today, and one edit away from a saved answer rendering
+   differently from the stream that produced it.
+6. **Two NaN bugs in the metrics strip, both untested.** A missing `duration` rendered
+   `NaNm NaNs` and a missing token count rendered `NaN tokens`; nothing caught either because
+   every test supplied complete usage. Both now have tests.
+7. **The store is not free.** Turning the thread onto the stores meant `settings` needed a
+   `resetSettings()` for test isolation, same trap as `resetConversations` and `resetTurn`. Note
+   the store defaults (`thinking_enabled: true`, `show_metrics: true`, …) happen to match the old
+   prop defaults exactly — check that before swapping a default for a lookup, or every test that
+   relied on a prop default silently changes meaning.
 
 ---
 
@@ -308,6 +343,17 @@ held the fixed port so every later run died at launch.
   before any `try`, so a slow start used to escape `finally` and leak a browser; leaked
   browsers then starved the next launch until it timed out. Cleanup now wraps the spawn, with a
   `SIGKILL` fallback and a sweep of profiles whose owning pid is gone.
+- **Do not read a Chromium launch timeout as a code failure.** The 15s budget raced the dev
+  server's first compile and three consecutive runs failed with the identical
+  `chromium debugging endpoint never came up` while the app was completely fine — verified by
+  launching Chromium by hand on the same flags. Budget is now 40s and a child that actually died
+  reports its exit code, so the two cases are distinguishable instead of looking the same.
+- **Do not run `npm test` with the dev server up.** This box has 4 cores; a warm `next-server`
+  sat at 42% CPU and 62% RSS and pushed the load average to 8.6. `ChatLayout` and `ModelPicker`
+  then failed on 12–24s timeouts in files untouched by the change under test, and got *worse* on
+  each retry — the signature of starvation, not a regression. Stop the server before the test
+  gate and start it only for smoke. Check `uptime` and `ps -eo pcpu,pmem,comm` before believing a
+  timing failure.
 
 ---
 
@@ -342,7 +388,7 @@ instead of patched mid-phase.
 | **P4** ✅ | Models: `src/stores/models.js` + `hooks/use-models.js` **deleted**; `ModelPicker` on the Aria `Menu` (one markup path, provider groups, typeahead); `ContextUsage` resolves its own window. `groupedModels`/`contextWindowMap` leave the ChatApp→ChatLayout→Header chain. +35 tests. | ✔ |
 | **P5** ✅ | Conversations: `src/stores/conversations.js` + `hooks/use-conversations.js` **deleted**; `SidebarContent` off `ui/scroll-area`; `db.js` caches one connection with seeded-record migration tests. **Import/export removed rather than rewritten** (−814 lines, −29 tests). +27 / −43 tests → **468 / 34 files**. | ✔ |
 | **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
-| **P7** | Thread: message parts + scroll manager (keyboard-reachable) | ✔ |
+| **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** | Composer + ArtifactPanel (CSS transitions replace framer-motion) | ✔ |
 | **P9** | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters | ✔ |
 | **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
@@ -368,7 +414,7 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 - [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`
 - [ ] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`) — errors shown, and a thinking-only turn commits; **"into the next turn" is not directly asserted**
 - [ ] `streamChatCompletion` is awaited by every caller. (`a957c70`) — structurally true (one caller, `await`ed); **not a test**
-- [ ] Scrolling stays possible **while** streaming. (`fa45ae0`) — **no test**; belongs with P7's scroll manager
+- [x] Scrolling stays possible **while** streaming. (`fa45ae0`) — `useThreadScroll` "stops following once the user scrolls away from the bottom" / "keeps following for a movement that stays within the threshold" / "hands scrolling back when a turn ends"; the container is also focusable and labelled
 - [x] Error placeholders are stripped from history sent to the model. (`be48b7f`) — `api-client` "strips error placeholders and empty assistant records from the POSTed messages" (and the non-streaming fallback variant)
 
 ### Context usage & cost
@@ -455,13 +501,15 @@ Nothing may be deleted except by the phase listed here.
 | `stores/turn.js` | 134 | **P6 ✅** | New. Live buffers + exactly one store notification per animation frame. 11 tests. |
 | `lib/sse-parser.js` | 66 | **P6 ✅** | New — existed only as a copy pasted inside its own test. |
 | `lib/api-client.js` | 371 | **P6 ✅** | De-nested into `buildRequestBody` / `postChat` / `createFrameRouter` / `streamOnce` / `replayOnce`; the `doStream`↔`doFallback` recursion is gone. Every export and the empty-EOF retry semantics unchanged — its 34 tests were never edited. |
-| `components/chat/MessageList.jsx` | 227 | P7 | |
-| `components/chat/message/*` | 1093 | P7 | Message, StreamingMessage, MessageRow, MessageParts, ThinkingBlock, SourcesBlock, StreamingSandboxBlock, SandboxFiles, sandbox-files-client, ErrorMessage, EmptyState |
+| `components/chat/MessageList.jsx` | 227 | **P7 ✅** | 16 props → 2. Plain `overflow-y-auto` `<section>`; `useThreadScroll` owns the tail-following. |
+| `components/chat/message/*` | 1093 | **P7 ✅** | `Markdown.jsx` + `useMessageText.js` replace three Streamdown copies and two body-class copies; `Message`/`StreamingMessage` read their own settings; `aria-expanded` on four disclosures. `SandboxFiles`, `MessageParts`, `MessageRow`, `SourcesBlock`, `ErrorMessage`, `EmptyState` reviewed and left alone. |
+| `components/chat/ResponseMetrics.jsx` | 103 | **P7 ✅** | Four tooltip blocks → one `Metric`; `formatDuration` hoisted and NaN-guarded. |
+| `components/chat/CustomLink.jsx` | 69 | P7 ✅ / **P9** | Reviewed, unchanged. One of the three consumers of the Dialog swap. |
+| `components/chat/ThinkingIndicator.jsx` | 31 | **P7 ✅** | Reviewed, unchanged. |
+| `hooks/use-thread-scroll.js` | — | **P7 ✅** | New. 7 tests. |
+| `components/ui/scroll-area.jsx` | 76 | **Deleted P7 ✅** | Radix `ScrollArea` + `ScrollBar`; `MessageList` was the only consumer. |
 | `components/chat/ChatInput.jsx` | 342 | P8 | |
 | `components/chat/ArtifactPanel.jsx` | 424 | P8 | framer-motion → CSS |
-| `components/chat/ResponseMetrics.jsx` | 103 | P7 | |
-| `components/chat/CustomLink.jsx` | 69 | P7 | |
-| `components/chat/ThinkingIndicator.jsx` | 31 | P7 | |
 | `hooks/use-settings.js` | — | P3 ✅ | **Deleted** — replaced by `src/stores/settings.js` (single-writer rule). |
 | `hooks/use-media-query.js` | 30 | P1 | Trivial; re-home under `hooks/`. |
 | `components/layout/AppWrapper.jsx` | 18 | P2 | Becomes the provider root. |
@@ -474,7 +522,7 @@ Nothing may be deleted except by the phase listed here.
 
 | # | Fix | Phase |
 |---|---|---|
-| 1 | Plain `overflow-y-auto` + `scrollbar-gutter: stable` (replaces Radix `ScrollArea`) | P7 |
+| 1 | Plain `overflow-y-auto` + `scrollbar-gutter: stable` (replaces Radix `ScrollArea`) | **P7 ✅** |
 | 2 | rAF-coalesced streaming deltas — one DOM update per frame | **P6 ✅** |
 | 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | P8 / P9 |
 | 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | P7 / P8 |
