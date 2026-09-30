@@ -49,7 +49,9 @@ const TEXT_FILE_TYPES = new Set([
 ]);
 
 const FilePreview = ({ file, onRemove }) => {
-  const isImage = file.type.startsWith("image/");
+  // An image whose data URL could not be read still attaches, via its raw
+  // bytes — it just has nothing to show in the thumbnail.
+  const isImage = file.type.startsWith("image/") && !!file.dataUrl;
 
   return (
     <div className="relative group inline-flex items-center gap-2 bg-background border border-border rounded-xl px-3 py-2 shadow-sm">
@@ -81,6 +83,7 @@ const FilePreview = ({ file, onRemove }) => {
       <button
         type="button"
         onClick={() => onRemove(file.id)}
+        aria-label={`Remove ${file.name}`}
         className="absolute -top-2 -right-2 w-5 h-5 bg-foreground text-background rounded-full flex items-center justify-center opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-foreground/90"
       >
         <X className="w-3 h-3" />
@@ -103,52 +106,57 @@ export default function ChatInput({ onSend, isLoading }) {
     setInput("");
     setFiles([]);
     if (textareaRef.current) {
-      textareaRef.current.style.height = "44px";
+      textareaRef.current.style.height = "auto";
     }
   }, [input, files, isLoading, onSend]);
 
+  /**
+   * Turn a dropped, pasted or picked file into the record the send path
+   * understands. Every branch resolves and none may reject: the caller awaits
+   * all of them together, so one unsettled promise silently eats the whole
+   * drop with nothing to show for it.
+   */
   const processFile = async (file) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    if (file.type.startsWith("image/")) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = async (ev) => {
-          const dataUrl = await resizeImage(ev.target.result);
-          resolve({
-            id,
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            dataUrl,
-            rawFile: file,
-          });
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-    if (TEXT_FILE_TYPES.has(file.type)) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          resolve({
-            id,
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            text: ev.target.result,
-            rawFile: file,
-          });
-        };
-        reader.readAsText(file);
-      });
-    }
-    return {
+    const base = {
       id,
       name: file.name,
       type: file.type,
       size: file.size,
       rawFile: file,
     };
+
+    if (file.type.startsWith("image/")) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          // Downscaling is an optimisation, not a requirement. A file that
+          // cannot be decoded, or a browser with no 2d canvas, still attaches
+          // at its original size.
+          let dataUrl = event.target.result;
+          try {
+            dataUrl = await resizeImage(dataUrl);
+          } catch {}
+          resolve({ ...base, dataUrl });
+        };
+        reader.onerror = () => resolve({ ...base, dataUrl: null });
+        reader.readAsDataURL(file);
+      });
+    }
+
+    if (TEXT_FILE_TYPES.has(file.type)) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (event) =>
+          resolve({ ...base, text: event.target.result });
+        // An unreadable text file still attaches by raw upload rather than
+        // vanishing from the composer.
+        reader.onerror = () => resolve(base);
+        reader.readAsText(file);
+      });
+    }
+
+    return base;
   };
 
   const handleKeyDown = (e) => {
@@ -243,9 +251,13 @@ export default function ChatInput({ onSend, isLoading }) {
   const handleChange = (e) => {
     const el = e.target;
     setInput(el.value);
-    el.style.height = "44px";
-    const newHeight = Math.min(el.scrollHeight, 200);
-    el.style.height = `${newHeight}px`;
+    // Collapse to the content height before measuring. scrollHeight never
+    // reports less than the box's own height, so a textarea that is currently
+    // taller than its text could only ever grow. "auto" rather than a pixel
+    // value because the resting height is a breakpoint (44px on phones, 52px
+    // on desktop) and a hardcoded reset fought the larger one.
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
   };
 
   const handleFileSelect = async (e) => {
@@ -294,7 +306,8 @@ export default function ChatInput({ onSend, isLoading }) {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 ml-1 h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
+            aria-label="Attach files"
+            className="shrink-0 ml-1 h-9 w-9 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <Paperclip className="w-5 h-5" />
           </button>
@@ -312,6 +325,7 @@ export default function ChatInput({ onSend, isLoading }) {
             onChange={handleChange}
             onKeyDown={handleKeyDown}
             placeholder="Message Hack Club AI"
+            aria-label="Message"
             className="w-full bg-transparent border-none outline-none shadow-none resize-none py-[12px] sm:py-[15px] px-[10px] sm:px-[12px] min-h-[44px] sm:min-h-[52px] h-[44px] sm:h-[52px] text-[14px] sm:text-[15px] text-foreground placeholder:text-muted-foreground leading-[1.4] overflow-y-auto block font-medium"
             rows={1}
           />

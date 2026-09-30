@@ -101,6 +101,49 @@ describe("ChatInput", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("names the attach and remove controls for anyone not looking at them", async () => {
+    const user = userEvent.setup();
+    render(<ChatInput onSend={vi.fn()} />);
+
+    // Both were icon-only buttons: a screen reader announced "button".
+    expect(
+      screen.getByRole("button", { name: /attach files/i }),
+    ).toBeInTheDocument();
+
+    const file = new File(["hi"], "notes.txt", { type: "text/plain" });
+    const input = document.querySelector('input[type="file"]');
+    await user.upload(input, file);
+
+    const remove = await screen.findByRole("button", {
+      name: /remove notes\.txt/i,
+    });
+    expect(remove).toBeInTheDocument();
+  });
+
+  it("still attaches an image that cannot be decoded", async () => {
+    // Downscale failures used to reject inside an async FileReader handler,
+    // leaving the promise unsettled — the drop simply vanished, and anything
+    // awaiting the batch of files with it never came back.
+    class FailingImage {
+      set src(value) {
+        this._src = value;
+        queueMicrotask(() => this.onerror?.(new Error("decode failed")));
+      }
+    }
+    globalThis.Image = FailingImage;
+
+    const file = new File(["not really a png"], "broken.png", {
+      type: "image/png",
+    });
+    const { container } = render(<ChatInput onSend={vi.fn()} />);
+
+    fireEvent.paste(container.firstChild, {
+      clipboardData: makeClipboardData({ files: [file] }),
+    });
+
+    expect(await screen.findByText("broken.png")).toBeInTheDocument();
+  });
+
   it("resizes the textarea as content is typed", async () => {
     const user = userEvent.setup();
     render(<ChatInput onSend={vi.fn()} />);
