@@ -2,6 +2,7 @@
 
 import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { TOOLTIP_OPEN_DELAY } from "@/lib/tooltip";
 
 export default function AppWrapper({ children }) {
   return (
@@ -12,7 +13,9 @@ export default function AppWrapper({ children }) {
       storageKey="color-mode"
       disableTransitionOnChange={false}
     >
-      <TooltipProvider>{children}</TooltipProvider>
+      <TooltipProvider delayDuration={TOOLTIP_OPEN_DELAY}>
+        {children}
+      </TooltipProvider>
     </ThemeProvider>
   );
 }

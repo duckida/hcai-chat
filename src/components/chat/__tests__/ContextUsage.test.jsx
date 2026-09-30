@@ -1,7 +1,8 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { TOOLTIP_OPEN_DELAY } from "@/lib/tooltip";
 import { modelsStore, resetModels } from "@/stores/models";
 import ContextUsage from "../ContextUsage";
 
@@ -74,6 +75,59 @@ describe("ContextUsage", () => {
 
     rerender(<ContextUsage used={100} modelId="openai/gpt-4o" totalCost={0} />);
     expect(within(tooltip).queryByText(/Cost:/)).not.toBeInTheDocument();
+  });
+
+  // Radix keeps a visually-hidden span with the tooltip text for assistive
+  // tech, present whether or not the tooltip is showing, so presence of
+  // role="tooltip" says nothing about visibility. The trigger's data-state is
+  // what actually moves.
+  const isShowing = () =>
+    ["delayed-open", "instant-open", "open"].includes(
+      screen.getByRole("button").getAttribute("data-state"),
+    );
+
+  it("waits for the pointer to rest before opening", async () => {
+    // The ring sits in a header the cursor crosses on the way to the composer.
+    // An instant tooltip covers the conversation; the delay is the fix.
+    const user = userEvent.setup();
+    seedWindow("openai/gpt-4o", 2000);
+    render(<ContextUsage used={400} modelId="openai/gpt-4o" />);
+
+    await user.hover(screen.getByRole("button"));
+
+    expect(isShowing()).toBe(false);
+    await waitFor(() => {
+      expect(isShowing()).toBe(true);
+    });
+  });
+
+  it("cancels the pending open when the pointer leaves first", async () => {
+    const user = userEvent.setup();
+    seedWindow("openai/gpt-4o", 2000);
+    render(<ContextUsage used={400} modelId="openai/gpt-4o" />);
+
+    await user.hover(screen.getByRole("button"));
+    await user.unhover(screen.getByRole("button"));
+    await new Promise((r) => setTimeout(r, TOOLTIP_OPEN_DELAY + 150));
+
+    expect(isShowing()).toBe(false);
+  });
+
+  it("opens beside the ring rather than over the conversation", async () => {
+    // Anchored below, the panel lands on the first message the user came to
+    // read. The ring is at the top of the screen, so it opens sideways.
+    const user = userEvent.setup();
+    seedWindow("openai/gpt-4o", 2000);
+    render(<ContextUsage used={400} modelId="openai/gpt-4o" />);
+
+    await user.click(screen.getByRole("button"));
+
+    await waitFor(() => {
+      expect(document.querySelector("[data-side]")).not.toBeNull();
+    });
+    expect(
+      document.querySelector("[data-side]").getAttribute("data-side"),
+    ).toBe("left");
   });
 
   it("keeps the ring neutral below 75%", () => {

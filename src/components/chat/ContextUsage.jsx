@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatPrice } from "@/lib/pricing";
+import { TOOLTIP_OPEN_DELAY } from "@/lib/tooltip";
 import { useModels } from "@/stores/models";
 
 function formatNumber(n) {
@@ -16,6 +17,7 @@ function formatNumber(n) {
 
 export default function ContextUsage({ used, modelId, totalCost }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const max = useModels((s) => (modelId ? s.contextWindows[modelId] || 0 : 0));
 
   if (!max || max <= 0) return null;
@@ -39,22 +41,25 @@ export default function ContextUsage({ used, modelId, totalCost }) {
   }
 
   return (
-    <TooltipProvider>
-      <Tooltip open={isOpen} onOpenChange={setIsOpen}>
+    <TooltipProvider delayDuration={TOOLTIP_OPEN_DELAY}>
+      <Tooltip
+        open={isOpen}
+        onOpenChange={(open) => {
+          // Hover opens once the pointer has rested (the provider's delay);
+          // a click pins it so it can be read at leisure.
+          if (open) setIsOpen(true);
+          else if (!pinned) setIsOpen(false);
+        }}
+      >
         <TooltipTrigger asChild>
           <button
             type="button"
             aria-label={`Context usage: ${percent}% used, ${formatNumber(used)} of ${formatNumber(max)}`}
             className="flex items-center justify-center cursor-default shrink-0 bg-transparent border-0 p-0"
-            onClick={(e) => {
-              e.preventDefault();
-              setIsOpen((prev) => !prev);
-            }}
-            onPointerEnter={(e) => {
-              if (e.pointerType === "mouse") setIsOpen(true);
-            }}
-            onPointerLeave={(e) => {
-              if (e.pointerType === "mouse") setIsOpen(false);
+            onClick={() => {
+              const next = !pinned;
+              setPinned(next);
+              setIsOpen(next);
             }}
           >
             <svg
@@ -89,7 +94,14 @@ export default function ContextUsage({ used, modelId, totalCost }) {
             </svg>
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs font-medium">
+        {/* Sideways, not below. The ring sits at the top of the screen, so a
+            bottom-anchored panel lands squarely on the first thing the user
+            came to read. */}
+        <TooltipContent
+          side="left"
+          sideOffset={12}
+          className="text-xs font-medium"
+        >
           <div className="flex flex-col gap-0.5">
             <span>{percent}% used</span>
             <span>

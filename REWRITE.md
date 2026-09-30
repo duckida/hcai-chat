@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P9 in progress** — button/input/label/select/dialog/sheet migrated, `ui/dropdown-menu` deleted. **Blocked on:** the tooltip, deliberately deferred (see below). |
+| **Phase** | **P9 in progress** — `ui/` is down to one file. Migrated: button, input, label, select, dialog, sheet, and the whole dead-directory sweep. `shadcn` CLI + `components.json` deleted. **Kept:** `ui/tooltip.jsx` and `radix-ui` (see the RAC tooltip finding). |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 38 files / **519 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 38 files / **522 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -74,6 +74,35 @@ The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/
 store action that existed only to refresh the list after an import. Nothing else touched those
 paths, so no test needed changing. Restoring the feature means re-adding all of it from git
 history.
+
+---
+
+## Findings from P9 — read before touching the component layer
+
+1. **RAC's `Tooltip` renders no children.** Not a mistake in the wrapper: `react-aria-components`' own
+   `Tooltip`, with its own `TooltipTrigger` and a plain button child, produces an empty container and
+   logs no error. This version exports `Tooltip`, `TooltipContext`, `TooltipTrigger`,
+   `TooltipTriggerStateContext` — and **no `TooltipProvider`**, so the provider the shadcn-style
+   wrapper assumed does not exist. Two more traps in the same area: RAC links `aria-labelledby` to a
+   heading **only** when it declares `slot="title"`, and a component that plays both the stateful
+   `Tooltip` and the content `Tooltip` renders its trigger as nothing at all. `ui/tooltip.jsx` and
+   the `radix-ui` dependency therefore stay, and that is a recorded exception rather than an
+   oversight.
+2. **A controlled tooltip's `onOpenChange` is not a formality.** The context ring passed
+   `onOpenChange={setIsOpen}` and separately tried to delay hover with its own timer — and Radix's
+   own hover path called `onOpenChange(true)` straight away, so the ring opened in 85ms and the
+   timer was dead code. The delay now lives in one place, the provider's `delayDuration`, and the
+   ring only intercepts *when* to open.
+3. **Radix keeps a visually-hidden copy of the tooltip for assistive tech, present whether or not
+   the tooltip is showing.** So `queryByRole("tooltip")` cannot answer "is it visible" — the
+   context-ring tests assert the trigger's `data-state` instead. The earlier tests passed for the
+   wrong reason and would not have caught a regression here.
+4. **`side="bottom"` on a header control is a bug, not a default.** The context ring is at the top of
+   the screen; a bottom-anchored panel lands on the first message the user came to read. It is
+   `side="left"` with a `sideOffset` now, and a test asserts `data-side`.
+5. **A vestigial devDependency is still shipping.** `framer-motion` had zero source references from
+   P8a but stayed in `dependencies` — every visitor was downloading an animation library the app
+   never called. Dependencies are not removed by deleting the last import; check the list.
 
 ---
 
@@ -432,7 +461,7 @@ instead of patched mid-phase.
 | **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
-| **P9** ⏳ | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters. Done: `dropdown-menu` deleted (0 consumers); `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria. **Remaining: `tooltip`** — 4 consumers, and its `role="tooltip"` assertions cannot be made to pass under jsdom, so it needs its tests reworked on purpose rather than incidentally. | |
+| **P9** ⏳ | Delete legacy. Done: `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria; the six orphaned `ui/` files deleted; `shadcn` CLI and `components.json` gone; `framer-motion` dropped. **Remaining: `tooltip`** — RAC's `Tooltip` renders **no children at all** here, verified against the raw component, so `ui/tooltip.jsx` and `radix-ui` stay. The *behaviour* work the user asked for (delay + offset) is done on Radix and is not blocked by this. | |
 | **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
 
 **Single-writer rule:** an old hook is deleted in the same commit that lands its store. They never coexist. Legacy components that still need the data read it through a one-way adapter, enumerated here and deleted in P9.
