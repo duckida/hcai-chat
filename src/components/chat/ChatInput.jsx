@@ -3,7 +3,7 @@
 import { ArrowUp, FileText, Paperclip, X } from "lucide-react";
 import NextImage from "next/image";
 import { useCallback, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/primitives/button";
 
 function resizeImage(dataUrl, maxDim = 2048) {
   return new Promise((resolve, reject) => {
@@ -333,7 +333,7 @@ export default function ChatInput({ onSend, isLoading }) {
             <Button
               size="icon"
               aria-label="Send"
-              disabled={(!input.trim() && files.length === 0) || isLoading}
+              isDisabled={(!input.trim() && files.length === 0) || isLoading}
               onClick={handleSend}
               className={`h-8.5 w-8.5 rounded-full transition-all ${
                 (input.trim() || files.length > 0) && !isLoading

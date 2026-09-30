@@ -35,7 +35,7 @@ describe("ArtifactPanel", () => {
   it("offers the toggle when closed and the panel when open", () => {
     const { rerender } = renderPanel();
     expect(
-      screen.getByTitle("Open artifact panel"),
+      screen.getByRole("button", { name: /open artifact panel/i }),
     ).toBeInTheDocument();
 
     rerender(
@@ -47,9 +47,11 @@ describe("ArtifactPanel", () => {
       />,
     );
     expect(
-      screen.queryByTitle("Open artifact panel"),
+      screen.queryByRole("button", { name: /open artifact panel/i }),
     ).not.toBeInTheDocument();
-    expect(screen.getByTitle("Copy code")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /copy code/i }),
+    ).toBeInTheDocument();
   });
 
   it("previews the artifact in a sandboxed iframe", () => {

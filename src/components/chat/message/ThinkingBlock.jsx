@@ -2,7 +2,7 @@
 
 import { Brain, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/primitives/button";
 import { normalizeLatexDelimiters } from "@/lib/latex";
 import ThinkingIndicator from "../ThinkingIndicator";
 import Markdown from "./Markdown";

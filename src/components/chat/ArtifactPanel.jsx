@@ -14,7 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/primitives/button";
 import Markdown from "./message/Markdown";
 import ThinkingIndicator from "./ThinkingIndicator";
 
@@ -171,7 +171,7 @@ export default function ArtifactPanel({
               size="icon"
               onClick={onToggle}
               className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-              title="Open artifact panel"
+              aria-label="Open artifact panel"
             >
               <PanelRightOpen className="w-4 h-4" />
             </Button>
@@ -252,7 +252,7 @@ export default function ArtifactPanel({
                     variant="ghost"
                     onClick={handleFullscreenToggle}
                     className="flex items-center gap-1.5 h-8 w-8 px-0 text-muted-foreground hover:text-foreground justify-center"
-                    title="Exit fullscreen"
+                    aria-label="Exit fullscreen"
                   >
                     <X className="w-4 w-4" />
                   </Button>
@@ -261,7 +261,7 @@ export default function ArtifactPanel({
                     variant="ghost"
                     onClick={onToggle}
                     className="flex items-center gap-1.5 h-8 px-2 sm:px-1 text-muted-foreground hover:text-foreground"
-                    title="Close"
+                    aria-label="Close"
                   >
                     <PanelRightClose className="w-4 h-4" />
                     <span className="text-[13px] font-medium sm:hidden">
@@ -310,7 +310,7 @@ export default function ArtifactPanel({
                   size="icon"
                   onClick={handleShare}
                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  title="Copy share URL"
+                  aria-label="Copy share URL"
                 >
                   {shareCopied ? (
                     <Check className="w-3.5 h-3.5 text-green-500" />
@@ -324,7 +324,7 @@ export default function ArtifactPanel({
                   size="icon"
                   onClick={handleCopy}
                   className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                  title="Copy code"
+                  aria-label="Copy code"
                 >
                   {copied ? (
                     <Check className="w-3.5 h-3.5 text-green-500" />
@@ -338,7 +338,9 @@ export default function ArtifactPanel({
                   size="icon"
                   onClick={handleFullscreenToggle}
                   className="h-7 w-7 text-muted-foreground hover:text-foreground max-md:hidden"
-                  title={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                  aria-label={
+                    fullscreen ? "Exit fullscreen" : "Enter fullscreen"
+                  }
                 >
                   {fullscreen ? (
                     <Minimize className="w-3.5 h-3.5" />

@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp, ExternalLink, Globe } from "lucide-react";
 import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/primitives/button";
 
 export default function SourcesBlock({ sources }) {
   const [isExpanded, setIsExpanded] = useState(false);

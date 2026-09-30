@@ -6,8 +6,8 @@ import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
 import MessageList from "@/components/chat/MessageList";
+import { Button } from "@/components/primitives/button";
 import SettingsModal from "@/components/settings/SettingsModal";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,

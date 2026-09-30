@@ -239,8 +239,11 @@ describe("SettingsModal", () => {
     const onThemeChange = vi.fn();
     renderModal({ theme: "sunrise", onThemeChange });
     await goToSection(user, "Appearance");
-    const trigger = screen.getByRole("combobox");
-    expect(trigger).toHaveTextContent(/sunrise/i);
+    // React Aria's select trigger is a button with aria-haspopup="listbox",
+    // not role="combobox". Asserting by accessible name also pins that the
+    // current value is what a screen reader announces.
+    const trigger = screen.getByRole("button", { name: /sunrise/i });
+    expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
   });
 });
 

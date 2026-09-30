@@ -2,8 +2,8 @@
 
 import { Check, Key, Pencil, Plus, Search, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/primitives/button";
+import { Input } from "@/components/primitives/input";
 
 const LONG_PRESS_MS = 500;
 

@@ -1,14 +1,14 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
-import { SectionHeading, SectionLabel } from "@/components/settings/chrome";
 import {
   Select,
-  SelectContent,
   SelectItem,
+  SelectPopover,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from "@/components/primitives/select";
+import { SectionHeading, SectionLabel } from "@/components/settings/chrome";
 import { cn } from "@/lib/utils";
 
 function DarkModeSelector() {
@@ -85,34 +85,33 @@ export default function AppearanceSection({
         <SectionLabel description="Accent color palette for the interface.">
           Color Theme
         </SectionLabel>
-        <Select value={paletteTheme} onValueChange={onThemeChange}>
+        <Select selectedKey={paletteTheme} onSelectionChange={onThemeChange}>
           <SelectTrigger className="w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring">
             <SelectValue placeholder="Select Theme" />
           </SelectTrigger>
-          <SelectContent
-            position="popper"
-            sideOffset={5}
+          <SelectPopover
+            offset={5}
             className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
           >
             <SelectItem
-              value="aurora"
+              id="aurora"
               className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
             >
               Aurora
             </SelectItem>
             <SelectItem
-              value="sunrise"
+              id="sunrise"
               className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
             >
               Sunrise
             </SelectItem>
             <SelectItem
-              value="hackclub"
+              id="hackclub"
               className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
             >
               Hack Club
             </SelectItem>
-          </SelectContent>
+          </SelectPopover>
         </Select>
       </div>
     </div>

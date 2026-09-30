@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import ContextUsage from "@/components/chat/ContextUsage";
 import ModelPicker from "@/components/chat/ModelPicker";
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/primitives/button";
 import {
   Sheet,
   SheetContent,
@@ -40,7 +40,7 @@ function ToggleButton({
           <Button
             variant="ghost"
             size="icon"
-            disabled={disabled}
+            isDisabled={disabled}
             onClick={onClick}
             className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
               disabled

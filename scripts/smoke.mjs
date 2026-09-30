@@ -333,8 +333,10 @@ async function main() {
     // ---- 2. colour theme applies to <html> ------------------------------
     await openSettings();
     await gotoSection("Appearance");
+    // Not `role="combobox"`: React Aria's select trigger is a button carrying
+    // `aria-haspopup="listbox"`, and its items are `role="option"` below.
     await click(
-      `(${SETTINGS_DIALOG}).querySelector('[role="combobox"]')`,
+      `(${SETTINGS_DIALOG}).querySelector('[aria-haspopup="listbox"]')`,
       "theme select trigger",
     );
     await waitFor(

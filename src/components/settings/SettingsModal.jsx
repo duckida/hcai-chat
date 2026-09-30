@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Button } from "@/components/primitives/button";
 import AppearanceSection from "@/components/settings/AppearanceSection";
 import BehaviorSection from "@/components/settings/BehaviorSection";
 import ConnectionSection from "@/components/settings/ConnectionSection";
@@ -10,7 +11,6 @@ import {
   MobileSectionPills,
   SidebarNav,
 } from "@/components/settings/SectionNav";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
