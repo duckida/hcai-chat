@@ -13,15 +13,21 @@ import {
   Share2,
   X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
 import Markdown from "./message/Markdown";
 import ThinkingIndicator from "./ThinkingIndicator";
 
-const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 480;
-const STORAGE_KEY = "hcai_artifact_panel_width";
 
+/**
+ * The panel's width belongs to the row, not to the panel: `ChatLayout` owns it
+ * and spends it as the third grid track, so opening, closing and dragging it
+ * animate one length instead of reflowing the thread beside it. What stays here
+ * is the gesture — the drag, the pointer capture, the document cursor lock, and
+ * the keyboard steps — all of which report a width and let the row decide what
+ * to do with it.
+ */
 export default function ArtifactPanel({
   artifacts = [],
   isOpen = false,
@@ -29,56 +35,15 @@ export default function ArtifactPanel({
   streamingArtifact = null,
   fullscreen = false,
   onFullscreenToggle,
+  width = DEFAULT_WIDTH,
+  onWidthChange,
+  isResizing = false,
+  onResizingChange,
 }) {
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
-  // Hydration safety: the stored width is only read after mount so the
-  // server render and first client paint agree on the panel's width.
-  const [panelWidth, setPanelWidth] = useState(DEFAULT_WIDTH);
-  const [vw, setVw] = useState(0);
-
-  useEffect(() => {
-    setMounted(true);
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      const stored = saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
-      setPanelWidth(Number.isFinite(stored) ? stored : DEFAULT_WIDTH);
-    } catch {
-      setPanelWidth(DEFAULT_WIDTH);
-    }
-
-    const update = () => setVw(window.innerWidth);
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
-  }, []);
-
-  /**
-   * Before the first resize event `vw` is 0, and the arithmetic below would
-   * clamp the panel to zero width. Nothing is draggable that early, but a
-   * stored width can be read in the same tick, so the fallback has to be a
-   * width that cannot clamp anything away.
-   */
-  const maxWidth = useMemo(
-    () =>
-      vw === 0
-        ? DEFAULT_WIDTH
-        : Math.round(Math.min(vw * 0.85, 1400, Math.max(vw - 320, 480))),
-    [vw],
-  );
-
-  useEffect(() => {
-    if (panelWidth !== DEFAULT_WIDTH) {
-      try {
-        localStorage.setItem(STORAGE_KEY, String(panelWidth));
-      } catch {}
-    }
-  }, [panelWidth]);
-
-  const [isResizing, setIsResizing] = useState(false);
   const handleRef = useRef(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
@@ -91,11 +56,6 @@ export default function ArtifactPanel({
   // Get the active artifact (last one)
   const activeArtifact =
     allArtifacts.length > 0 ? allArtifacts[allArtifacts.length - 1] : null;
-
-  const clampWidth = useCallback(
-    (w) => Math.min(Math.max(w, MIN_WIDTH), maxWidth),
-    [maxWidth],
-  );
 
   const handleFullscreenToggle = () => {
     if (onFullscreenToggle) onFullscreenToggle();
@@ -124,18 +84,18 @@ export default function ArtifactPanel({
    * in progress.
    */
   const endResize = useCallback(() => {
-    setIsResizing(false);
+    onResizingChange?.(false);
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
-  }, []);
+  }, [onResizingChange]);
 
   useEffect(() => endResize, [endResize]);
 
   const startResize = useCallback(
     (event) => {
       resizeStartX.current = event.clientX;
-      resizeStartWidth.current = panelWidth;
-      setIsResizing(true);
+      resizeStartWidth.current = width;
+      onResizingChange?.(true);
       document.body.style.cursor = "col-resize";
       document.body.style.userSelect = "none";
       // Pointer capture keeps the drag tracking once the pointer leaves the
@@ -146,16 +106,16 @@ export default function ArtifactPanel({
         handleRef.current?.setPointerCapture(event.pointerId);
       } catch {}
     },
-    [panelWidth],
+    [width, onResizingChange],
   );
 
   const resizeTo = useCallback(
     (clientX) => {
       if (clientX == null) return;
       const deltaX = resizeStartX.current - clientX;
-      setPanelWidth(clampWidth(resizeStartWidth.current + deltaX));
+      onWidthChange?.(resizeStartWidth.current + deltaX);
     },
-    [clampWidth],
+    [onWidthChange],
   );
 
   if (allArtifacts.length === 0) return null;
@@ -199,21 +159,14 @@ export default function ArtifactPanel({
           </div>
         </div>
       ) : (
-        <div
-          className="animate-hcai-fade-in flex flex-row h-full bg-background max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
-          style={{
-            // Until mounted, vw is 0 on both server and client so the markup
-            // matches; after mount this reflects the real viewport.
-            width: mounted && vw < 768 ? undefined : panelWidth,
-          }}
-        >
+        <div className="animate-hcai-fade-in col-start-3 flex flex-row h-full min-w-0 bg-background max-md:col-start-auto max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50">
           {/* Resize handle - desktop only */}
           {/* biome-ignore lint/a11y/useSemanticElements: div needed for resize handle */}
           <div
             ref={handleRef}
             role="separator"
             aria-orientation="vertical"
-            aria-valuenow={panelWidth}
+            aria-valuenow={width}
             aria-label="Resize artifact panel"
             tabIndex={0}
             className="hidden md:flex w-4 shrink-0 cursor-col-resize items-center justify-end border-none outline-none group"
@@ -229,7 +182,7 @@ export default function ArtifactPanel({
                 event.preventDefault();
                 const step = event.shiftKey ? 50 : 10;
                 const dir = event.key === "ArrowLeft" ? 1 : -1;
-                setPanelWidth((w) => clampWidth(w + dir * step));
+                onWidthChange?.(width + dir * step);
               }
             }}
           >

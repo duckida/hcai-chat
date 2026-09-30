@@ -105,42 +105,47 @@ describe("ArtifactPanel", () => {
       expect(separator).toHaveAttribute("aria-valuenow", "480");
     });
 
-    it("takes arrow keys, in larger steps with shift", async () => {
-      const user = userEvent.setup();
-      renderPanel({ isOpen: true });
+    // The width is the row's now, so these report a width and let ChatLayout
+    // decide what to do with it. The clamping, the persistence and the track
+    // itself are asserted there, against the real panel.
+    it("reports arrow-key steps instead of resizing itself", () => {
+      const onWidthChange = vi.fn();
+      renderPanel({ isOpen: true, width: 480, onWidthChange });
 
-      await user.click(handle());
+      // Every key is reported against the width it was given, so the caller
+      // accumulates them. Chaining them is the row's half of the contract and
+      // is asserted in ChatLayout.
       fireEvent.keyDown(handle(), { key: "ArrowLeft" });
-      await waitFor(() =>
-        expect(handle()).toHaveAttribute("aria-valuenow", "490"),
-      );
+      expect(onWidthChange).toHaveBeenLastCalledWith(490);
 
       fireEvent.keyDown(handle(), { key: "ArrowLeft", shiftKey: true });
-      await waitFor(() =>
-        expect(handle()).toHaveAttribute("aria-valuenow", "540"),
-      );
+      expect(onWidthChange).toHaveBeenLastCalledWith(530);
 
       // Arrow right widens on the other side: the panel's edge is on its left.
       fireEvent.keyDown(handle(), { key: "ArrowRight" });
-      await waitFor(() =>
-        expect(handle()).toHaveAttribute("aria-valuenow", "530"),
-      );
+      expect(onWidthChange).toHaveBeenLastCalledWith(470);
     });
 
-    it("never lets the panel be dragged below the minimum", async () => {
-      const user = userEvent.setup();
-      renderPanel({ isOpen: true });
+    it("takes its width from the row rather than setting one", () => {
+      // An inline width here would fight the grid track and reintroduce the
+      // reflow the track exists to remove.
+      const { container } = renderPanel({ isOpen: true, width: 612 });
+      const panel = container.querySelector(".animate-hcai-fade-in");
+      expect(panel.style.width).toBe("");
+      expect(handle()).toHaveAttribute("aria-valuenow", "612");
+    });
 
-      // The panel's drag edge is on its left, so ArrowRight is what narrows
-      // it — arrow direction here is the opposite of a right-hand sidebar.
-      await user.click(handle());
-      for (let i = 0; i < 40; i++) {
-        fireEvent.keyDown(handle(), { key: "ArrowRight" });
-      }
+    it("reports the start and end of a drag to the row", () => {
+      // The row suppresses the track transition while a drag is live, so it has
+      // to be told — otherwise a transition trails the pointer and reads as lag.
+      const onResizingChange = vi.fn();
+      renderPanel({ isOpen: true, onResizingChange });
 
-      await waitFor(() =>
-        expect(handle()).toHaveAttribute("aria-valuenow", "320"),
-      );
+      fireEvent.pointerDown(handle(), { clientX: 1000, pointerId: 1 });
+      expect(onResizingChange).toHaveBeenLastCalledWith(true);
+
+      fireEvent.pointerUp(handle(), { pointerId: 1 });
+      expect(onResizingChange).toHaveBeenLastCalledWith(false);
     });
 
     it("releases the document cursor lock when the gesture is cancelled", () => {
@@ -171,17 +176,6 @@ describe("ArtifactPanel", () => {
       expect(document.body.style.userSelect).toBe("");
     });
 
-    it("persists a width the user chose", async () => {
-      const user = userEvent.setup();
-      renderPanel({ isOpen: true });
-
-      await user.click(handle());
-      fireEvent.keyDown(handle(), { key: "ArrowLeft", shiftKey: true });
-
-      await waitFor(() =>
-        expect(localStorage.getItem("hcai_artifact_panel_width")).toBe("530"),
-      );
-    });
   });
 
   it("shows artifact markup as inert code, never as live HTML", async () => {

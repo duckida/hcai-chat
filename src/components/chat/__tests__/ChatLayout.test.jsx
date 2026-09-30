@@ -7,7 +7,8 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatLayout from "@/components/chat/ChatLayout";
 
 const makeConversation = (id, title) => ({ id, title, messages: [] });
@@ -36,7 +37,8 @@ const baseProps = (overrides = {}) => ({
   toolsSupported: true,
   hasE2bKey: true,
   totalCost: 0,
-  rightPanel: <div data-testid="right-panel">Panel</div>,
+  // A function, because the row owns the panel's width and hands it down.
+  rightPanel: () => <div data-testid="right-panel">Panel</div>,
   children: <div data-testid="main-content">Main</div>,
   ...overrides,
 });
@@ -399,5 +401,174 @@ describe("SidebarContent conversations", () => {
   it("shows an empty state when there are no conversations", () => {
     render(<SearchHarness {...baseProps({ conversations: [] })} />);
     expect(screen.getByText("No chats yet")).toBeInTheDocument();
+  });
+});
+
+// The panel's width is the row's third grid track, so the behaviour a user sees
+// — a drag that moves one track, clamped, remembered, and not re-laid out in
+// steps — is only observable here. Tested against the real panel rather than a
+// stub, because the stub is where the reflow would have hidden.
+describe("artifact panel track", () => {
+  const ARTIFACT = "<div>hello artifact</div>";
+  const handle = () => screen.getByRole("separator", { name: /resize artifact/i });
+  const row = () => document.querySelector(".grid");
+  const trackWidth = () => {
+    // "auto minmax(0, 1fr) 480px" splits on the space inside minmax() too, so
+    // the panel track is the last part, not the third.
+    const parts = row().style.gridTemplateColumns.trim().split(/\s+/);
+    return Number.parseInt(parts[parts.length - 1], 10);
+  };
+
+  const withPanel = (overrides = {}) =>
+    baseProps({
+      isDesktop: true,
+      artifactPanelOpen: true,
+      rightPanel: (panel) => (
+        <ArtifactPanel
+          artifacts={[ARTIFACT]}
+          isOpen
+          onToggle={vi.fn()}
+          onFullscreenToggle={vi.fn()}
+          {...panel}
+        />
+      ),
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  it("spends the panel width as the third track", () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    expect(trackWidth()).toBe(480);
+    // The thread keeps the middle track and the sidebar the first, so the row
+    // is three explicit tracks rather than auto-placed children.
+    expect(row().style.gridTemplateColumns).toMatch(/^auto minmax\(0, 1fr\) \d+px$/);
+  });
+
+  it("collapses the track when the panel is closed", () => {
+    render(<ChatLayout {...withPanel({ artifactPanelOpen: false })} />);
+
+    expect(trackWidth()).toBe(0);
+  });
+
+  it("collapses the track in fullscreen, where the panel is an overlay", () => {
+    render(<ChatLayout {...withPanel({ artifactFullscreen: true })} />);
+
+    // The overlay is fixed and covers the row; a live track would push the
+    // thread sideways behind it for no reason.
+    expect(trackWidth()).toBe(0);
+    expect(screen.getByRole("separator", { name: /resize artifact/i })).toBeTruthy();
+  });
+
+  it("collapses the track on a narrow viewport, where the panel is fixed", () => {
+    render(<ChatLayout {...withPanel({ isDesktop: false })} />);
+
+    expect(trackWidth()).toBe(0);
+  });
+
+  it("accumulates arrow-key steps into the track", async () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    await userEvent.click(handle());
+    fireEvent.keyDown(handle(), { key: "ArrowLeft" });
+    await waitFor(() => expect(trackWidth()).toBe(490));
+
+    fireEvent.keyDown(handle(), { key: "ArrowLeft", shiftKey: true });
+    await waitFor(() => expect(trackWidth()).toBe(540));
+
+    // Arrow right narrows: the panel's edge is on its left.
+    fireEvent.keyDown(handle(), { key: "ArrowRight" });
+    await waitFor(() => expect(trackWidth()).toBe(530));
+    expect(handle()).toHaveAttribute("aria-valuenow", "530");
+  });
+
+  it("never lets the track go below the minimum", async () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    await userEvent.click(handle());
+    for (let i = 0; i < 40; i++) {
+      fireEvent.keyDown(handle(), { key: "ArrowRight" });
+    }
+
+    await waitFor(() => expect(trackWidth()).toBe(320));
+  });
+
+  it("never lets the track take more than the viewport allows", async () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    await userEvent.click(handle());
+    for (let i = 0; i < 40; i++) {
+      fireEvent.keyDown(handle(), { key: "ArrowLeft", shiftKey: true });
+    }
+
+    // jsdom's window is 1024 wide, which caps the panel well below the
+    // absolute maximum — a panel wider than the screen has no drag handle
+    // left to grab.
+    await waitFor(() => expect(trackWidth()).toBe(704));
+  });
+
+  it("follows a drag with the track", () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    fireEvent.pointerDown(handle(), { clientX: 1000, pointerId: 1 });
+    fireEvent.pointerMove(handle(), { clientX: 940, pointerId: 1 });
+
+    expect(trackWidth()).toBe(540);
+  });
+
+  it("drops the transition while a drag is live", () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    // A transition that trails the pointer reads as lag. The track is written
+    // directly on every move, so the animation has to be off for its duration.
+    expect(row().className).toContain("transition-[grid-template-columns]");
+
+    fireEvent.pointerDown(handle(), { clientX: 1000, pointerId: 1 });
+    expect(row().className).not.toContain("transition-[grid-template-columns]");
+
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(row().className).toContain("transition-[grid-template-columns]");
+  });
+
+  it("remembers a width the user chose", async () => {
+    render(<ChatLayout {...withPanel()} />);
+
+    await userEvent.click(handle());
+    fireEvent.keyDown(handle(), { key: "ArrowLeft", shiftKey: true });
+
+    await waitFor(() =>
+      expect(localStorage.getItem("hcai_artifact_panel_width")).toBe("530"),
+    );
+  });
+
+  it("adopts a remembered width on the next load", async () => {
+    localStorage.setItem("hcai_artifact_panel_width", "612");
+
+    render(<ChatLayout {...withPanel()} />);
+
+    await waitFor(() => expect(trackWidth()).toBe(612));
+  });
+
+  it("leaves a remembered width alone while restoring it", async () => {
+    localStorage.setItem("hcai_artifact_panel_width", "612");
+
+    render(<ChatLayout {...withPanel()} />);
+
+    await waitFor(() =>
+      expect(localStorage.getItem("hcai_artifact_panel_width")).toBe("612"),
+    );
+  });
+
+  it("ignores a remembered width that is not a number", async () => {
+    localStorage.setItem("hcai_artifact_panel_width", "very wide");
+
+    render(<ChatLayout {...withPanel()} />);
+
+    await waitFor(() =>
+      expect(localStorage.getItem("hcai_artifact_panel_width")).toBe("480"),
+    );
   });
 });

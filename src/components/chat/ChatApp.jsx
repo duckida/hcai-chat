@@ -236,10 +236,14 @@ export default function ChatApp({
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
+        artifactPanelOpen={artifactPanelOpen}
+        isDesktop={isDesktop}
         contextUsage={stream.contextUsage}
         toolsSupported={toolsSupported}
         totalCost={totalCost}
-        rightPanel={
+        // A function, not an element: the row owns the panel's width and hands
+        // it down, so the panel has to be built where that width is known.
+        rightPanel={(panel) => (
           <ArtifactPanel
             artifacts={messageArtifacts}
             streamingArtifact={streamingArtifact}
@@ -247,8 +251,12 @@ export default function ChatApp({
             onToggle={handleToggleArtifactPanel}
             fullscreen={artifactFullscreen}
             onFullscreenToggle={() => setArtifactFullscreen((prev) => !prev)}
+            width={panel.width}
+            isResizing={panel.isResizing}
+            onWidthChange={panel.onWidthChange}
+            onResizingChange={panel.onResizingChange}
           />
-        }
+        )}
       >
         <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList

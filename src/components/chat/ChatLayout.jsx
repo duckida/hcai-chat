@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import SidebarContent from "@/components/layout/SidebarContent";
 
@@ -8,6 +8,11 @@ const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 600;
 const DEFAULT_SIDEBAR_WIDTH = 260;
+
+const PANEL_WIDTH_KEY = "hcai_artifact_panel_width";
+const MIN_PANEL_WIDTH = 320;
+const MAX_PANEL_WIDTH = 1400;
+const DEFAULT_PANEL_WIDTH = 480;
 
 /** The saved width, clamped, or null when there is nothing usable to read. */
 function readStoredSidebarWidth() {
@@ -17,6 +22,18 @@ function readStoredSidebarWidth() {
     const parsed = parseInt(saved, 10);
     if (Number.isNaN(parsed)) return null;
     return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, parsed));
+  } catch {
+    return null;
+  }
+}
+
+function readStoredPanelWidth() {
+  try {
+    const saved = window.localStorage.getItem(PANEL_WIDTH_KEY);
+    if (!saved) return null;
+    const parsed = parseInt(saved, 10);
+    if (!Number.isFinite(parsed)) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -45,6 +62,8 @@ export default function ChatLayout({
   rightPanel,
   children,
   artifactFullscreen = false,
+  artifactPanelOpen = false,
+  isDesktop = false,
   contextUsage = 0,
   toolsSupported = true,
   hasE2bKey = false,
@@ -83,6 +102,75 @@ export default function ChatLayout({
       Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, clientX)),
     );
   }, []);
+
+  // ---- artifact panel width, owned here because the row is ----------------
+  // The width lives on this component rather than in the panel because it is a
+  // property of the row, not of the panel: it is the third grid track below.
+  // Writing it onto the panel's own inline width meant every drag step re-laid
+  // out the thread beside it instead of animating one track.
+  const [panelWidth, setPanelWidth] = useState(DEFAULT_PANEL_WIDTH);
+  const [isPanelWidthReady, setIsPanelWidthReady] = useState(false);
+  const [isPanelResizing, setIsPanelResizing] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(0);
+
+  useEffect(() => {
+    setPanelWidth(readStoredPanelWidth() ?? DEFAULT_PANEL_WIDTH);
+    setIsPanelWidthReady(true);
+
+    const update = () => setViewportWidth(window.innerWidth);
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  useEffect(() => {
+    if (!isPanelWidthReady) return;
+    try {
+      window.localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
+    } catch {}
+  }, [panelWidth, isPanelWidthReady]);
+
+  /**
+   * Before the first resize event the viewport width is 0, and the arithmetic
+   * would clamp the panel to nothing. Nothing is draggable that early, but a
+   * stored width can be read in the same tick, so the fallback has to be a width
+   * that cannot clamp anything away.
+   */
+  const maxPanelWidth = useMemo(
+    () =>
+      viewportWidth === 0
+        ? DEFAULT_PANEL_WIDTH
+        : Math.round(
+            Math.min(
+              viewportWidth * 0.85,
+              MAX_PANEL_WIDTH,
+              Math.max(viewportWidth - 320, 480),
+            ),
+          ),
+    [viewportWidth],
+  );
+
+  const setClampedPanelWidth = useCallback(
+    (width) => {
+      if (width == null) return;
+      setPanelWidth(Math.min(Math.max(width, MIN_PANEL_WIDTH), maxPanelWidth));
+    },
+    [maxPanelWidth],
+  );
+
+  // The panel contributes no track when it is closed, when it is fullscreen (a
+  // fixed overlay covers the row), or on a narrow viewport (where it is itself
+  // fixed and full-bleed). All three collapse to zero, which is what makes the
+  // open/close transition a single track animation.
+  const panelTrack =
+    artifactPanelOpen && !artifactFullscreen && isDesktop ? panelWidth : 0;
+
+  const panelApi = {
+    width: panelWidth,
+    isResizing: isPanelResizing,
+    onWidthChange: setClampedPanelWidth,
+    onResizingChange: setIsPanelResizing,
+  };
 
   /**
    * A drag locks the cursor and the selection for the whole document, so every
@@ -128,7 +216,19 @@ export default function ChatLayout({
   );
 
   return (
-    <div className="flex h-screen bg-background text-foreground overflow-hidden font-sans antialiased selection:bg-accent">
+    <div
+      // Three tracks: sidebar, thread, panel. The panel's width is the third
+      // track, so opening, closing and dragging it animate one length rather
+      // than reflowing the thread a pixel at a time. The transition is off
+      // during a drag — a transition that trails the pointer reads as lag, and
+      // the track is already being written directly on every move.
+      className={`grid h-screen bg-background text-foreground overflow-hidden font-sans antialiased selection:bg-accent ${
+        isPanelResizing
+          ? ""
+          : "transition-[grid-template-columns] duration-200 ease-out"
+      }`}
+      style={{ gridTemplateColumns: `auto minmax(0, 1fr) ${panelTrack}px` }}
+    >
       <aside
         className={`hidden md:block shrink-0 overflow-hidden relative border-r border-border bg-muted ${!isDragging ? "transition-all duration-300 ease-in-out" : ""}`}
         style={{ width: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
@@ -155,7 +255,7 @@ export default function ChatLayout({
         </button>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 relative">
+      <div className="col-start-2 flex flex-col min-w-0 relative">
         <Header
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
@@ -184,10 +284,12 @@ export default function ChatLayout({
         </main>
       </div>
 
-      {!artifactFullscreen && rightPanel}
+      {!artifactFullscreen && rightPanel(panelApi)}
 
       {artifactFullscreen && (
-        <div className="fixed inset-0 z-[100] bg-background">{rightPanel}</div>
+        <div className="fixed inset-0 z-[100] bg-background">
+          {rightPanel(panelApi)}
+        </div>
       )}
     </div>
   );

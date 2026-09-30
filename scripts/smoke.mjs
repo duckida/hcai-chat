@@ -668,6 +668,148 @@ async function main() {
       cls.total < 0.1,
       JSON.stringify(cls),
     );
+
+    // ---- 13. the artifact panel across three viewports -------------------
+    // The panel's width was moved onto the row's third grid track, and the
+    // reason that was deferred twice is that the smoke script could not see it.
+    // It can now: seed a conversation containing an artifact, which is the only
+    // way the panel exists at all, and check the track in each of the three
+    // states it has to be right in.
+    await evalJs(`(async () => {
+      // Assembled from pieces: a markdown fence inside a template literal needs
+      // its own escaping, and one wrong escape here is a syntax error in the
+      // page rather than anything that looks like a failed check.
+      const ARTIFACT_FENCE = ['\`\`\`html', '<div id="artifact">seeded</div>', '\`\`\`'].join(String.fromCharCode(10));
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('hcai-chat', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('conversations', 'readwrite');
+        const store = tx.objectStore('conversations');
+        store.clear();
+        store.put({
+          id: 'smoke-artifact',
+          title: 'Seeded artifact',
+          createdAt: new Date().toISOString(),
+          artifactPanelOpen: false,
+          model: 'xiaomi/mimo-v2.5',
+          contextUsage: 0,
+          messages: [
+            { role: 'user', content: 'make me a page' },
+            {
+              role: 'assistant',
+              content: 'Here it is.\\n\\n' + ARTIFACT_FENCE,
+            },
+          ],
+        });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      localStorage.setItem('artifacts_enabled', 'true');
+      return true;
+    })()`);
+    await navigate(3500);
+
+    /** The row's three tracks, and how the panel actually sits in them. */
+    const panelReport = () =>
+      evalJs(`(() => {
+        const row = document.querySelector('.grid');
+        if (!row) return { error: 'no grid row' };
+        const tracks = row.style.gridTemplateColumns;
+        const parts = tracks.trim().split(/\\s+/);
+        const track = parseInt(parts[parts.length - 1], 10);
+        const panelEl = document.querySelector('[aria-label="Resize artifact panel"]');
+        // The element, not just its rect: the position check needs
+        // getComputedStyle, which rejects a DOMRect.
+        const panelNode = panelEl ? panelEl.parentElement : null;
+        const panelBox = panelNode ? panelNode.getBoundingClientRect() : null;
+        const thread = document.querySelector('section[aria-label="Conversation"]');
+        const threadBox = thread ? thread.getBoundingClientRect() : null;
+        return {
+          tracks,
+          track,
+          viewport: window.innerWidth,
+          docScroll: document.documentElement.scrollWidth,
+          panelLeft: panelBox ? Math.round(panelBox.left) : null,
+          panelRight: panelBox ? Math.round(panelBox.right) : null,
+          threadRight: threadBox ? Math.round(threadBox.right) : null,
+          panelPosition: panelNode ? getComputedStyle(panelNode).position : null,
+        };
+      })()`);
+
+    // Artifacts mode is already on (it was seeded above) and a desktop load with
+    // an existing conversation opens the panel on its own, so nothing is
+    // clicked here. Clicking the toggle would have switched it *off* — its label
+    // is "Toggle artifacts off" precisely because it is on — and the panel would
+    // render nothing while the track stayed reserved.
+    await waitFor(
+      () =>
+        evalJs(
+          `Boolean(document.querySelector('button[aria-label="Toggle artifacts off"]'))`,
+        ),
+      8000,
+    );
+    await sleep(600);
+    const desktopPanel = await panelReport();
+    check(
+      "artifact panel occupies a track beside the thread on desktop",
+      desktopPanel.track > 0 &&
+        desktopPanel.panelLeft === desktopPanel.threadRight &&
+        desktopPanel.docScroll <= desktopPanel.viewport + 1,
+      JSON.stringify(desktopPanel),
+    );
+
+    // Dragging the separator must move the track, not the whole row.
+    const dragged = await evalJs(`(() => {
+      const handle = document.querySelector('[aria-label="Resize artifact panel"]');
+      if (!handle) return null;
+      const box = handle.getBoundingClientRect();
+      return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
+    })()`);
+    if (dragged) {
+      for (const [type, x] of [
+        ["mousePressed", dragged.x],
+        ["mouseMoved", dragged.x - 120],
+        ["mouseMoved", dragged.x - 240],
+        ["mouseReleased", dragged.x - 240],
+      ]) {
+        await send("Input.dispatchMouseEvent", {
+          type,
+          x,
+          y: dragged.y,
+          button: "left",
+          buttons: type === "mouseReleased" ? 0 : 1,
+          clickCount: 1,
+        });
+      }
+      await sleep(400);
+    }
+    const afterDrag = await panelReport();
+    check(
+      "dragging the panel resizes the track and the thread with it",
+      dragged !== null &&
+        afterDrag.track > desktopPanel.track &&
+        afterDrag.panelLeft === afterDrag.threadRight &&
+        afterDrag.docScroll <= afterDrag.viewport + 1,
+      JSON.stringify(afterDrag),
+    );
+
+    // Narrow: the panel is a fixed overlay and the track must be zero, or the
+    // thread is squeezed to nothing behind a full-bleed panel.
+    await setViewport(390, 760, true);
+    await sleep(700);
+    const mobilePanel = await panelReport();
+    check(
+      "artifact panel goes full-bleed on a narrow viewport",
+      mobilePanel.track === 0 &&
+        mobilePanel.panelLeft === 0 &&
+        mobilePanel.docScroll <= mobilePanel.viewport + 1,
+      JSON.stringify(mobilePanel),
+    );
+    await setViewport(1280, 900, false);
+    await sleep(500);
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {
