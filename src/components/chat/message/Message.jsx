@@ -7,6 +7,7 @@ import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { normalizeLatexDelimiters } from "@/lib/latex";
 import { getMessageText, getUserText } from "@/lib/messages";
 import { useStreamdownPlugins } from "@/lib/streamdown";
+import { useSettings } from "@/stores/settings";
 import CustomLink from "../CustomLink";
 import ResponseMetrics from "../ResponseMetrics";
 import ImageAttachment, { FileBubble } from "./MessageParts";
@@ -17,15 +18,27 @@ import ThinkingBlock from "./ThinkingBlock";
 
 const streamdownComponents = { a: CustomLink };
 
-const Message = memo(function Message({
-  message,
-  isStreaming = false,
-  artifactsEnabled = false,
-  showThinking = false,
-  showSandboxCode = true,
-  showSandboxOutput = true,
-  showMetrics = true,
-}) {
+/**
+ * How a persisted message presents itself — artifacts, reasoning, sandbox
+ * output, metrics — is all display settings, so a committed message reads them
+ * itself rather than being handed six flags it never varies.
+ */
+const selectDisplaySettings = (state) => ({
+  artifactsEnabled: state.artifactsEnabled,
+  showThinking: state.showThinking,
+  showSandboxCode: state.showSandboxCode,
+  showSandboxOutput: state.showSandboxOutput,
+  showMetrics: state.showMetrics,
+});
+
+const Message = memo(function Message({ message }) {
+  const {
+    artifactsEnabled,
+    showThinking,
+    showSandboxCode,
+    showSandboxOutput,
+    showMetrics,
+  } = useSettings(selectDisplaySettings);
   const streamdownPlugins = useStreamdownPlugins();
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
@@ -75,7 +88,7 @@ const Message = memo(function Message({
           />
         )}
 
-        {isAssistant && message.webSearch && !isStreaming && (
+        {isAssistant && message.webSearch && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
             <Globe className="w-4 h-4 text-green-600 dark:text-green-400" />
             <span className="text-green-600 dark:text-green-400 font-medium">

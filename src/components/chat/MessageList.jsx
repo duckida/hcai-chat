@@ -4,6 +4,8 @@ import { ChevronDown } from "lucide-react";
 import { useMemo } from "react";
 import { useThreadScroll } from "@/hooks/use-thread-scroll";
 import { hasRenderableContent } from "@/lib/messages";
+import { useSettings } from "@/stores/settings";
+import { useTurn } from "@/stores/turn";
 import EmptyState from "./message/EmptyState";
 import ErrorMessage from "./message/ErrorMessage";
 import Message from "./message/Message";
@@ -12,24 +14,33 @@ import SandboxFiles from "./message/SandboxFiles";
 import StreamingMessage from "./message/StreamingMessage";
 import ThinkingBlock from "./message/ThinkingBlock";
 
-export default function MessageList({
-  messages,
-  isLoading,
-  activeConversation = null,
-  streamingConversationId = null,
-  streamingContent,
-  streamingThinking,
-  streamingError,
-  thinkingEnabled,
-  webSearchEnabled,
-  agentModeEnabled = false,
-  artifactsEnabled = false,
-  streamingSandboxTools = [],
-  showThinking = false,
-  showSandboxCode = true,
-  showSandboxOutput = true,
-  showMetrics = true,
-}) {
+/** Only what the "still thinking, nothing on screen yet" placeholder needs. */
+const selectPlaceholderSettings = (state) => ({
+  thinkingEnabled: state.thinkingEnabled,
+  showThinking: state.showThinking,
+});
+
+/**
+ * The thread renders two stores and one prop.
+ *
+ * How the conversation should look is a display setting and how the current
+ * turn is going is turn state, so both are looked up where they are written
+ * instead of being threaded down from ChatApp through sixteen props. The
+ * conversation on screen stays a prop: it is a view concern, and it is the one
+ * thing that decides whether a running stream belongs on this screen at all.
+ */
+export default function MessageList({ messages, activeConversation = null }) {
+  const {
+    isLoading,
+    streamingContent,
+    streamingThinking,
+    streamingError,
+    streamingSandboxTools,
+    streamingConversationId,
+  } = useTurn();
+  const { thinkingEnabled, showThinking } = useSettings(
+    selectPlaceholderSettings,
+  );
   const activeMessages = useMemo(
     () => (messages || []).filter(hasRenderableContent),
     [messages],
@@ -109,12 +120,6 @@ export default function MessageList({
                   <Message
                     key={`${message.role}-${message.id || index}`}
                     message={message}
-                    isStreaming={false}
-                    artifactsEnabled={artifactsEnabled}
-                    showThinking={showThinking}
-                    showSandboxCode={showSandboxCode}
-                    showSandboxOutput={showSandboxOutput}
-                    showMetrics={showMetrics}
                   />
                 );
               })}
@@ -123,14 +128,7 @@ export default function MessageList({
                 <StreamingMessage
                   streamingContent={renderedStreamingContent}
                   streamingThinking={renderedStreamingThinking}
-                  thinkingEnabled={thinkingEnabled}
-                  webSearchEnabled={webSearchEnabled}
-                  agentModeEnabled={agentModeEnabled}
-                  artifactsEnabled={artifactsEnabled}
                   streamingSandboxTools={liveSandboxTools}
-                  showSandboxCode={showSandboxCode}
-                  showSandboxOutput={showSandboxOutput}
-                  showThinking={showThinking}
                 />
               )}
 

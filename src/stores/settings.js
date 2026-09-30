@@ -43,6 +43,15 @@ export function setSetting(key, value) {
   if (key === "theme") applyThemeClass(value);
 }
 
+/**
+ * Restore built-in defaults without touching storage. The store is a
+ * module-level singleton, so a test that flips a toggle would otherwise leak
+ * it into every test that renders after it.
+ */
+export function resetSettings() {
+  settingsStore.setState(defaultValues());
+}
+
 export function useSettings(selector) {
   return useStore(settingsStore, selector);
 }

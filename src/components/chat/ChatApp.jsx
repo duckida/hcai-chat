@@ -261,20 +261,6 @@ export default function ChatApp({
           <MessageList
             messages={conversations.messages}
             activeConversation={conversations.activeConversation}
-            isLoading={stream.isLoading}
-            streamingConversationId={stream.streamingConversationId}
-            streamingContent={stream.streamingContent}
-            streamingThinking={stream.streamingThinking}
-            streamingError={stream.streamingError}
-            thinkingEnabled={settings.thinkingEnabled}
-            webSearchEnabled={settings.webSearchEnabled}
-            agentModeEnabled={settings.agentModeEnabled}
-            artifactsEnabled={settings.artifactsEnabled}
-            streamingSandboxTools={stream.streamingSandboxTools}
-            showThinking={settings.showThinking}
-            showSandboxCode={settings.showSandboxCode}
-            showSandboxOutput={settings.showSandboxOutput}
-            showMetrics={settings.showMetrics}
           />
           <ChatInput onSend={stream.send} isLoading={stream.isLoading} />
         </div>

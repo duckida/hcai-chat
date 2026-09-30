@@ -5,6 +5,7 @@ import { Streamdown } from "streamdown";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
 import { normalizeLatexDelimiters } from "@/lib/latex";
 import { useStreamdownPlugins } from "@/lib/streamdown";
+import { useSettings } from "@/stores/settings";
 import CustomLink from "../CustomLink";
 import ThinkingIndicator from "../ThinkingIndicator";
 import { AgentIndicator, WebSearchIndicator } from "./MessageParts";
@@ -19,18 +20,37 @@ const STREAMDOWN_ANIMATED = {
   easing: "ease-out",
 };
 
+const selectDisplaySettings = (state) => ({
+  thinkingEnabled: state.thinkingEnabled,
+  webSearchEnabled: state.webSearchEnabled,
+  agentModeEnabled: state.agentModeEnabled,
+  artifactsEnabled: state.artifactsEnabled,
+  showSandboxCode: state.showSandboxCode,
+  showSandboxOutput: state.showSandboxOutput,
+  showThinking: state.showThinking,
+});
+
+/**
+ * The stream text and tool list stay props, and that is deliberate: they are
+ * the values the thread has already decided are safe to show here. Reading
+ * them from the turn store instead would mean every message row in every open
+ * conversation rendered whatever stream happened to be in flight. Only the
+ * presentation settings are looked up here.
+ */
 const StreamingMessage = memo(function StreamingMessage({
   streamingContent,
   streamingThinking,
-  thinkingEnabled,
-  webSearchEnabled,
-  agentModeEnabled,
-  artifactsEnabled,
   streamingSandboxTools,
-  showSandboxCode,
-  showSandboxOutput,
-  showThinking,
 }) {
+  const {
+    thinkingEnabled,
+    webSearchEnabled,
+    agentModeEnabled,
+    artifactsEnabled,
+    showSandboxCode,
+    showSandboxOutput,
+    showThinking,
+  } = useSettings(selectDisplaySettings);
   const streamdownPlugins = useStreamdownPlugins();
   const { cleanedText, hasArtifact } = useMemo(() => {
     // Only treat ```html fences as artifacts when artifacts mode is on;
