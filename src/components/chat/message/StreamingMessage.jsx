@@ -50,7 +50,7 @@ const StreamingMessage = memo(function StreamingMessage({
   const hasArtifact = artifacts.length > 0 || !!streamingArtifact;
 
   return (
-    <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="w-full animate-hcai-fade-in-slow">
       <MessageRow variant="assistant">
         {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
         {agentModeEnabled && <AgentIndicator />}

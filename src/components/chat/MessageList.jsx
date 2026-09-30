@@ -136,7 +136,7 @@ export default function MessageList({ messages, activeConversation = null }) {
                 !renderedStreamingContent &&
                 !renderedStreamingThinking &&
                 thinkingEnabled && (
-                  <div className="w-full animate-in fade-in duration-300">
+                  <div className="w-full animate-hcai-fade-in-slow">
                     <MessageRow variant="assistant">
                       <ThinkingBlock
                         thinking=""

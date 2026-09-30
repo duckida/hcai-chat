@@ -7,7 +7,7 @@ export default function ErrorMessage({ error }) {
   if (!error) return null;
 
   return (
-    <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+    <div className="w-full animate-hcai-fade-in-slow">
       <MessageRow variant="user">
         <div className="bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-2">

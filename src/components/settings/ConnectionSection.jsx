@@ -37,7 +37,7 @@ export default function ConnectionSection({
           error={Boolean(error)}
         />
         {error && (
-          <p className="text-xs text-red-500 font-bold pl-1 animate-in fade-in slide-in-from-top-1">
+          <p className="text-xs text-red-500 font-bold pl-1 animate-hcai-fade-in-slow">
             {error}
           </p>
         )}

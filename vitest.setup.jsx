@@ -125,6 +125,23 @@ if (typeof Element !== "undefined" && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = function () {};
 }
 
+// Polyfill pointer capture (used by the artifact panel's resize handle). jsdom
+// has none, and the handle asks for it on every drag start. The component
+// treats capture as an enhancement rather than a requirement, so the stub only
+// has to keep the call from throwing.
+if (typeof Element !== "undefined" && !Element.prototype.setPointerCapture) {
+  const captured = new WeakMap();
+  Element.prototype.setPointerCapture = function (pointerId) {
+    captured.set(this, pointerId);
+  };
+  Element.prototype.releasePointerCapture = function (pointerId) {
+    if (captured.get(this) === pointerId) captured.delete(this);
+  };
+  Element.prototype.hasPointerCapture = function (pointerId) {
+    return captured.get(this) === pointerId;
+  };
+}
+
 // Polyfill getAnimations (used by react-aria-components SharedElementTransition)
 if (typeof Element !== "undefined" && !Element.prototype.getAnimations) {
   Element.prototype.getAnimations = function () {

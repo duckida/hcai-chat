@@ -162,6 +162,23 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /**
+   * Opacity-only entrance. Deliberately not a slide or a zoom: both animate
+   * transform, and anything that moves during mount is something the thread
+   * underneath has to re-layout behind. Named `hcai-` so it cannot collide
+   * with the enter keyframes `tw-animate-css` installs, which go away in P9.
+   */
+  --animate-hcai-fade-in: hcai-fade-in 200ms ease-out both;
+  --animate-hcai-fade-in-slow: hcai-fade-in 300ms ease-out both;
+}
+
+@keyframes hcai-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .dark {

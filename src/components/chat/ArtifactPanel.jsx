@@ -1,12 +1,10 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
 import {
   Check,
   Code,
   Copy,
   Expand,
-  ExternalLink,
   Eye,
   Minimize,
   PanelRightClose,
@@ -16,27 +14,9 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
-import { useStreamdownPlugins } from "@/lib/streamdown";
+import Markdown from "./message/Markdown";
 import ThinkingIndicator from "./ThinkingIndicator";
-
-const CustomLink = ({ href, children }) => {
-  const isExternal = href.startsWith("http");
-  return (
-    <a
-      href={href}
-      target={isExternal ? "_blank" : undefined}
-      rel={isExternal ? "noopener noreferrer" : undefined}
-      className="text-blue-600 hover:text-blue-800 underline underline-offset-4 decoration-blue-300 hover:decoration-blue-600 transition-colors inline-flex items-center gap-1"
-    >
-      {children}
-      {isExternal && <ExternalLink className="w-3 h-3 shrink-0" />}
-    </a>
-  );
-};
-
-const streamdownComponents = { a: CustomLink };
 
 const MIN_WIDTH = 320;
 const DEFAULT_WIDTH = 480;
@@ -50,7 +30,6 @@ export default function ArtifactPanel({
   fullscreen = false,
   onFullscreenToggle,
 }) {
-  const streamdownPlugins = useStreamdownPlugins();
   const [activeTab, setActiveTab] = useState("preview");
   const [copied, setCopied] = useState(false);
   const [shareCopied, setShareCopied] = useState(false);
@@ -77,8 +56,17 @@ export default function ArtifactPanel({
     return () => window.removeEventListener("resize", update);
   }, []);
 
+  /**
+   * Before the first resize event `vw` is 0, and the arithmetic below would
+   * clamp the panel to zero width. Nothing is draggable that early, but a
+   * stored width can be read in the same tick, so the fallback has to be a
+   * width that cannot clamp anything away.
+   */
   const maxWidth = useMemo(
-    () => Math.round(Math.min(vw * 0.85, 1400, Math.max(vw - 320, 480))),
+    () =>
+      vw === 0
+        ? DEFAULT_WIDTH
+        : Math.round(Math.min(vw * 0.85, 1400, Math.max(vw - 320, 480))),
     [vw],
   );
 
@@ -91,16 +79,11 @@ export default function ArtifactPanel({
   }, [panelWidth]);
 
   const [isResizing, setIsResizing] = useState(false);
-  const iframeRef = useRef(null);
   const handleRef = useRef(null);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
 
-  const handleFullscreenToggle = () => {
-    if (onFullscreenToggle) onFullscreenToggle();
-  };
-
-  // Combine artifacts with streaming artifact
+  // Combining artifacts with streaming artifact
   const allArtifacts = streamingArtifact
     ? [...artifacts, streamingArtifact]
     : artifacts;
@@ -114,41 +97,9 @@ export default function ArtifactPanel({
     [maxWidth],
   );
 
-  const computeWidth = useCallback(
-    (clientX) => {
-      if (clientX == null) return;
-      const deltaX = resizeStartX.current - clientX;
-      setPanelWidth(clampWidth(resizeStartWidth.current + deltaX));
-    },
-    [clampWidth],
-  );
-
-  const startResize = useCallback(
-    (e) => {
-      const clientX = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-      resizeStartX.current = clientX;
-      resizeStartWidth.current = panelWidth;
-      setIsResizing(true);
-      handleRef.current?.setPointerCapture(e.pointerId);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-    },
-    [panelWidth],
-  );
-
-  const onPointerMove = useCallback(
-    (e) => {
-      if (!isResizing) return;
-      computeWidth(e.clientX ?? e.touches?.[0]?.clientX);
-    },
-    [isResizing, computeWidth],
-  );
-
-  const onPointerUp = useCallback(() => {
-    setIsResizing(false);
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-  }, []);
+  const handleFullscreenToggle = () => {
+    if (onFullscreenToggle) onFullscreenToggle();
+  };
 
   const handleCopy = () => {
     if (!activeArtifact) return;
@@ -165,18 +116,54 @@ export default function ArtifactPanel({
     setTimeout(() => setShareCopied(false), 2000);
   };
 
+  /**
+   * A drag locks the cursor and the text selection for the whole document, so
+   * the release has to be unconditional: pointerup, pointercancel (a gesture
+   * the browser takes over), a lost capture, and unmounting mid-drag. Missing
+   * any of them leaves the page stuck showing a resize cursor with no resize
+   * in progress.
+   */
+  const endResize = useCallback(() => {
+    setIsResizing(false);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
+  useEffect(() => endResize, [endResize]);
+
+  const startResize = useCallback(
+    (event) => {
+      resizeStartX.current = event.clientX;
+      resizeStartWidth.current = panelWidth;
+      setIsResizing(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      // Pointer capture keeps the drag tracking once the pointer leaves the
+      // handle, but it is an enhancement. Anything that throws here — a
+      // browser without it, jsdom — must not take the gesture down with it and
+      // leave the document locked into a resize cursor with no resize running.
+      try {
+        handleRef.current?.setPointerCapture(event.pointerId);
+      } catch {}
+    },
+    [panelWidth],
+  );
+
+  const resizeTo = useCallback(
+    (clientX) => {
+      if (clientX == null) return;
+      const deltaX = resizeStartX.current - clientX;
+      setPanelWidth(clampWidth(resizeStartWidth.current + deltaX));
+    },
+    [clampWidth],
+  );
+
   if (allArtifacts.length === 0) return null;
 
   return (
-    <AnimatePresence mode="wait">
+    <>
       {!isOpen ? (
-        <motion.div
-          key="toggle"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.9 }}
-          transition={{ duration: 0.2 }}
-        >
+        <div className="animate-hcai-fade-in">
           {/* Desktop toggle button */}
           <div className="hidden md:flex items-start pt-3 pr-2">
             <Button
@@ -210,15 +197,10 @@ export default function ArtifactPanel({
               </span>
             </button>
           </div>
-        </motion.div>
+        </div>
       ) : (
-        <motion.div
-          key="panel"
-          initial={{ opacity: 0, x: 50 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 50 }}
-          transition={{ type: "spring", stiffness: 300, damping: 30 }}
-          className="flex flex-row h-full bg-background max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
+        <div
+          className="animate-hcai-fade-in flex flex-row h-full bg-background max-md:flex-col max-md:fixed max-md:inset-0 max-md:z-50 max-md:w-full"
           style={{
             // Until mounted, vw is 0 on both server and client so the markup
             // matches; after mount this reflects the real viewport.
@@ -236,13 +218,17 @@ export default function ArtifactPanel({
             tabIndex={0}
             className="hidden md:flex w-4 shrink-0 cursor-col-resize items-center justify-end border-none outline-none group"
             onPointerDown={startResize}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-                e.preventDefault();
-                const step = e.shiftKey ? 50 : 10;
-                const dir = e.key === "ArrowLeft" ? 1 : -1;
+            onPointerMove={(event) => {
+              if (isResizing) resizeTo(event.clientX);
+            }}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+            onLostPointerCapture={endResize}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                event.preventDefault();
+                const step = event.shiftKey ? 50 : 10;
+                const dir = event.key === "ArrowLeft" ? 1 : -1;
                 setPanelWidth((w) => clampWidth(w + dir * step));
               }
             }}
@@ -268,7 +254,7 @@ export default function ArtifactPanel({
                     className="flex items-center gap-1.5 h-8 w-8 px-0 text-muted-foreground hover:text-foreground justify-center"
                     title="Exit fullscreen"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-4 w-4" />
                   </Button>
                 ) : (
                   <Button
@@ -284,7 +270,7 @@ export default function ArtifactPanel({
                   </Button>
                 )}
                 <div className="hidden sm:flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-primary shadow-sm"></div>
+                  <div className="w-2 h-2 rounded-full bg-primary shadow-sm" />
                   <span className="text-[11px] font-bold text-muted-foreground font-mono uppercase tracking-widest leading-none">
                     Artifact
                   </span>
@@ -298,30 +284,25 @@ export default function ArtifactPanel({
 
               <div className="flex items-center gap-1 shrink min-w-0">
                 <div className="flex bg-muted rounded-lg p-0.5 shrink min-w-0">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("preview")}
-                    className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold rounded-md transition-all ${
-                      activeTab === "preview"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Eye className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                    <span className="hidden sm:inline">Preview</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab("code")}
-                    className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold rounded-md transition-all ${
-                      activeTab === "code"
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    <Code className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                    <span className="hidden sm:inline">Code</span>
-                  </button>
+                  {[
+                    { id: "preview", label: "Preview", Icon: Eye },
+                    { id: "code", label: "Code", Icon: Code },
+                  ].map(({ id, label, Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setActiveTab(id)}
+                      aria-pressed={activeTab === id}
+                      className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-[12px] font-semibold rounded-md transition-colors ${
+                        activeTab === id
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                      <span className="hidden sm:inline">{label}</span>
+                    </button>
+                  ))}
                 </div>
 
                 <Button
@@ -385,13 +366,12 @@ export default function ArtifactPanel({
                   </div>
                 ) : (
                   <iframe
-                    ref={iframeRef}
                     className="absolute inset-0 w-full h-full bg-background border-0"
                     title="Artifact Preview"
                     sandbox="allow-scripts"
                     srcDoc={activeArtifact}
-                    onLoad={(e) => {
-                      const doc = e.target.contentDocument;
+                    onLoad={(event) => {
+                      const doc = event.target.contentDocument;
                       if (doc?.body) {
                         doc.body.tabIndex = 0;
                         doc.body.style.margin = "0";
@@ -403,22 +383,18 @@ export default function ArtifactPanel({
               ) : (
                 <div className="absolute inset-0 overflow-y-auto bg-background">
                   <div className="p-4 artifact-code min-w-0 overflow-x-auto">
-                    <Streamdown
+                    <Markdown
                       mode={streamingArtifact ? "stream" : "static"}
-                      caret={streamingArtifact ? "block" : false}
-                      isAnimating={!!streamingArtifact}
-                      plugins={streamdownPlugins}
-                      components={streamdownComponents}
-                    >
-                      {`\`\`\`html\n${activeArtifact}\n\`\`\``}
-                    </Streamdown>
+                      streaming={!!streamingArtifact}
+                      caret="block"
+                    >{`\`\`\`html\n${activeArtifact}\n\`\`\``}</Markdown>
                   </div>
                 </div>
               )}
             </div>
           </div>
-        </motion.div>
+        </div>
       )}
-    </AnimatePresence>
+    </>
   );
 }

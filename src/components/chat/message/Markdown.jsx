@@ -32,6 +32,7 @@ export default function Markdown({
   children,
   mode = "static",
   streaming = false,
+  caret = "line",
 }) {
   const plugins = useStreamdownPlugins();
 
@@ -41,7 +42,7 @@ export default function Markdown({
       plugins={plugins}
       components={streamdownComponents}
       {...(streaming
-        ? { caret: "line", isAnimating: true, animated: STREAMDOWN_ANIMATED }
+        ? { caret, isAnimating: true, animated: STREAMDOWN_ANIMATED }
         : {})}
     >
       {children}
