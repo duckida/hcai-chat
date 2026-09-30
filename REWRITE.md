@@ -79,15 +79,17 @@ history.
 
 ## Findings from P9 — read before touching the component layer
 
-1. **RAC's `Tooltip` renders no children.** Not a mistake in the wrapper: `react-aria-components`' own
-   `Tooltip`, with its own `TooltipTrigger` and a plain button child, produces an empty container and
-   logs no error. This version exports `Tooltip`, `TooltipContext`, `TooltipTrigger`,
-   `TooltipTriggerStateContext` — and **no `TooltipProvider`**, so the provider the shadcn-style
-   wrapper assumed does not exist. Two more traps in the same area: RAC links `aria-labelledby` to a
-   heading **only** when it declares `slot="title"`, and a component that plays both the stateful
-   `Tooltip` and the content `Tooltip` renders its trigger as nothing at all. `ui/tooltip.jsx` and
-   the `radix-ui` dependency therefore stay, and that is a recorded exception rather than an
-   oversight.
+1. **RAC's `Tooltip` was never broken — I proved it was with the wrong probe.** I composed
+   `<Tooltip><Button/><Tooltip>content</Tooltip></Tooltip>`, got an empty container, and
+   concluded from that one shape that the primitive was unusable; a documented exception and a
+   retained `radix-ui` dependency followed from it. `primitives/tooltip.jsx` already had a
+   **passing test** the whole time, using `TooltipTrigger` wrapping both the trigger and the
+   content. **Before declaring something impossible, look for a test of it.** The real findings
+   from that area stand and are worth keeping: RAC has no `TooltipProvider` export in this
+   version, it wires `aria-labelledby` to a heading only when the heading declares
+   `slot="title"`, and a component cannot play both the stateful `Tooltip` and the content
+   `Tooltip` or the trigger renders as nothing.
+
 2. **A controlled tooltip's `onOpenChange` is not a formality.** The context ring passed
    `onOpenChange={setIsOpen}` and separately tried to delay hover with its own timer — and Radix's
    own hover path called `onOpenChange(true)` straight away, so the ring opened in 85ms and the
@@ -461,7 +463,7 @@ instead of patched mid-phase.
 | **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
-| **P9** ✅ | Delete legacy. `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria; six orphaned `ui/` files deleted; `shadcn` CLI + `components.json` gone; `framer-motion` and `tw-animate-css` dropped. **Documented exception: `tooltip`** — RAC's `Tooltip` renders no children here, verified against the raw component, so `ui/tooltip.jsx` and `radix-ui` stay. Tooltip *behaviour* (450ms delay, sideways anchor) is done on Radix. | ✔ |
+| **P9** ✅ | Delete legacy. `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria; six orphaned `ui/` files deleted; `shadcn` CLI + `components.json` gone; `framer-motion` and `tw-animate-css` dropped. `ui/tooltip.jsx` + `radix-ui` are the **only** holdouts left, and they are not blocked — see the P9 finding: the Aria tooltip works, my earlier probe used the wrong composition. | ✔ |
 | **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
 
 **Single-writer rule:** an old hook is deleted in the same commit that lands its store. They never coexist. Legacy components that still need the data read it through a one-way adapter, enumerated here and deleted in P9.
@@ -597,7 +599,7 @@ Nothing may be deleted except by the phase listed here.
 |---|---|---|
 | 1 | Plain `overflow-y-auto` + `scrollbar-gutter: stable` (replaces Radix `ScrollArea`) | **P7 ✅** |
 | 2 | rAF-coalesced streaming deltas — one DOM update per frame | **P6 ✅** |
-| 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | **P9 ✅** — `tw-animate-css` gone; every entrance is an opacity-only `hcai-fade-*` keyframe |
+| 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | **P9 ✅** — `tw-animate-css` gone; every entrance is an opacity-only `hcai-fade-*` keyframe. **The utilities were inert until P10b** — see the `@theme inline` finding. |
 | 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | **P8 ✅ (images)** / P9 (code blocks) |
 | 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | **Deferred — see below** |
 | 6 | `setPointerCapture` on all drag handles, clamped and persisted | **P8 ✅** |
