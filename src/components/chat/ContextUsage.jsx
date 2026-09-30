@@ -1,14 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Button } from "@/components/primitives/button";
+import { Tooltip, TooltipTrigger } from "@/components/primitives/tooltip";
 import { formatPrice } from "@/lib/pricing";
-import { TOOLTIP_OPEN_DELAY } from "@/lib/tooltip";
 import { useModels } from "@/stores/models";
 
 function formatNumber(n) {
@@ -16,8 +10,6 @@ function formatNumber(n) {
 }
 
 export default function ContextUsage({ used, modelId, totalCost }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [pinned, setPinned] = useState(false);
   const max = useModels((s) => (modelId ? s.contextWindows[modelId] || 0 : 0));
 
   if (!max || max <= 0) return null;
@@ -41,78 +33,59 @@ export default function ContextUsage({ used, modelId, totalCost }) {
   }
 
   return (
-    <TooltipProvider delayDuration={TOOLTIP_OPEN_DELAY}>
-      <Tooltip
-        open={isOpen}
-        onOpenChange={(open) => {
-          // Hover opens once the pointer has rested (the provider's delay);
-          // a click pins it so it can be read at leisure.
-          if (open) setIsOpen(true);
-          else if (!pinned) setIsOpen(false);
-        }}
+    <TooltipTrigger>
+      {/* RAC's Button rather than a bare element: the tooltip only wires hover
+          and focus to a trigger it recognises. */}
+      <Button
+        variant="ghost"
+        aria-label={`Context usage: ${percent}% used, ${formatNumber(used)} of ${formatNumber(max)}`}
+        className="h-auto w-auto min-w-0 cursor-default shrink-0 bg-transparent p-0 hover:bg-transparent"
       >
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            aria-label={`Context usage: ${percent}% used, ${formatNumber(used)} of ${formatNumber(max)}`}
-            className="flex items-center justify-center cursor-default shrink-0 bg-transparent border-0 p-0"
-            onClick={() => {
-              const next = !pinned;
-              setPinned(next);
-              setIsOpen(next);
-            }}
-          >
-            <svg
-              width={size}
-              height={size}
-              viewBox={`0 0 ${size} ${size}`}
-              className="rotate-[-90deg]"
-              role="img"
-              aria-label={`Context usage: ${formatNumber(used)} of ${formatNumber(max)}`}
-            >
-              <title>Context usage</title>
-              <circle
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="none"
-                stroke={trackColor}
-                strokeWidth={strokeWidth}
-              />
-              <circle
-                cx={size / 2}
-                cy={size / 2}
-                r={radius}
-                fill="none"
-                stroke={color}
-                strokeWidth={strokeWidth}
-                strokeDasharray={circumference}
-                strokeDashoffset={offset}
-                strokeLinecap="round"
-                className="transition-all duration-500"
-              />
-            </svg>
-          </button>
-        </TooltipTrigger>
-        {/* Sideways, not below. The ring sits at the top of the screen, so a
-            bottom-anchored panel lands squarely on the first thing the user
-            came to read. */}
-        <TooltipContent
-          side="left"
-          sideOffset={12}
-          className="text-xs font-medium"
+        <svg
+          width={size}
+          height={size}
+          viewBox={`0 0 ${size} ${size}`}
+          className="rotate-[-90deg]"
+          role="img"
+          aria-label={`Context usage: ${formatNumber(used)} of ${formatNumber(max)}`}
         >
-          <div className="flex flex-col gap-0.5">
-            <span>{percent}% used</span>
-            <span>
-              {formatNumber(used)} out of {formatNumber(max)}
-            </span>
-            {totalCost != null && totalCost > 0 && (
-              <span>Cost: {formatPrice(totalCost)}</span>
-            )}
-          </div>
-        </TooltipContent>
+          <title>Context usage</title>
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={trackColor}
+            strokeWidth={strokeWidth}
+          />
+          <circle
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-500"
+          />
+        </svg>
+      </Button>
+      {/* Sideways, not below. The ring sits at the top of the screen, so a
+          bottom-anchored panel lands squarely on the first thing the user
+          came to read. */}
+      <Tooltip placement="left top" offset={12} className="text-xs font-medium">
+        <div className="flex flex-col gap-0.5">
+          <span>{percent}% used</span>
+          <span>
+            {formatNumber(used)} out of {formatNumber(max)}
+          </span>
+          {totalCost != null && totalCost > 0 && (
+            <span>Cost: {formatPrice(totalCost)}</span>
+          )}
+        </div>
       </Tooltip>
-    </TooltipProvider>
+    </TooltipTrigger>
   );
 }

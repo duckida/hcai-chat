@@ -234,6 +234,40 @@ async function main() {
 
     const htmlClass = () => evalJs(`document.documentElement.className`);
 
+    /**
+     * A real pointer move at the element's centre.
+     *
+     * React Aria drives hover from pointer events, so `el.click()` — which is
+     * what the click helper uses — never opens a tooltip. Dispatching through
+     * Input is the only way to exercise hover in a real browser.
+     */
+    const hover = async (expression, label) => {
+      const box = await evalJs(
+        `(() => { const el = ${expression}; if (!el) return null;
+          el.scrollIntoView({block:'center'});
+          const r = el.getBoundingClientRect();
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`,
+      );
+      if (!box) throw new Error(`element not found for hover: ${label}`);
+      // Two moves, not one. A single mouseMoved from wherever the pointer
+      // already is does not reliably produce an enter event, and an enter is
+      // what React Aria's hover is built on. Approaching from a nearby point
+      // guarantees the transition.
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: box.x,
+        y: box.y - 24,
+        buttons: 0,
+      });
+      await send("Input.dispatchMouseEvent", {
+        type: "mouseMoved",
+        x: box.x,
+        y: box.y,
+        buttons: 0,
+      });
+      return true;
+    };
+
     const typeInto = async (selector, text) =>
       evalJs(
         `(() => {
@@ -517,6 +551,53 @@ async function main() {
       "sent message survives reload (IndexedDB persistence)",
       persisted.includes("Reply with exactly"),
       persisted.slice(0, 140),
+    );
+
+    // ---- 11. the context ring's tooltip opens on a real hover -----------
+    // The last Radix holdout was migrated, and jsdom cannot verify it: a
+    // React Aria tooltip does not open there when its trigger contains
+    // element children, which is every trigger in this app. This is the only
+    // check that exercises it, so it is a FAIL, not a SKIP.
+    await hover(
+      `document.querySelector('button[aria-label^="Context usage"]')`,
+      "context ring",
+    );
+    // Reported, not thrown: a timeout here has to say whether the ring was
+    // found, whether anything is hovering, and what is on screen.
+    let tipText = "";
+    try {
+      await waitFor(
+        async () => {
+          tipText = await evalJs(
+            `(() => { const t = document.querySelector('[role="tooltip"]');
+              return t ? (t.textContent || '').trim() : ''; })()`,
+          );
+          return tipText.includes("% used");
+        },
+        6000,
+      );
+    } catch {}
+    const detail = await evalJs(
+      `(() => {
+        const ring = document.querySelector('button[aria-label^="Context usage"]');
+        return JSON.stringify({
+          ring: Boolean(ring),
+          tip: document.querySelector('[role="tooltip"]')?.textContent?.trim()?.slice(0, 40) || null,
+          expanded: ring?.getAttribute('aria-expanded') ?? null,
+          describedby: ring?.getAttribute('aria-describedby') ?? null,
+        });
+      })()`,
+    );
+    await send("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: 5,
+      y: 5,
+      buttons: 0,
+    });
+    check(
+      "context ring tooltip opens on hover",
+      tipText.includes("% used"),
+      detail,
     );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);

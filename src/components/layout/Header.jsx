@@ -13,12 +13,7 @@ import ContextUsage from "@/components/chat/ContextUsage";
 import ModelPicker from "@/components/chat/ModelPicker";
 import { Button } from "@/components/primitives/button";
 import Sheet from "@/components/primitives/sheet";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipTrigger } from "@/components/primitives/tooltip";
 
 function ToggleButton({
   active,
@@ -29,30 +24,27 @@ function ToggleButton({
   activeClass,
 }) {
   return (
-    <TooltipProvider>
+    <TooltipTrigger>
+      <Button
+        variant="ghost"
+        size="icon"
+        isDisabled={disabled}
+        onClick={onClick}
+        aria-label={tooltip}
+        className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
+          disabled
+            ? "opacity-40 cursor-not-allowed text-muted-foreground"
+            : active
+              ? activeClass
+              : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        {children}
+      </Button>
       <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            isDisabled={disabled}
-            onClick={onClick}
-            className={`h-7 w-7 sm:h-8 sm:w-8 transition-colors ${
-              disabled
-                ? "opacity-40 cursor-not-allowed text-muted-foreground"
-                : active
-                  ? activeClass
-                  : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {children}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p className="text-xs">{tooltip}</p>
-        </TooltipContent>
+        <p className="text-xs">{tooltip}</p>
       </Tooltip>
-    </TooltipProvider>
+    </TooltipTrigger>
   );
 }
 

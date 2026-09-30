@@ -1,12 +1,8 @@
 "use client";
 
 import { Clock, DollarSign, Hash, Zap } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Button } from "@/components/primitives/button";
+import { Tooltip, TooltipTrigger } from "@/components/primitives/tooltip";
 import { formatPrice } from "@/lib/pricing";
 
 /**
@@ -23,22 +19,19 @@ function formatDuration(seconds) {
   return `${minutes}m ${secs}s`;
 }
 
-function Metric({ icon: Icon, value, children }) {
+function Metric({ icon: Icon, value, label, children }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
-        >
-          <Icon className="w-3.5 h-3.5" />
-          <span>{value}</span>
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs max-w-xs">
-        {children}
-      </TooltipContent>
-    </Tooltip>
+    <TooltipTrigger>
+      <Button
+        variant="ghost"
+        className="h-auto gap-1.5 px-0 text-xs font-normal text-muted-foreground hover:text-foreground"
+        aria-label={label}
+      >
+        <Icon className="w-3.5 h-3.5" />
+        <span>{value}</span>
+      </Button>
+      <Tooltip className="max-w-xs">{children}</Tooltip>
+    </TooltipTrigger>
   );
 }
 
@@ -57,30 +50,36 @@ export default function ResponseMetrics({ usage, duration }) {
   const cost = usage.cost ?? null;
 
   return (
-    <TooltipProvider>
-      <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted-foreground px-1">
-        <Metric icon={Hash} value={`${totalTokens} tokens`}>
-          <p className="font-medium">Token Usage</p>
-          <p>Input: {inputTokens}</p>
-          <p>Output: {outputTokens}</p>
-        </Metric>
+    <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted-foreground px-1">
+      <Metric icon={Hash} value={`${totalTokens} tokens`} label="Token usage">
+        <p className="font-medium">Token Usage</p>
+        <p>Input: {inputTokens}</p>
+        <p>Output: {outputTokens}</p>
+      </Metric>
 
-        <Metric icon={Clock} value={formatDuration(duration)}>
-          Generation time
-        </Metric>
+      <Metric
+        icon={Clock}
+        value={formatDuration(duration)}
+        label="Generation time"
+      >
+        Generation time
+      </Metric>
 
-        <Metric icon={Zap} value={`${tokensPerSecond.toFixed(2)} t/s`}>
-          Tokens per second (speed)
-        </Metric>
+      <Metric
+        icon={Zap}
+        value={`${tokensPerSecond.toFixed(2)} t/s`}
+        label="Tokens per second"
+      >
+        Tokens per second (speed)
+      </Metric>
 
-        {cost !== null && (
-          <Metric icon={DollarSign} value={formatPrice(cost)}>
-            <p className="font-medium">Cost</p>
-            <p>Model: {usage.model}</p>
-            <p>Total: {formatPrice(cost)}</p>
-          </Metric>
-        )}
-      </div>
-    </TooltipProvider>
+      {cost !== null && (
+        <Metric icon={DollarSign} value={formatPrice(cost)} label="Cost">
+          <p className="font-medium">Cost</p>
+          <p>Model: {usage.model}</p>
+          <p>Total: {formatPrice(cost)}</p>
+        </Metric>
+      )}
+    </div>
   );
 }
