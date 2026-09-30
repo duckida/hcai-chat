@@ -2,26 +2,16 @@
 
 import { Brain, ChevronDown, ChevronUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Streamdown } from "streamdown";
 import { Button } from "@/components/ui/button";
 import { normalizeLatexDelimiters } from "@/lib/latex";
-import { useStreamdownPlugins } from "@/lib/streamdown";
-import CustomLink from "../CustomLink";
 import ThinkingIndicator from "../ThinkingIndicator";
-
-const streamdownComponents = { a: CustomLink };
-const STREAMDOWN_ANIMATED = {
-  animation: "blurIn",
-  duration: 200,
-  easing: "ease-out",
-};
+import Markdown from "./Markdown";
 
 export default function ThinkingBlock({
   thinking,
   isStreaming = false,
   defaultView = "closed",
 }) {
-  const streamdownPlugins = useStreamdownPlugins();
   const [isExpanded, setIsExpanded] = useState(defaultView === "open");
 
   useEffect(() => {
@@ -41,6 +31,7 @@ export default function ThinkingBlock({
         variant="ghost"
         size="sm"
         onClick={() => setIsExpanded(!isExpanded)}
+        aria-expanded={isExpanded}
         className="text-xs text-muted-foreground hover:text-foreground gap-1.5 h-7 px-2.5 rounded-lg"
       >
         {isStreaming ? (
@@ -58,16 +49,12 @@ export default function ThinkingBlock({
       {isExpanded && (
         <div className="mt-2 ml-1 p-4 bg-muted rounded-xl border border-border text-sm text-muted-foreground leading-relaxed overflow-x-auto">
           {normalizedThinking ? (
-            <Streamdown
+            <Markdown
               mode={isStreaming ? "stream" : "static"}
-              caret={isStreaming ? "line" : false}
-              isAnimating={isStreaming}
-              animated={isStreaming ? STREAMDOWN_ANIMATED : false}
-              plugins={streamdownPlugins}
-              components={streamdownComponents}
+              streaming={isStreaming}
             >
               {normalizedThinking}
-            </Streamdown>
+            </Markdown>
           ) : (
             <span className="text-muted-foreground inline-flex items-center">
               <ThinkingIndicator

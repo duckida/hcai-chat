@@ -9,93 +9,76 @@ import {
 } from "@/components/ui/tooltip";
 import { formatPrice } from "@/lib/pricing";
 
+/**
+ * A missing or nonsensical duration renders as a dash rather than the
+ * "NaNm NaNs" the arithmetic below would otherwise produce — a metrics strip
+ * is not the place to show a bug to the user.
+ */
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(1)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const secs = (seconds % 60).toFixed(0);
+  return `${minutes}m ${secs}s`;
+}
+
+function Metric({ icon: Icon, value, children }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
+        >
+          <Icon className="w-3.5 h-3.5" />
+          <span>{value}</span>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs max-w-xs">
+        {children}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
 export default function ResponseMetrics({ usage, duration }) {
   if (!usage) return null;
 
-  const totalTokens = usage.inputTokens + usage.outputTokens;
+  const inputTokens = usage.inputTokens || 0;
+  const outputTokens = usage.outputTokens || 0;
+  const totalTokens = inputTokens + outputTokens;
   const tokensPerSecond =
     usage.tokensPerSecond != null
       ? usage.tokensPerSecond
       : duration > 0
-        ? usage.outputTokens / duration
+        ? outputTokens / duration
         : 0;
   const cost = usage.cost ?? null;
-
-  const formatDuration = (seconds) => {
-    if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    const minutes = Math.floor(seconds / 60);
-    const secs = (seconds % 60).toFixed(0);
-    return `${minutes}m ${secs}s`;
-  };
 
   return (
     <TooltipProvider>
       <div className="flex flex-wrap items-center gap-3 mt-3 text-xs text-muted-foreground px-1">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
-            >
-              <Hash className="w-3.5 h-3.5" />
-              <span>{totalTokens} tokens</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs max-w-xs">
-            <p className="font-medium">Token Usage</p>
-            <p>Input: {usage.inputTokens}</p>
-            <p>Output: {usage.outputTokens}</p>
-          </TooltipContent>
-        </Tooltip>
+        <Metric icon={Hash} value={`${totalTokens} tokens`}>
+          <p className="font-medium">Token Usage</p>
+          <p>Input: {inputTokens}</p>
+          <p>Output: {outputTokens}</p>
+        </Metric>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
-            >
-              <Clock className="w-3.5 h-3.5" />
-              <span>{formatDuration(duration)}</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            Generation time
-          </TooltipContent>
-        </Tooltip>
+        <Metric icon={Clock} value={formatDuration(duration)}>
+          Generation time
+        </Metric>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
-            >
-              <Zap className="w-3.5 h-3.5" />
-              <span>{tokensPerSecond.toFixed(2)} t/s</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            Tokens per second (speed)
-          </TooltipContent>
-        </Tooltip>
+        <Metric icon={Zap} value={`${tokensPerSecond.toFixed(2)} t/s`}>
+          Tokens per second (speed)
+        </Metric>
 
         {cost !== null && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="flex items-center gap-1.5 hover:text-foreground transition-colors cursor-help"
-              >
-                <DollarSign className="w-3.5 h-3.5" />
-                <span>{formatPrice(cost)}</span>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs">
-              <p className="font-medium">Cost</p>
-              <p>Model: {usage.model}</p>
-              <p>Total: {formatPrice(cost)}</p>
-            </TooltipContent>
-          </Tooltip>
+          <Metric icon={DollarSign} value={formatPrice(cost)}>
+            <p className="font-medium">Cost</p>
+            <p>Model: {usage.model}</p>
+            <p>Total: {formatPrice(cost)}</p>
+          </Metric>
         )}
       </div>
     </TooltipProvider>

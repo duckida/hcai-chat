@@ -82,6 +82,7 @@ export default function SandboxFiles({
       <button
         type="button"
         onClick={fetchFiles}
+        aria-expanded={files !== null}
         className="w-full mt-0.5 flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors py-1"
       >
         <Download className="w-3 h-3" />

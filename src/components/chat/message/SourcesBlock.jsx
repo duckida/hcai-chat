@@ -15,6 +15,7 @@ export default function SourcesBlock({ sources }) {
         variant="ghost"
         size="sm"
         onClick={() => setIsExpanded((prev) => !prev)}
+        aria-expanded={isExpanded}
         className="mb-2 h-7 gap-1.5 rounded-lg px-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground"
       >
         <Globe className="w-3.5 h-3.5" />

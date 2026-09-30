@@ -2,21 +2,16 @@
 
 import { Globe } from "lucide-react";
 import { memo, useMemo } from "react";
-import { Streamdown } from "streamdown";
-import { extractHtmlArtifacts } from "@/lib/artifacts";
-import { normalizeLatexDelimiters } from "@/lib/latex";
 import { getMessageText, getUserText } from "@/lib/messages";
-import { useStreamdownPlugins } from "@/lib/streamdown";
 import { useSettings } from "@/stores/settings";
-import CustomLink from "../CustomLink";
 import ResponseMetrics from "../ResponseMetrics";
+import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import ImageAttachment, { FileBubble } from "./MessageParts";
 import MessageRow from "./MessageRow";
 import SourcesBlock from "./SourcesBlock";
 import StreamingSandboxBlock from "./StreamingSandboxBlock";
 import ThinkingBlock from "./ThinkingBlock";
-
-const streamdownComponents = { a: CustomLink };
+import useMessageText from "./useMessageText";
 
 /**
  * How a persisted message presents itself — artifacts, reasoning, sandbox
@@ -39,22 +34,14 @@ const Message = memo(function Message({ message }) {
     showSandboxOutput,
     showMetrics,
   } = useSettings(selectDisplaySettings);
-  const streamdownPlugins = useStreamdownPlugins();
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
   const text = attachments ? getUserText(content) : getMessageText(content);
 
-  const { cleanedText, artifacts } = useMemo(() => {
-    // Only strip ```html fences into artifacts when artifacts mode is on;
-    // otherwise render them as plain chat text.
-    if (!artifactsEnabled) return { cleanedText: text, artifacts: [] };
-    return extractHtmlArtifacts(text);
-  }, [text, artifactsEnabled]);
-  const renderedText = useMemo(
-    () => normalizeLatexDelimiters(cleanedText),
-    [cleanedText],
-  );
+  const { text: renderedText, artifacts } = useMessageText(text, {
+    artifactsEnabled,
+  });
   const hasSources = message.sources && message.sources.length > 0;
 
   // Extract image sources from content parts for rendering
@@ -114,16 +101,8 @@ const Message = memo(function Message({ message }) {
           </div>
         )}
 
-        <div className="max-w-none break-words leading-[1.8] text-foreground text-[15.5px] font-[450] selection:bg-accent overflow-x-auto">
-          {renderedText && (
-            <Streamdown
-              mode="static"
-              plugins={streamdownPlugins}
-              components={streamdownComponents}
-            >
-              {renderedText}
-            </Streamdown>
-          )}
+        <div className={MESSAGE_BODY_CLASS}>
+          {renderedText && <Markdown>{renderedText}</Markdown>}
           {!renderedText && artifacts.length > 0 && (
             <p className="text-sm text-muted-foreground italic">
               Artifact generated

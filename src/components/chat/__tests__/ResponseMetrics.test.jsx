@@ -8,6 +8,31 @@ describe("ResponseMetrics", () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it("renders a duration dash instead of NaN when the server sent no duration", () => {
+    render(
+      <ResponseMetrics
+        usage={{
+          inputTokens: 1,
+          outputTokens: 1,
+          model: "google/gemini-3.1-flash-lite",
+        }}
+        duration={undefined}
+      />,
+    );
+    expect(screen.getByText("—")).toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
+  it("treats missing token counts as zero rather than NaN", () => {
+    render(
+      <ResponseMetrics
+        usage={{ model: "google/gemini-3.1-flash-lite" }}
+        duration={1}
+      />,
+    );
+    expect(screen.getByText("0 tokens")).toBeInTheDocument();
+  });
+
   it("displays total token count", () => {
     render(
       <ResponseMetrics

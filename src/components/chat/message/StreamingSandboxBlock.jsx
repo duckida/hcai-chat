@@ -36,6 +36,7 @@ export default function StreamingSandboxBlock({
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
+        aria-expanded={isExpanded}
         className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors bg-muted/30"
       >
         <Terminal className="w-3.5 h-3.5 shrink-0" />

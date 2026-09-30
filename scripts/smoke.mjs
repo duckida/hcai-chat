@@ -101,8 +101,11 @@ function launchChromium() {
   return child;
 }
 
-async function pageTarget() {
-  for (let i = 0; i < 60; i++) {
+async function pageTarget(child) {
+  // 40s, not 15s: a cold chromium start races the dev server's first compile,
+  // and on a busy box it can lose that race three times over. Retrying by hand
+  // is not a fix, the budget just has to cover the slow case.
+  for (let i = 0; i < 160; i++) {
     try {
       const targets = await (
         await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)
@@ -112,6 +115,11 @@ async function pageTarget() {
       );
       if (page) return page;
     } catch {}
+    // If it actually died, say so — a bare timeout sends you hunting for a
+    // code problem that is not there.
+    if (child.exitCode !== null) {
+      throw new Error(`chromium exited with code ${child.exitCode}`);
+    }
     await sleep(250);
   }
   throw new Error("chromium debugging endpoint never came up");
@@ -152,7 +160,7 @@ async function main() {
   // failure there used to escape the cleanup below — every such run leaked a
   // browser process until the next launch starved and timed out.
   try {
-    const target = await pageTarget();
+    const target = await pageTarget(proc);
     const connection = connect(target.webSocketDebuggerUrl);
     close = connection.close;
     const { send, opened } = connection;

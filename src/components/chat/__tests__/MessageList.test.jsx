@@ -1,4 +1,5 @@
 import { act, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import MessageList from "../MessageList";
 import { resetSettings, settingsStore } from "@/stores/settings";
@@ -241,6 +242,41 @@ describe("MessageList", () => {
     expect(screen.getByText(/thinking/i)).toBeInTheDocument();
     expect(screen.getByText("here is the answer")).toBeInTheDocument();
     expect(screen.getByText(/web search/i)).toBeInTheDocument();
+  });
+
+  it("reports the thinking block as a collapsed disclosure that opens", async () => {
+    const user = userEvent.setup();
+    renderList({
+      messages: [
+        { role: "assistant", content: "answer", thinking: "hmm let me think" },
+      ],
+      settings: { showThinking: false },
+    });
+
+    const toggle = screen.getByRole("button", { name: /thinking/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("reports the sources list as a collapsed disclosure that opens", async () => {
+    const user = userEvent.setup();
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: "see links",
+          sources: [{ url: "https://a.example", title: "A" }],
+        },
+      ],
+    });
+
+    const toggle = screen.getByRole("button", { name: /sources \(1\)/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
   });
 
   it("does not render a stale streaming tail once the turn is persisted", () => {
