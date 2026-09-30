@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import SidebarContent from "@/components/layout/SidebarContent";
 
@@ -54,6 +54,7 @@ export default function ChatLayout({
     }
   });
   const [isDragging, setIsDragging] = useState(false);
+  const sidebarHandleRef = useRef(null);
 
   // Persist the resized sidebar width for the next session.
   useEffect(() => {
@@ -62,35 +63,40 @@ export default function ChatLayout({
     } catch {}
   }, [sidebarWidth]);
 
-  const handleMouseDown = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
+  const resizeTo = useCallback((clientX) => {
+    if (clientX == null) return;
+    setSidebarWidth(
+      Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, clientX)),
+    );
+  }, []);
 
-  // Listeners live in an effect tied to the drag state, so they are always
-  // removed on drag end — and on unmount mid-drag — instead of relying on a
-  // mouseup that may never fire.
-  useEffect(() => {
-    if (!isDragging) return;
+  /**
+   * A drag locks the cursor and the selection for the whole document, so every
+   * way out of the gesture has to run the same release: pointerup, a
+   * pointercancel when the browser takes the gesture over, a lost capture, and
+   * unmounting mid-drag. This must be stable — the unmount effect below keys
+   * off it, and an unstable version would re-run that effect on every render
+   * and clear the lock while the drag was still live.
+   */
+  const endResize = useCallback(() => {
+    setIsDragging(false);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+  }, []);
+
+  useEffect(() => endResize, [endResize]);
+
+  const startResize = useCallback((event) => {
+    event.preventDefault();
+    setIsDragging(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
-
-    const handleMouseMove = (e) => {
-      setSidebarWidth(
-        Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, e.clientX)),
-      );
-    };
-    const handleMouseUp = () => setIsDragging(false);
-
-    document.addEventListener("mousemove", handleMouseMove);
-    document.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [isDragging]);
+    // Capture keeps the drag tracking past the handle, but it is an
+    // enhancement: never let it take the gesture down if it is unavailable.
+    try {
+      sidebarHandleRef.current?.setPointerCapture(event.pointerId);
+    } catch {}
+  }, []);
 
   const sidebarContent = (
     <SidebarContent
@@ -117,10 +123,17 @@ export default function ChatLayout({
           {sidebarContent}
         </div>
         <button
+          ref={sidebarHandleRef}
           type="button"
           aria-label="Resize sidebar"
           className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center hover:bg-border/20 active:bg-border/30 transition-colors z-50 border-none bg-transparent p-0 ${isDragging ? "bg-border/20" : ""}`}
-          onMouseDown={handleMouseDown}
+          onPointerDown={startResize}
+          onPointerMove={(event) => {
+            if (isDragging) resizeTo(event.clientX);
+          }}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          onLostPointerCapture={endResize}
         >
           <div
             className={`w-1 h-12 rounded-full ${isDragging ? "bg-muted-foreground" : "bg-border"}`}

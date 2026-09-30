@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -85,6 +91,56 @@ describe("ChatLayout shell", () => {
     ]);
 
     expect(localStorage.getItem("hcai_sidebar_width")).toBe("260");
+  });
+
+  it("resizes while the pointer is held and clamps to the limits", async () => {
+    localStorage.clear();
+    render(<ChatLayout {...baseProps()} />);
+    const handle = screen.getByLabelText("Resize sidebar");
+    const aside = document.querySelector("aside");
+
+    fireEvent.pointerDown(handle, { clientX: 300, pointerId: 1 });
+    expect(document.body.style.cursor).toBe("col-resize");
+
+    fireEvent.pointerMove(handle, { clientX: 340, pointerId: 1 });
+    expect(aside).toHaveStyle({ width: "340px" });
+
+    // Both ends are clamped, not just the lower one.
+    fireEvent.pointerMove(handle, { clientX: 40, pointerId: 1 });
+    expect(aside).toHaveStyle({ width: "200px" });
+    fireEvent.pointerMove(handle, { clientX: 5000, pointerId: 1 });
+    expect(aside).toHaveStyle({ width: "600px" });
+
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+  });
+
+  it("releases the document cursor lock when the drag is cancelled", () => {
+    render(<ChatLayout {...baseProps()} />);
+    const handle = screen.getByLabelText("Resize sidebar");
+
+    fireEvent.pointerDown(handle, { clientX: 300, pointerId: 1 });
+    expect(document.body.style.cursor).toBe("col-resize");
+    expect(document.body.style.userSelect).toBe("none");
+
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+
+    expect(document.body.style.cursor).toBe("");
+    expect(document.body.style.userSelect).toBe("");
+  });
+
+  it("releases the document cursor lock when unmounted mid-drag", () => {
+    const { unmount } = render(<ChatLayout {...baseProps()} />);
+
+    fireEvent.pointerDown(
+      screen.getByLabelText("Resize sidebar"),
+      { clientX: 300, pointerId: 1 },
+    );
+    expect(document.body.style.cursor).toBe("col-resize");
+
+    unmount();
+
+    expect(document.body.style.cursor).toBe("");
+    expect(document.body.style.userSelect).toBe("");
   });
 
   it("reopens the conversation list through the mobile sheet", async () => {
