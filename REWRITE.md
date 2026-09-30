@@ -4,10 +4,10 @@
 
 | | |
 |---|---|
-| **Phase** | **P7 complete** → next: P8 (Composer + ArtifactPanel) |
+| **Phase** | **P8 complete** → next: P9 (delete legacy: `ui/`, radix-ui, framer-motion, tw-animate-css, adapters) |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 37 files / **501 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 38 files / **518 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -74,6 +74,48 @@ The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/
 store action that existed only to refresh the list after an import. Nothing else touched those
 paths, so no test needed changing. Restoring the feature means re-adding all of it from git
 history.
+
+---
+
+## Findings from P8 — read before touching the composer or the panel
+
+1. **framer-motion had exactly one user.** The whole dependency existed to animate two
+   conditional branches of the artifact panel. It is now gone from `src/`, and the replacement
+   is a project-owned `@keyframes` behind a Tailwind `--animate-*` token. The token is prefixed
+   `hcai-` specifically so it cannot collide with the `tw-animate-css` enter keyframes that P9
+   deletes. **Both the utility and the keyframe were grepped out of the built CSS** — Tailwind 4.2
+   silently ignores theme keys it does not recognise, and the P7 `scrollbar-gutter` finding is
+   the same trap: verify the CSS, do not assume the class works.
+2. **The panel's local `CustomLink` was dead code, and I nearly wrote up a security fix that
+   did not exist.** I was going to claim artifacts bypassed the external-link dialog. The code view
+   fences the source, so Streamdown never parsed a link out of it — there was never a link there
+   to make safe. The test I wrote instead pins the markup as inert, which is the true invariant.
+   The live version of that markup is the `sandbox="allow-scripts"` iframe, which has no
+   same-origin access. **Check what a duplicated component was actually reached by before
+   describing what removing it changes.**
+3. **`setPointerCapture` was called before the cursor lock and unguarded.** In any environment
+   without it the call throws, the rest of the handler never runs, and the drag does nothing. The
+   test suite found this: jsdom has no `setPointerCapture`. Capture is an enhancement; the lock
+   is not. The same bug would have hit a real browser with capture disabled.
+4. **A drag that only ends on `pointerup` never ends at all sometimes.** Both handles locked
+   `document.body`'s cursor and `user-select` for the duration. A `pointercancel` — the browser
+   taking the gesture over, a scroll starting — or unmounting mid-drag left the page showing a
+   resize cursor with no resize running, permanently. `endResize` is now one function reached from
+   pointerup, pointercancel, lostpointercapture and unmount, and it **has to be `useCallback`-stable**:
+   the unmount effect keys off it, and an unstable version clears the lock mid-drag.
+5. **A rejected promise inside an async event handler is a silent hang.** `processFile`'s image
+   branch rejected when `resizeImage` failed to decode, inside an `async` FileReader callback that
+   nothing held. The outer promise never settled, so `Promise.all` over the batch never returned
+   and the drop vanished with no UI and no caught error. Both read branches now resolve, because
+   every file the caller awaits must settle.
+6. **`44px` was a phone's number living in desktop code.** The composer's textarea resets to a
+   hardcoded height before measuring, but its resting height is a breakpoint — 44px small, 52px
+   `sm:`. Every send on a wide window fought its own min-height. `auto` lets the breakpoint win.
+   The reset before measuring is still required and now says why: `scrollHeight` never reports
+   less than the box's own height.
+7. **A hardcoded px value is not a responsive value.** Same shape as the `maxWidth` trap in the
+   panel: `Math.min(vw * 0.85, …)` is `0` before the first resize event, which would clamp a stored
+   width to nothing. Both now have a fallback that cannot clamp.
 
 ---
 
@@ -389,7 +431,7 @@ instead of patched mid-phase.
 | **P5** ✅ | Conversations: `src/stores/conversations.js` + `hooks/use-conversations.js` **deleted**; `SidebarContent` off `ui/scroll-area`; `db.js` caches one connection with seeded-record migration tests. **Import/export removed rather than rewritten** (−814 lines, −29 tests). +27 / −43 tests → **468 / 34 files**. | ✔ |
 | **P6** ✅ | Turn: `src/stores/turn.js` + `hooks/use-chat-stream.js` → **`hooks/use-chat-turn.js`** (`useChatStream` **deleted**); `lib/sse-parser.js` extracted so the parser test stops testing a copy of itself; `api-client.js` de-nested with the `doStream`↔`doFallback` recursion removed; rAF-coalesced deltas. 5 conversation props dropped from the hook, `setContextUsage` dropped from its return. 468 → **488 tests / 36 files**. | ✔ |
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
-| **P8** | Composer + ArtifactPanel (CSS transitions replace framer-motion) | ✔ |
+| **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
 | **P9** | Delete legacy: old components/hooks, `radix-ui`, `framer-motion`, `tw-animate-css`, `shadcn`, all adapters | ✔ |
 | **P10** | Verify: CLS vs baseline, smoke, lint/build, origin sync, AGENTS.md | ✔ |
 
@@ -508,8 +550,10 @@ Nothing may be deleted except by the phase listed here.
 | `components/chat/ThinkingIndicator.jsx` | 31 | **P7 ✅** | Reviewed, unchanged. |
 | `hooks/use-thread-scroll.js` | — | **P7 ✅** | New. 7 tests. |
 | `components/ui/scroll-area.jsx` | 76 | **Deleted P7 ✅** | Radix `ScrollArea` + `ScrollBar`; `MessageList` was the only consumer. |
-| `components/chat/ChatInput.jsx` | 342 | P8 | |
-| `components/chat/ArtifactPanel.jsx` | 424 | P8 | framer-motion → CSS |
+| `components/chat/ChatInput.jsx` | 342 | **P8 ✅** | File-read failures can no longer hang a drop; labelled controls; `auto` height reset instead of a hardcoded 44px. |
+| `components/chat/ArtifactPanel.jsx` | 424 | **P8 ✅** | **framer-motion deleted** (the app's only use). Reuses `Markdown`; drop is a project-owned opacity fade; resize releases on cancel/unmount; 12 tests where there were none. |
+| `components/chat/ChatLayout.jsx` | 171 | P2 ✅ / **P8 ✅** | Sidebar drag moved to pointer events with capture, matching the panel. Document-level mousemove/mouseup listeners gone. |
+| `app/globals.css` | — | **P8 ✅** | One addition: `--animate-hcai-fade-in` + keyframe. Opacity only, `hcai-` prefixed so it cannot collide with the `tw-animate-css` enter keyframes P9 removes. No palette or token values touched. |
 | `hooks/use-settings.js` | — | P3 ✅ | **Deleted** — replaced by `src/stores/settings.js` (single-writer rule). |
 | `hooks/use-media-query.js` | 30 | P1 | Trivial; re-home under `hooks/`. |
 | `components/layout/AppWrapper.jsx` | 18 | P2 | Becomes the provider root. |
@@ -524,9 +568,31 @@ Nothing may be deleted except by the phase listed here.
 |---|---|---|
 | 1 | Plain `overflow-y-auto` + `scrollbar-gutter: stable` (replaces Radix `ScrollArea`) | **P7 ✅** |
 | 2 | rAF-coalesced streaming deltas — one DOM update per frame | **P6 ✅** |
-| 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | P8 / P9 |
-| 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | P7 / P8 |
-| 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | P8 |
-| 6 | `setPointerCapture` on all drag handles, clamped and persisted | P8 |
+| 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | **P8 ✅ (app code)** / **P9** (primitives + ui) |
+| 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | **P8 ✅ (images)** / P9 (code blocks) |
+| 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | **Deferred — see below** |
+| 6 | `setPointerCapture` on all drag handles, clamped and persisted | **P8 ✅** |
 
-Baseline CLS/scroll-jank measurement: **not yet recorded** — capture before P7 replaces the scroll container.
+**Item 4, precisely:** image attachments already reserved their box through
+next/image's `width`/`height` attributes plus a `loaded` placeholder, so that
+half needed nothing. Code blocks are Streamdown's output and are still not
+reserved — P9, alongside the rest of the component-library work.
+
+**Item 5, deliberately deferred.** Moving the panel width out of the panel and
+onto a `grid-template-columns` track means lifting that state from
+`ArtifactPanel` into `ChatLayout`, which owns the row, and re-deciding the track
+in three states the panel currently handles entirely on its own: desktop,
+mobile (where the panel is `position: fixed` and must contribute a zero track),
+and fullscreen (where it is a fixed overlay). That is a layout refactor across
+three components with a real chance of a regression that neither the unit tests
+nor the smoke script can see — the smoke script measures the settings dialog at
+360×640, not the artifact panel at three widths.
+
+The cheaper half of the same problem is done: resizing no longer runs through
+per-element width writes, and the transition is suppressed during a drag so
+the thread does not reflow behind a moving edge. What remains is the row
+itself, and that belongs with P9, where the layout-affecting deletions land and
+the diff is expected to be large enough to review as a unit.
+
+Baseline CLS/scroll-jank measurement: **still not recorded** — P10, and it has to
+be captured against the `8aa44a6` baseline, not against P7's container.
