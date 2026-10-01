@@ -136,6 +136,30 @@ history.
    which `loadModels()` overwrites a tick later. Both fixed by driving the *catalog* and
    re-querying inside the assertion.
 
+8. ~~**Conversation titles can be stuck on "New Chat" forever.**~~ — **fixed in P10.** Two
+   causes, one already recorded above and one not. The second: `makeOnComplete` gated title
+   generation on `currentConversation.title === "New Chat" && finalMessages.length === 2`.
+   The message-count half made a single failed attempt *permanent* — an empty/errored first
+   turn returns before the title request ever runs, and from then on every turn has four
+   messages instead of two, so the condition can never be true again. The count is also
+   redundant: `title === "New Chat"` is the whole condition that matters. The guard is gone,
+   and the text now comes from the conversation's **first** user message rather than the one
+   just sent, since this can now fire on turn 3+. Two tests in `hooks/__tests__` — the happy
+   path, and the recovery — with the old guard restored to confirm the second one fails
+   (`expected 2 times, but got 1`).
+   The harness taught a trap worth keeping: a `mockResolvedValue(makeStreamResponse(...))`
+   hands *one* reader to every turn, so turn 2 sees an empty stream and takes the error path —
+   the test then failed for a reason that had nothing to do with the bug. It has to be
+   `mockImplementation(() => makeStreamResponse(...))`.
+9. ~~**Sidebar titles sat 46px in from the edge of a 260px sidebar.**~~ — **fixed in P10.**
+   `globals.css` styles lists "for Streamdown-rendered markdown" with
+   `ul:not([class*="list-none"]) { padding-left: 1.5em }`. The selector is global, so it also
+   hit the sidebar's `<ul>` — 12px of container `px-3` + 24px of prose indentation + 10px of
+   `pl-2.5`. The rule ships its own opt-out, so the list now carries `list-none`; smoke check
+   16 measures the title's distance from the sidebar's own left edge (22px) and fails at 46px.
+   The general form: **a rule written for one renderer, gated on a class it assumes the caller
+   opted into, is a rule that quietly styles everything else too.**
+
 ---
 
 ## Findings from P9 — read before touching the component layer
@@ -447,12 +471,14 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 12 | CLS under 0.1 | buffered `layout-shift` observer on a conversation restored from IndexedDB. **Current: 0.0002** |
 | 13 | artifact panel at three widths | the grid track: a real drag moves it 480 → 720 with `panelLeft === threadRight`; full-bleed + zero track at 390px |
 | 14 | conversation titled by the model | title read from **IndexedDB**, not the sidebar — see the trap below |
+| 15 | no React errors or warnings in the console | console captured from **first paint** (`Runtime.consoleAPICalled` + `Log.entryAdded`), not polled. Aimed at what React 19 actually says — not the `onError listener` string React 18 said and 19 does not, which is why an earlier version of this check could never fail. Excludes Simple Analytics, the dev font-preload hint and Chromium's own `verbose` DOM advice, each with a reason |
+| 16 | sidebar titles sit close to the edge | the prose `ul` rule above: title text measured from the sidebar's own left edge, so a collapsed sidebar cannot pass it by accident. **Current: 22px (was 46px)** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 17 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 19 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
@@ -509,8 +535,9 @@ held the fixed port so every later run died at launch.
 ## Out-of-scope defects observed
 
 Both surfaced in the P4 smoke run. `src/app/api/*` and the root layout were declared outside this
-rewrite's charter (frontend only), and upstream owns those files — so they were recorded here
-instead of patched mid-phase.
+rewrite's charter (frontend only), so they were recorded here instead of patched mid-phase — and both
+ended up fixed in P10 anyway, because a client that calls the endpoint, and a console that errors on
+every load, are not things a rewrite can honestly leave behind while documenting that it did.
 
 1. ~~**Conversation titles never generate — every new chat is titled "New Chat".**~~ —
    **fixed in P10** (`3d4344a`). It was listed because the charter was frontend-only, but a
@@ -524,10 +551,18 @@ instead of patched mid-phase.
    → `POST /api/chat` **500** on every title request. The client's fallback is a truncated copy
    of the first message, which looks like a title, so the failure was invisible. Reproduced on
    every live smoke run; smoke check 14 now fails on the reintroduced bug.
-2. **`src/app/layout.js:36` passes a *string* to React's `onError`.** — still open.
-   `onError="this.onerror=null;this.remove();"` on the Simple Analytics `<script>`. React expects
-   a function, so every page load logs `Expected onError listener to be a function, instead got a
-   value of `string` type` — and the fallback that removes a failed script tag never runs.
+2. ~~**`src/app/layout.js` passed a *string* to React's `onError`.**~~ — **fixed in P10**, but
+   the original diagnosis was wrong and the correction matters more than the fix.
+   `onError="this.onerror=null;this.remove();"` on the Simple Analytics `<script>` was recorded
+   as "logs `Expected onError listener to be a function` on every page load". **It does not:**
+   smoke now captures the console from first paint (check 15) and React 19 never emits that
+   string — it was React 18 behaviour, and the claim had simply never been checked. What was
+   true is that the handler never ran, so the fallback that removes a blocked script tag never
+   fired either. The handler is now a function, which means it lives in its own client
+   component (`components/layout/AnalyticsScript.jsx`): `layout.js` is a server component, and
+   putting the function there fails the static prerender with `Event handlers cannot be passed
+   to Client Component props`. Verified rather than asserted — smoke 15 is negative-controlled
+   on a React Aria label warning, which is a thing 19 actually says.
 
 ---
 
@@ -535,7 +570,7 @@ instead of patched mid-phase.
 
 | Phase | Deliverable | Revert point |
 |---|---|---|
-| **P0** | Baseline, invariant checklist, file→phase inventory, sync SHA | ✔ |
+| **P0** ✅ | Baseline, invariant checklist, file→phase inventory, sync SHA. **One gap, recorded not hidden:** the CLS baseline was never captured, so there is nothing to compare against. | ✔ |
 | **P1** ✅ | Foundations, ships nothing: `createStore` (15 tests) + `src/components/primitives/*` (23 tests) | ✔ |
 | **P2** ✅ | **Mechanical decomposition, zero behavior change:** `page.js` → `ChatApp` + thin shell; `ChatLayout` → `SidebarContent` / `Header`. 17 characterization tests added. | ✔ |
 | **P3** ✅ | Settings: `src/stores/settings.js` + dialog decomposed into `src/components/settings/*`; `hooks/use-settings.js` deleted (single-writer rule begins). 12 store tests + 4 switch tests. | ✔ |

@@ -341,11 +341,26 @@ export function useChatTurn({
             (c) => c.id === currentId,
           );
           const patch = { messages: finalMessages };
-          if (
-            currentConversation?.title === "New Chat" &&
-            finalMessages.length === 2
-          ) {
-            patch.title = await generateTitle(content, titleGenerationModel);
+          if (currentConversation?.title === "New Chat") {
+            // No `finalMessages.length === 2` guard here — it made one failed
+            // attempt permanent. A turn that errors returns before this runs,
+            // and a title request that fails falls back to the raw message, so
+            // the conversation keeps "New Chat" while its message count climbs
+            // past two and is then never titled at all. Retrying on every turn
+            // while still untitled is the whole condition that matters.
+            //
+            // The text comes from the conversation's first user message, not
+            // the one just sent: this can now fire on turn 3+, and the topic is
+            // still what the user originally asked about.
+            const firstUserMessage = finalMessages.find(
+              (m) => m.role === "user",
+            )?.content;
+            patch.title = await generateTitle(
+              typeof firstUserMessage === "string" && firstUserMessage.trim()
+                ? firstUserMessage
+                : content,
+              titleGenerationModel,
+            );
           }
           conversationsActions.patchConversation(currentId, patch);
           snapToActualUsage();

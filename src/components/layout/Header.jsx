@@ -77,6 +77,9 @@ export default function Header({
           variant="ghost"
           size="icon"
           onClick={onToggleSidebar}
+          // Icon-only, so the name has to be explicit. Without it this is a
+          // chevron to a screen reader, and React says so on every load.
+          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
           className="hidden md:flex h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
         >
           {sidebarOpen ? (
@@ -90,6 +93,7 @@ export default function Header({
             variant="ghost"
             size="icon"
             className="h-8 w-8"
+            aria-label="Open menu"
             onClick={() => onMobileSheetOpenChange(true)}
           >
             <Menu className="w-5 h-5 text-muted-foreground" />

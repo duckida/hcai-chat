@@ -3,10 +3,13 @@ import { Button } from "@/components/primitives/button";
 import { Input } from "@/components/primitives/input";
 import { Label } from "@/components/primitives/label";
 
-function SectionLabel({ htmlFor, children, description }) {
+function SectionLabel({ htmlFor, id, children, description }) {
   return (
     <div className="space-y-1">
       <Label
+        // `id` lets a control that `htmlFor` cannot reach — a React Aria Select,
+        // whose trigger is a button — point at this visible text instead.
+        id={id}
         htmlFor={htmlFor}
         className="text-[13px] font-bold text-muted-foreground uppercase tracking-widest pl-1"
       >
@@ -38,10 +41,18 @@ function SectionHeading({ title, description }) {
 
 function SwitchRow({ id, label, description, checked, onChange }) {
   const descriptionId = `${id}-description`;
+  const labelId = `${id}-label`;
   return (
     <div className="flex items-center justify-between py-3 px-4 bg-muted rounded-xl border border-border">
       <div>
+        {/* `htmlFor` alone does not name this control. It points at a <button>,
+            which is not a labelable element, so the association never reaches
+            the accessibility tree and every switch in Settings announced as
+            "switch, on" with nothing saying what it switches. React noticed:
+            "If you do not provide a visible label, you must specify an
+            aria-label or aria-labelledby attribute." */}
         <Label
+          id={labelId}
           htmlFor={id}
           className="text-[13px] font-bold text-foreground uppercase tracking-widest"
         >
@@ -59,6 +70,7 @@ function SwitchRow({ id, label, description, checked, onChange }) {
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-labelledby={labelId}
         aria-describedby={descriptionId}
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -81,6 +93,9 @@ function KeyInput({
   value,
   onChange,
   placeholder,
+  // What this field holds, for the reveal toggle's accessible name. Falls back
+  // to the placeholder, which is at least specific — "Show value" would not be.
+  label = placeholder,
   showValue,
   onToggleShow,
   error = false,
@@ -99,6 +114,9 @@ function KeyInput({
         variant="ghost"
         size="icon"
         onClick={onToggleShow}
+        // The eye icon is the whole control; without this it is an unlabelled
+        // button sitting on top of a password field.
+        aria-label={showValue ? `Hide ${label}` : `Show ${label}`}
         className="absolute right-2 top-0 h-full px-3 text-muted-foreground hover:text-foreground hover:bg-transparent transition-colors"
       >
         {showValue ? (

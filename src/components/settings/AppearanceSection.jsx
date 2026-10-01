@@ -82,10 +82,20 @@ export default function AppearanceSection({
       </div>
 
       <div className="space-y-3">
-        <SectionLabel description="Accent color palette for the interface.">
+        <SectionLabel
+          id="color-theme-label"
+          description="Accent color palette for the interface."
+        >
           Color Theme
         </SectionLabel>
-        <Select selectedKey={paletteTheme} onSelectionChange={onThemeChange}>
+        {/* A React Aria Select's trigger is a button, so the <label for> above
+            cannot name it and its hidden input warned on every render. Pointing
+            at the label element's id is the association that does work. */}
+        <Select
+          aria-labelledby="color-theme-label"
+          selectedKey={paletteTheme}
+          onSelectionChange={onThemeChange}
+        >
           <SelectTrigger className="w-full border-border bg-muted rounded-xl px-4 h-12 focus:bg-background focus:ring-4 focus:ring-ring">
             <SelectValue placeholder="Select Theme" />
           </SelectTrigger>

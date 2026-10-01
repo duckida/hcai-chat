@@ -259,6 +259,9 @@ export default function SidebarContent({
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
             type="text"
+            // A placeholder is not a label: it disappears as soon as there is
+            // text, leaving the field unnamed.
+            aria-label="Search chats"
             placeholder="Search chats..."
             value={searchQuery}
             onChange={(event) => onSearchChange(event.target.value)}
@@ -272,6 +275,12 @@ export default function SidebarContent({
           History
         </div>
 
+        {/* `list-none` on the ul below is not about bullets. globals.css styles
+            `ul` for Streamdown markdown with `padding-left: 1.5em`, gated on
+            `:not([class*="list-none"])` — so a list that does not opt out
+            inherits 24px of prose indentation on top of the container's px-3
+            and the row's pl-2.5, putting every title 46px in from the edge of
+            a 260px sidebar. */}
         {visibleConversations.length === 0 ? (
           <p className="px-2 py-6 text-center text-[13px] text-muted-foreground">
             {conversations.length === 0
@@ -279,7 +288,7 @@ export default function SidebarContent({
               : "No chats match your search"}
           </p>
         ) : (
-          <ul className="space-y-0.5">
+          <ul className="list-none space-y-0.5">
             {visibleConversations.map((conversation) => (
               <ConversationRow
                 key={conversation.id}

@@ -1,5 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generateTitle } from "@/lib/api-client";
 import { useChatTurn } from "@/hooks/use-chat-turn";
 import { resetConversations, useConversations } from "@/stores/conversations";
 import { resetTurn } from "@/stores/turn";
@@ -188,6 +189,80 @@ describe("useChatTurn", () => {
 
     expect(result.result.current.conversations.conversations).toHaveLength(1);
     expect(result.result.current.conversations.activeConversation).toBeTruthy();
+  });
+
+  it("titles a conversation from the first turn", async () => {
+    vi.stubGlobal(
+      "fetch",
+      // Per turn, not per test: a single shared response has one reader, and
+      // it is exhausted after the first turn — turn 2 would then see an empty
+      // stream and take the error path instead of reaching the title.
+      vi
+        .fn()
+        .mockImplementation(() =>
+          makeStreamResponse([delta("Hello"), "data: [DONE]\n\n"]),
+        ),
+    );
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("what is a semaphore", []);
+    });
+
+    expect(generateTitle).toHaveBeenCalledTimes(1);
+    expect(generateTitle).toHaveBeenCalledWith(
+      "what is a semaphore",
+      "qwen/qwen3.6-flash",
+    );
+    await waitFor(() =>
+      expect(result.result.current.conversations.conversations[0].title).toBe(
+        "Generated Title",
+      ),
+    );
+  });
+
+  it("titles a conversation that never got one, however many turns it took", async () => {
+    // The first turn can leave "New Chat" behind: a failed title request falls
+    // back to the raw message, and an empty/error turn returns before it ever
+    // runs. Either way the conversation is still titled "New Chat", and it must
+    // recover on the next turn rather than needing exactly two messages.
+    vi.stubGlobal(
+      "fetch",
+      // Fresh response per turn — see the note in the test above.
+      vi
+        .fn()
+        .mockImplementation(() =>
+          makeStreamResponse([delta("Hello"), "data: [DONE]\n\n"]),
+        ),
+    );
+    const result = await setup();
+
+    generateTitle.mockResolvedValueOnce("New Chat");
+    await act(async () => {
+      await result.result.current.stream.send("what is a semaphore", []);
+    });
+    expect(
+      result.result.current.conversations.conversations[0].title,
+    ).toBe("New Chat");
+    expect(result.result.current.conversations.messages).toHaveLength(2);
+
+    generateTitle.mockResolvedValueOnce("Generated Title");
+    await act(async () => {
+      await result.result.current.stream.send("and a mutex", []);
+    });
+
+    expect(generateTitle).toHaveBeenCalledTimes(2);
+    // From the conversation's first message, not the one just typed: the topic
+    // is what the user originally asked about.
+    expect(generateTitle).toHaveBeenLastCalledWith(
+      "what is a semaphore",
+      "qwen/qwen3.6-flash",
+    );
+    await waitFor(() =>
+      expect(result.result.current.conversations.conversations[0].title).toBe(
+        "Generated Title",
+      ),
+    );
   });
 
   it("stores an error placeholder when the response is empty", async () => {

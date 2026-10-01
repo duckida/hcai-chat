@@ -129,8 +129,29 @@ function connect(url) {
   const ws = new WebSocket(url);
   let seq = 0;
   const pending = new Map();
+  // Console output, recorded alongside command replies. The handler below
+  // dropped anything without a matching request id, which made a React warning
+  // invisible to this script — and the analytics script's string `onError` was
+  // one, on every single page load. Events arrive as a stream, so they are
+  // recorded as they come rather than polled for.
+  const consoleEntries = [];
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
+    if (msg.method === "Runtime.consoleAPICalled") {
+      consoleEntries.push({
+        level: msg.params.type,
+        text: (msg.params.args || [])
+          .map((a) => a.value ?? a.description ?? a.unserializableValue ?? "")
+          .join(" ")
+          .slice(0, 300),
+      });
+    }
+    if (msg.method === "Log.entryAdded") {
+      consoleEntries.push({
+        level: msg.params.entry.level,
+        text: String(msg.params.entry.text || "").slice(0, 300),
+      });
+    }
     if (!msg.id || !pending.has(msg.id)) return;
     const { resolve, reject } = pending.get(msg.id);
     pending.delete(msg.id);
@@ -148,7 +169,7 @@ function connect(url) {
       pending.set(id, { resolve, reject });
       ws.send(JSON.stringify({ id, method, params }));
     });
-  return { send, close: () => ws.close(), opened };
+  return { send, close: () => ws.close(), opened, consoleEntries };
 }
 
 async function main() {
@@ -163,7 +184,7 @@ async function main() {
     const target = await pageTarget(proc);
     const connection = connect(target.webSocketDebuggerUrl);
     close = connection.close;
-    const { send, opened } = connection;
+    const { send, opened, consoleEntries } = connection;
     await opened;
 
     await send("Page.enable");
@@ -233,6 +254,11 @@ async function main() {
     };
 
     const htmlClass = () => evalJs(`document.documentElement.className`);
+
+    // Enabled before the first navigation, so a warning emitted on first paint
+    // is captured rather than missed.
+    await send("Runtime.enable", {});
+    await send("Log.enable", {});
 
     /**
      * A real pointer move at the element's centre.
@@ -833,6 +859,63 @@ async function main() {
     })()`);
     await navigate(3500);
     const titleProbe = "What is the capital of Portugal? Answer in one word.";
+    // Nothing else in this script looks at the console, and a React warning
+    // that repeats on every page load is exactly the kind that stops being
+    // noticed. This is aimed at what React 19 actually emits — not at the
+    // `onError listener` string React 18 complained about and React 19 does
+    // not, which is why an earlier version of this check could never fail.
+    // `verbose` is excluded: that is Chromium's own DOM advice, not React.
+    const reactNoise = consoleEntries.filter(
+      (e) =>
+        (e.level === "error" || e.level === "warning") &&
+        // Excluded, with reasons: Simple Analytics nags about the localhost
+        // hostname; Next's dev-only font preload hint is a resource warning
+        // rather than a React one; both are noise that would train the check to
+        // be ignored.
+        !/Simple Analytics|preloaded using link preload|\.woff2?|DevTools/i.test(
+          e.text,
+        ),
+    );
+    check(
+      "no React errors or warnings in the console",
+      reactNoise.length === 0,
+      reactNoise.length
+        ? JSON.stringify(reactNoise.slice(0, 2)) +
+            (process.env.SMOKE_DEBUG
+              ? " " +
+                JSON.stringify(
+                  await evalJs(`(() => {
+                  const bad = [...document.querySelectorAll('button, [role="switch"], input, [role="checkbox"]')]
+                    .filter((el) => {
+                      const name = el.getAttribute('aria-label')
+                        || (el.getAttribute('aria-labelledby') && document.getElementById(el.getAttribute('aria-labelledby'))?.textContent)
+                        || (el.textContent || '').trim()
+                        || el.getAttribute('title');
+                      return !name;
+                    })
+                    .map((el) => {
+                      const ancestry = [];
+                      let node = el;
+                      for (let d = 0; d < 4 && node; d++) {
+                        ancestry.push(
+                          node.tagName.toLowerCase() +
+                            (node.getAttribute('data-slot') ? '[' + node.getAttribute('data-slot') + ']' : '') +
+                            (node.getAttribute('role') ? '{' + node.getAttribute('role') + '}' : ''),
+                        );
+                        node = node.parentElement;
+                      }
+                      return ancestry.join(' < ');
+                    });
+                  return bad;
+                })()`),
+                )
+              : "")
+        : `clean (${consoleEntries.length} entries, ${consoleEntries.filter((e) => e.level === "verbose").length} verbose)` +
+            (process.env.SMOKE_DEBUG
+              ? " " + JSON.stringify(consoleEntries.slice(0, 12))
+              : ""),
+    );
+
     const canTitle = await typeInto("textarea", titleProbe);
     if (canTitle) {
       await pressEnter("textarea");
@@ -881,6 +964,34 @@ async function main() {
         "conversation is titled by the model, not the truncated fallback",
         false,
         "composer unavailable",
+      );
+    }
+
+    // A conversation row exists now, so the sidebar's prose rule can be
+    // measured. globals.css gives every `ul` without `list-none` a
+    // `padding-left: 1.5em` meant for Streamdown markdown; on top of the
+    // container's px-3 and the row's pl-2.5 that put every title 46px in from
+    // the edge of a 260px sidebar. Measured from the sidebar's own left edge
+    // so a collapsed sidebar cannot make this pass by accident.
+    const titleInset = await evalJs(`(() => {
+      const aside = document.querySelector('aside');
+      if (!aside || !aside.getClientRects().length) return null;
+      const pencil = document.querySelector('[aria-label="Rename"]');
+      const li = pencil && pencil.closest('li');
+      const btn = li && li.querySelector('button');
+      if (!btn || !btn.getClientRects().length) return null;
+      return Math.round(btn.getBoundingClientRect().left - aside.getBoundingClientRect().left);
+    })()`);
+    if (typeof titleInset === "number") {
+      check(
+        "sidebar titles sit close to the edge, not indented by the prose rule",
+        titleInset > 0 && titleInset <= 30,
+        `inset=${titleInset}px (was 46px)`,
+      );
+    } else {
+      skip(
+        "sidebar titles sit close to the edge, not indented by the prose rule",
+        "no conversation row visible",
       );
     }
   } catch (e) {

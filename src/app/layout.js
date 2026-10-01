@@ -1,6 +1,7 @@
 import { Inter } from "next/font/google";
 import "./globals.css";
 import "katex/dist/katex.min.css";
+import AnalyticsScript from "@/components/layout/AnalyticsScript";
 import AppWrapper from "@/components/layout/AppWrapper";
 
 const inter = Inter({
@@ -30,11 +31,7 @@ export default function RootLayout({ children }) {
     >
       <head>
         <link rel="icon" href="https://hackclub.com/favicon.ico" />
-        <script
-          async
-          src="https://scripts.simpleanalyticscdn.com/latest.js"
-          onError="this.onerror=null;this.remove();"
-        />
+        <AnalyticsScript />
         <script
           // biome-ignore lint/security/noDangerouslySetInnerHtml: FOUC prevention for dark mode
           dangerouslySetInnerHTML={{

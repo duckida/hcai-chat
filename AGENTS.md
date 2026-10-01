@@ -157,6 +157,24 @@ Traps, all of which have cost real debugging time:
   check that scraped the sidebar and matched a nav button called `"Settings"`,
   and a header-gating check that asserted on a DOM node React had already
   replaced. A green check is not evidence; a red one under a deliberate break is.
+- **A styling rule written for one renderer styles everything else too.** `globals.css`
+  indents markdown lists with `ul:not([class*="list-none"]) { padding-left: 1.5em }`. The
+  selector is global, so it also caught the sidebar's conversation list — titles sat 46px in
+  from the edge of a 260px sidebar, and nobody saw it as a bug because it read as padding.
+  `list-none` is the rule's own opt-out. Before adding a `:not([class*="..."])` gate, grep for
+  the class it expects callers to carry.
+- **React 19 does not warn about everything people assume it warns about.** Passing a *string*
+  event handler used to log `Expected onError listener to be a function`; 19 does not say it,
+  so a console check aimed at that string can never fail (that was one of the checks in this
+  repo). Smoke now captures the console from first paint and asserts on what 19 actually
+  emits — and note the limit: React Aria warns about missing labels only on **its own**
+  controls. A plain `<button role="switch">` with no accessible name says nothing at all, so
+  those names belong in a unit test (`components/settings/__tests__/chrome.test.jsx`), not in
+  the console.
+- **A shared stream response is a one-shot reader.** `mockResolvedValue(makeStreamResponse(..))`
+  hands the same reader to every turn; the second turn sees an empty stream and takes the error
+  path, so a two-turn test fails for a reason unrelated to what it is testing. Use
+  `mockImplementation(() => makeStreamResponse(...))`.
 - **Reset stores in `beforeEach`** (table above).
 - **`vi.spyOn(globalThis.indexedDB, "open")` does not intercept
   fake-indexeddb.** Use a stand-in factory with a counter.
