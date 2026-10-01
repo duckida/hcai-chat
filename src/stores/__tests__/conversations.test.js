@@ -15,7 +15,6 @@ const sampleConversation = (overrides = {}) => ({
   title: "Test",
   createdAt: "2025-01-01T00:00:00.000Z",
   messages: [{ role: "user", content: "hi" }],
-  artifactPanelOpen: false,
   model: "xiaomi/mimo-v2.5",
   contextUsage: 0,
   ...overrides,

@@ -159,6 +159,35 @@ history.
    16 measures the title's distance from the sidebar's own left edge (22px) and fails at 46px.
    The general form: **a rule written for one renderer, gated on a class it assumes the caller
    opted into, is a rule that quietly styles everything else too.**
+10. ~~**The artifact panel could not be closed, paid 480px for nothing, and blanked when
+    artifacts were switched off.**~~ — **fixed.** Three reports, two root causes.
+    **A: an effect wrote the state the Close button writes.** `ChatApp` opened the panel
+    whenever `artifactsEnabled && isDesktop && !open`, with `artifactPanelOpen` in its own
+    dependency list — so the click flipped it and the effect flipped it straight back in the
+    same commit. Closing was impossible while the toggle was on. **B: open-state was
+    remembered, the thing it referred to was not.** `artifactPanelOpen` lived on the
+    conversation while what the panel could show was re-derived and gated on the global
+    toggle, so the two disagreed: New Chat wrote `artifactsEnabled && isDesktop` into the
+    conversation (480px track, `ArtifactPanel` returns `null` with no artifacts — an empty
+    column), and an existing artifact chat with the toggle off showed nothing at all.
+    The fix is to derive rather than remember: `open = hasArtifact && !dismissed`, where
+    `dismissed` is component state that forgets itself when the conversation changes. Nothing
+    persists, which is what makes "come back to an artifact chat and it is open" work, and
+    a chat with nothing to show cannot reach a non-zero track by construction.
+    `artifactPanelOpen` is gone from the store, `newConversation` and `use-chat-turn`.
+    What did **not** change: the *message body* still follows the toggle (a pinned test), so
+    with artifacts off you see the source in the thread and the rendering in the panel — the
+    request was about the panel opening, and the body's behaviour was already deliberate.
+    Five tests in `components/chat/__tests__/ArtifactPanelVisibility.test.jsx`, each
+    negative-controlled: auto-open restored → `expected 480 to be +0`; open-on-toggle → two
+    phantom-track failures; toggle gate restored → `expected +0 to be 480`. Two traps from
+    writing them. **A green negative control is not automatically evidence** — the first two
+    I wrote passed anyway, one because its dependency array threw before the assertion could
+    run and one because its condition was `!dismissed`, a tautology once dismissed. It has to
+    key off the *derived* open state, exactly as the shipped effect did. And **jsdom matches
+    no media query**, so `isDesktop` is false in every test: the track is 0 in all five cases
+    and the phantom check could not have failed. The file pins `matchMedia` to a desktop
+    viewport, which is the only thing giving those assertions something to be wrong about.
 
 ---
 
@@ -615,7 +644,7 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 
 ### Features & gating
 
-- [x] Artifacts are parsed and the panel opens **only** when the artifacts toggle is on. (`f3f3e4d`) — `MessageList` "renders an assistant message containing HTML artifacts" / "does not strip HTML fences when artifacts are disabled" / "shows the generating artifact state only when artifacts are enabled" / "renders streaming content with HTML fences as plain text when artifacts are disabled"
+- [x] Artifacts are parsed and the **message body** follows the toggle; the **panel** follows the conversation. (`f3f3e4d`, P10 finding 10) — The body half: `MessageList` "renders an assistant message containing HTML artifacts" / "does not strip HTML fences when artifacts are disabled" / "shows the generating artifact state only when artifacts are enabled" / "renders streaming content with HTML fences as plain text when artifacts are disabled". The panel half changed on request: a chat that already owns an artifact opens it even with the toggle off, because switching artifacts off for the next chat used to blank it when you came back (`ArtifactPanelVisibility` "keeps the panel available after artifacts are switched off"). What the panel never does is spend a track on nothing (`ArtifactPanelVisibility` "closes when dismissed, and does not reopen behind the user" / "leaves the track collapsed when a new chat has nothing to show" / "does not reserve the track for a conversation with nothing to show") — all five negative-controlled, and they pin `matchMedia` to a desktop viewport because jsdom otherwise reports a 0px track in every case
 - [x] Web search + artifacts can be enabled **at the same time**. (`a2e4c60`) — `ChatApp` "keeps both on when both are switched on", and "sends both capabilities to the model for one request" asserts one POST carries `artifacts: true` **and** `web_search` in `tools`. The settings half alone would have passed while the request still dropped one
 - [x] Web search, agent mode and calculator are disabled for models without tool support. (`396a4f3`) — `ChatApp` "turns web search and agent mode off when the model cannot call tools" (and off in storage, so it does not return on reload) / "disables the toggles in the header…" (native `disabled`, tooltip explains why). Driven by the **catalog**, not a store write: `loadModels()` on mount overwrites a seeded store, which is how the first version of this test passed against a live, enabled button
 - [x] ~~Import/export buttons live in Settings only, not the sidebar.~~ — **moot: feature deleted in P5**

@@ -13,6 +13,7 @@ import { useChatTurn } from "@/hooks/use-chat-turn";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
 import { extractHtmlArtifacts } from "@/lib/artifacts";
+import { getMessageText } from "@/lib/messages";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
 import { useConversations } from "@/stores/conversations";
 import { loadModels, useModels } from "@/stores/models";
@@ -46,59 +47,38 @@ export default function ChatApp({
     agentModeEnabled: settings.agentModeEnabled,
     maxTokens: settings.maxTokens,
     toolsSupported,
-    isDesktop,
   });
 
-  // Reset streaming accumulators whenever the active conversation changes,
-  // and persist the panel state from the newly-active conversation.
+  const [artifactFullscreen, setArtifactFullscreen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
+  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
+  const [hasE2bKey, setHasE2bKey] = useState(false);
+
+  // Whether the panel has been dismissed on this visit to the conversation on
+  // screen. Deliberately not stored on the conversation: returning to a chat
+  // that owns an artifact should reopen it, which is the whole reason it is
+  // forgotten rather than remembered.
+  const [panelDismissed, setPanelDismissed] = useState(false);
+
+  const initialSearchEnabledRef = useRef(initialSearchEnabled);
+  const hasAutoSentRef = useRef(false);
+  const hadStreamingArtifactRef = useRef(false);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
     const conv = conversations.conversations.find(
       (c) => c.id === conversations.activeConversation,
     );
     stream.resetForConversation(conv ?? null);
-    setArtifactPanelOpen(conv?.artifactPanelOpen ?? false);
+    setPanelDismissed(false);
     // activeConversation is the real dependency; conversations.find returns a
     // stable reference for the same id, so listing it would re-run on every
     // messages patch.
   }, [conversations.activeConversation]);
 
-  const [artifactPanelOpen, setArtifactPanelOpen] = useState(false);
-  const [artifactFullscreen, setArtifactFullscreen] = useState(false);
-  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
-  const [hasE2bKey, setHasE2bKey] = useState(false);
-
-  const initialSearchEnabledRef = useRef(initialSearchEnabled);
-  const hasAutoSentRef = useRef(false);
-
-  // Persist the artifact panel state onto the active conversation.
   const handleToggleArtifactPanel = useCallback(() => {
-    setArtifactPanelOpen((prev) => {
-      const next = !prev;
-      if (conversations.activeConversation) {
-        conversations.patchConversation(conversations.activeConversation, {
-          artifactPanelOpen: next,
-        });
-      }
-      return next;
-    });
-  }, [conversations]);
-
-  // Open the panel alongside artifacts mode on desktop.
-  useEffect(() => {
-    if (
-      settings.artifactsEnabled &&
-      isDesktop &&
-      !artifactPanelOpen &&
-      conversations.activeConversation
-    ) {
-      setArtifactPanelOpen(true);
-      conversations.patchConversation(conversations.activeConversation, {
-        artifactPanelOpen: true,
-      });
-    }
-  }, [settings.artifactsEnabled, isDesktop, artifactPanelOpen, conversations]);
+    setPanelDismissed((prev) => !prev);
+  }, []);
 
   // Models that cannot call tools must not advertise tool-backed features.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
@@ -144,26 +124,50 @@ export default function ChatApp({
     };
   }, [settings.selectedModel]);
 
-  // Derive artifacts from persisted messages (only when artifacts mode is on)
+  // Artifacts the committed thread owns. Never gated on the artifacts toggle:
+  // a chat that already produced one keeps it, so switching artifacts off for
+  // the next chat cannot blank the panel when you come back to this one. The
+  // text goes through getMessageText because content parts are stored, and
+  // extractHtmlArtifacts only reads strings.
   const messageArtifacts = useMemo(() => {
-    if (!settings.artifactsEnabled) return [];
     const allArtifacts = [];
     for (const msg of conversations.messages) {
       if (msg.role === "assistant") {
-        const { artifacts } = extractHtmlArtifacts(msg.content);
+        const { artifacts } = extractHtmlArtifacts(getMessageText(msg.content));
         allArtifacts.push(...artifacts);
       }
     }
     return allArtifacts;
-  }, [conversations.messages, settings.artifactsEnabled]);
+  }, [conversations.messages]);
 
-  // Derive streaming artifact from live streaming content (only when
-  // artifacts mode is on — otherwise HTML fences are plain chat text)
+  // The toggle still governs whether a thread *produces* artifacts: with it off,
+  // a fresh chat streams nothing into the panel and HTML lands as plain chat
+  // text. Once this conversation owns an artifact it streams them too, so a new
+  // one does not appear only after the message commits.
+  const streamArtifacts =
+    settings.artifactsEnabled || messageArtifacts.length > 0;
+
   const { streamingArtifact } = useMemo(() => {
-    if (!settings.artifactsEnabled || !stream.streamingContent)
+    if (!streamArtifacts || !stream.streamingContent)
       return { streamingArtifact: null };
     return extractHtmlArtifacts(stream.streamingContent);
-  }, [stream.streamingContent, settings.artifactsEnabled]);
+  }, [stream.streamingContent, streamArtifacts]);
+
+  // Open whenever there is something to show and the user has not dismissed it
+  // on this visit. Both branches of the guard are needed: artifacts that exist,
+  // and a fence still arriving.
+  const artifactPanelOpen =
+    !panelDismissed && (messageArtifacts.length > 0 || !!streamingArtifact);
+
+  // An arriving artifact reopens a panel that was closed before the answer
+  // finished — otherwise the user closes it once mid-turn and never sees the
+  // thing the turn was for.
+  useEffect(() => {
+    if (streamingArtifact && !hadStreamingArtifactRef.current) {
+      setPanelDismissed(false);
+    }
+    hadStreamingArtifactRef.current = !!streamingArtifact;
+  }, [streamingArtifact]);
 
   // Derive total cost from persisted messages
   const totalCost = useMemo(() => {
@@ -177,10 +181,11 @@ export default function ChatApp({
   }, [conversations.messages]);
 
   const handleNewChat = useCallback(() => {
-    conversations.newConversation({
-      artifactPanelOpen: settings.artifactsEnabled && isDesktop,
-    });
-  }, [conversations, settings.artifactsEnabled, isDesktop]);
+    // No override: a fresh chat has no artifacts, so the panel derives closed
+    // with nothing to open onto. Carrying the toggle over would leave the third
+    // grid track paid for a panel that renders nothing.
+    conversations.newConversation();
+  }, [conversations]);
 
   const handleModelChange = useCallback(
     (model) => {

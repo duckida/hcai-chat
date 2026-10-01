@@ -64,7 +64,6 @@ export function useChatTurn({
   agentModeEnabled,
   maxTokens,
   toolsSupported,
-  isDesktop,
 }) {
   const turn = useTurn();
 
@@ -104,7 +103,6 @@ export function useChatTurn({
           title: "New Chat",
           createdAt: new Date().toISOString(),
           messages: [],
-          artifactPanelOpen: artifactsEnabled && isDesktop,
           model: selectedModel,
           contextUsage: 0,
         });
@@ -554,7 +552,6 @@ export function useChatTurn({
     [
       agentModeEnabled,
       artifactsEnabled,
-      isDesktop,
       maxTokens,
       selectedModel,
       thinkingEnabled,

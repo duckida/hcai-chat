@@ -136,7 +136,6 @@ export const conversationsActions = {
       title: "New Chat",
       createdAt: new Date().toISOString(),
       messages: [],
-      artifactPanelOpen: false,
       model: settingsStore.getState().selectedModel,
       contextUsage: 0,
       ...overrides,

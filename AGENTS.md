@@ -157,6 +157,15 @@ Traps, all of which have cost real debugging time:
   check that scraped the sidebar and matched a nav button called `"Settings"`,
   and a header-gating check that asserted on a DOM node React had already
   replaced. A green check is not evidence; a red one under a deliberate break is.
+- **A measurement that is constant in the test environment can never fail.** jsdom matches no
+  media query, so `useIsDesktop()` is `false` in every test and `ChatLayout`'s panel track is
+  always `0px` — a check for "the track is wrongly reserved for a panel that rendered nothing"
+  passed against exactly that. Anything asserting on viewport-dependent layout has to pin
+  `window.matchMedia` to a desktop viewport first (`components/chat/__tests__/ArtifactPanelVisibility.test.jsx`).
+  The same class of failure: a negative control you wrote to prove a check has teeth, which
+  passes because *your break* was malformed — its dependency array threw before the assertion
+  ran, or its condition was already tautological. If the break does not fail the check, the
+  check is not yet doing anything.
 - **A styling rule written for one renderer styles everything else too.** `globals.css`
   indents markdown lists with `ul:not([class*="list-none"]) { padding-left: 1.5em }`. The
   selector is global, so it also caught the sidebar's conversation list — titles sat 46px in
