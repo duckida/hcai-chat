@@ -188,6 +188,26 @@ history.
     no media query**, so `isDesktop` is false in every test: the track is 0 in all five cases
     and the phantom check could not have failed. The file pins `matchMedia` to a desktop
     viewport, which is the only thing giving those assertions something to be wrong about.
+11. ~~**Streaming a long answer filled the page, the chat bar disappeared, and nothing would
+    scroll.**~~ — **fixed.** One missing class. The thread column is a *grid item*
+    (`ChatLayout`'s `col-start-2` div), and a grid item's `min-height` defaults to `auto`:
+    its content-based minimum. So the answer's own height became the row's minimum — the row
+    grew to 5664px inside an `h-screen overflow-hidden` grid, `main` grew with it (5608px),
+    the thread's scroll box measured `clientHeight === scrollHeight` (5452 — it did not
+    think it was overflowing, because it had *grown* instead), and the composer sat at
+    `bottom: 5664`, below a viewport that has no scrollbar to reach it. Both reported
+    symptoms have that one cause: you cannot scroll because neither the page nor the thread
+    believes there is anything to scroll to. `min-h-0` on that div, with a comment saying
+    why, is the whole fix: the item's minimum contribution becomes 0, the track fills the
+    viewport instead of the content, and the thread scrolls inside it — 588px box over
+    5796px of content, composer pinned at `bottom: 800` through a 45s stream while the tail
+    follows. The artifact panel was checked for the same flaw and is safe: its content
+    region is `overflow-hidden`, which zeroes the automatic minimum. **No unit test can ever
+    catch this** — jsdom has no layout engine, every box measures 0 with or without the
+    class — so the check is smoke 17: seed a 12,870px conversation, assert the composer's
+    bottom is inside the viewport, the thread actually scrolls, and the page does not.
+    Negative-controlled by dropping the class: `composerBottom: 13016` against a 900px
+    viewport, `clientH === scrollH`, `scrolled: 0`.
 
 ---
 
@@ -502,12 +522,13 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 14 | conversation titled by the model | title read from **IndexedDB**, not the sidebar — see the trap below |
 | 15 | no React errors or warnings in the console | console captured from **first paint** (`Runtime.consoleAPICalled` + `Log.entryAdded`), not polled. Aimed at what React 19 actually says — not the `onError listener` string React 18 said and 19 does not, which is why an earlier version of this check could never fail. Excludes Simple Analytics, the dev font-preload hint and Chromium's own `verbose` DOM advice, each with a reason |
 | 16 | sidebar titles sit close to the edge | the prose `ul` rule above: title text measured from the sidebar's own left edge, so a collapsed sidebar cannot pass it by accident. **Current: 22px (was 46px)** |
+| 17 | a tall thread scrolls while the composer stays on screen | a seeded 12,870px conversation: composer bottom inside the viewport, `scrollHeight > clientHeight` with a real `scrollTop` change, page itself not scrollable. **P10 finding 11 — the one class of layout bug no jsdom test can see** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 19 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 20 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's

@@ -994,6 +994,75 @@ async function main() {
         "no conversation row visible",
       );
     }
+
+    // ---- 17. a tall thread scrolls without pushing the composer off-screen ----
+    // A grid item's `min-height` defaults to `auto`, so an answer taller than
+    // the viewport grew the row past `h-screen`, where the grid's
+    // `overflow-hidden` clipped the composer below the fold and left nothing
+    // scrollable — you could not scroll because the page was not scrollable
+    // and the thread did not think it was overflowing either. Only a real
+    // layout engine can see this; jsdom measures everything at zero.
+    await evalJs(`(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('hcai-chat', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const line = 'the quick brown fox jumps over the lazy dog and keeps going. ';
+      const body = Array.from({ length: 60 }, (_, i) =>
+        'Section ' + i + '. ' + line.repeat(8)
+      ).join(String.fromCharCode(10, 10));
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('conversations', 'readwrite');
+        const store = tx.objectStore('conversations');
+        store.clear();
+        store.put({
+          id: 'smoke-tall',
+          title: 'A very long answer',
+          createdAt: new Date().toISOString(),
+          model: 'xiaomi/mimo-v2.5',
+          contextUsage: 0,
+          messages: [
+            { role: 'user', content: 'tell me everything' },
+            { role: 'assistant', content: body },
+          ],
+        });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      return body.length;
+    })()`);
+    await navigate(3500);
+
+    const tall = await evalJs(`(() => {
+      const ta = document.querySelector('textarea[aria-label="Message"]');
+      const section = document.querySelector('section[aria-label="Conversation"]');
+      if (!ta || !section) return { error: 'missing nodes' };
+      const composerBottom = Math.round(ta.getBoundingClientRect().bottom);
+      const clientH = section.clientHeight;
+      const scrollH = section.scrollHeight;
+      section.scrollTop = scrollH;
+      const scrolled = Math.round(section.scrollTop);
+      section.scrollTop = 0;
+      return {
+        viewport: window.innerHeight,
+        composerBottom,
+        clientH,
+        scrollH,
+        scrolled,
+        pageScrollable:
+          document.documentElement.scrollHeight > window.innerHeight,
+      };
+    })()`);
+    check(
+      "a tall thread scrolls while the composer stays on screen",
+      !tall.error &&
+        tall.composerBottom <= tall.viewport + 1 &&
+        tall.scrollH > tall.clientH + 1 &&
+        tall.scrolled > 0 &&
+        !tall.pageScrollable,
+      JSON.stringify(tall),
+    );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {

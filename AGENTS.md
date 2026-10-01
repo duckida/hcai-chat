@@ -166,6 +166,13 @@ Traps, all of which have cost real debugging time:
   passes because *your break* was malformed — its dependency array threw before the assertion
   ran, or its condition was already tautological. If the break does not fail the check, the
   check is not yet doing anything.
+- **jsdom has no layout engine at all, so a layout bug lives only in the browser.** A grid
+  item's `min-height` defaults to `auto` — its content-based minimum — so a tall answer grew
+  `ChatLayout`'s row past `h-screen`, where `overflow-hidden` clipped the composer below the
+  fold and neither the page nor the thread had anything to scroll. Every box measures `0`
+  under jsdom with or without `min-h-0`, so no unit test could have seen it; the check is
+  `scripts/smoke.mjs` seeding a 12,870px conversation and measuring the composer's bottom
+  against the real viewport.
 - **A styling rule written for one renderer styles everything else too.** `globals.css`
   indents markdown lists with `ul:not([class*="list-none"]) { padding-left: 1.5em }`. The
   selector is global, so it also caught the sidebar's conversation list — titles sat 46px in

@@ -255,7 +255,12 @@ export default function ChatLayout({
         </button>
       </aside>
 
-      <div className="col-start-2 flex flex-col min-w-0 relative">
+      {/* A grid item's `min-height` defaults to `auto`, which means its
+          content-based minimum: a tall thread would push the row past the
+          viewport, and the grid's `overflow-hidden` would clip the composer
+          below it with nothing left to scroll. `min-h-0` is what keeps the row
+          at the viewport's height and the thread scrolling inside it instead. */}
+      <div className="col-start-2 flex flex-col min-w-0 min-h-0 relative">
         <Header
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
