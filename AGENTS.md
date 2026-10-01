@@ -27,7 +27,7 @@ renders HTML the model emits. It talks to the Hack Club AI proxy
   still exists but is **not loaded** (there is no `@config` directive) — treat
   it as dead.
 - **Components**: **React Aria Components** in `src/components/primitives/`.
-  One Radix holdout: `src/components/ui/tooltip.jsx` (see the exception below)
+  No Radix, no shadcn; React Aria Components throughout, plus `class-variance-authority`
 - **Icons**: `lucide-react`
 - **API**: Next.js API routes (serverless)
 - **Streaming**: AI SDK v7 (`ai` + `@openrouter/ai-sdk-provider`)
@@ -72,7 +72,6 @@ because the stream loop reads them in the same tick it mutates state.
 - `src/components/settings/` — `SettingsModal` orchestrator + one file per
   section + shared `chrome.jsx`. Five sections: Connection, Sandbox, Models,
   Appearance, Behavior.
-- `src/components/ui/tooltip.jsx` — **the only Radix file left.**
 - `src/hooks/` — `use-chat-turn.js` (the send lifecycle), `use-thread-scroll.js`
   (tail-following), `use-media-query.js`.
 - `src/lib/` — pure/client helpers. `api-client.js` (SSE chat client),
@@ -146,20 +145,28 @@ Traps, all of which have cost real debugging time:
   A `Menu` inside the settings dialog produces zero items, and it has since P4.
   This is a jsdom limitation, not a regression. `scripts/smoke.mjs` is what
   actually verifies overlays, because it runs a real browser.
-- **`ui/tooltip.jsx` is the only Radix holdout**, and it is not stuck: the Aria
-  equivalent is in `primitives/tooltip.jsx` with a passing test. Migrating it is
-  a matter of changing four call sites. Two things to know if you do — the
-  working composition is `TooltipTrigger` wrapping **both** the trigger and the
-  content (`<TooltipTrigger><Button/><Tooltip>…</Tooltip></TooltipTrigger>`);
-  nesting a bare `Tooltip` around a button instead renders nothing — and RAC
-  links `aria-labelledby` to a heading **only** when the heading declares
-  `slot="title"`. `primitives/tooltip.jsx` is currently unused.
+- **No Radix, no shadcn.** `src/components/ui/` is gone and `radix-ui` is out of
+  `dependencies`. RAC links `aria-labelledby` to a heading **only** when the
+  heading declares `slot="title"`. Two tooltip traps remain: the trigger must be a
+  React Aria `Button` (a bare `<button>` is silently not wired to hover), and
+  `isOpen` on a `TooltipTrigger` makes it inert — it is uncontrolled-only, and a
+  controlled `false` means hover can never open it.
+- **Negative-control every new check.** Break the thing, confirm the check fails,
+  restore. Two checks here passed against the wrong thing and were only caught by
+  asking what they would *report* if their subject were wrong — a title-generation
+  check that scraped the sidebar and matched a nav button called `"Settings"`,
+  and a header-gating check that asserted on a DOM node React had already
+  replaced. A green check is not evidence; a red one under a deliberate break is.
 - **Reset stores in `beforeEach`** (table above).
 - **`vi.spyOn(globalThis.indexedDB, "open")` does not intercept
   fake-indexeddb.** Use a stand-in factory with a counter.
-- **Radix tooltips render twice** — a visible one and a visually-hidden copy for
-  assistive tech. `queryByRole("tooltip")` therefore cannot answer "is it
-  visible"; assert the trigger's `data-state`.
+- **A React Aria tooltip does not open under jsdom when its trigger contains
+  element children** (an icon, an `<svg>`, a value) — and every trigger here is
+  one. Drive **focus** instead: it works, and it is the keyboard path, which is
+  the more important half of the contract. Hover is covered by `scripts/smoke.mjs`
+  with a real `Input.dispatchMouseEvent`, which needs **two** moves rather than
+  one — a single `mouseMoved` does not reliably produce the enter event hover is
+  built on, and `el.click()` never opens a pointer-driven tooltip at all.
 - Model references: use `qwen/qwen3.6-flash` in tests. The app's default chat
   model is `xiaomi/mimo-v2.5`.
 - Sandbox tests must `vi.mock("e2b", ...)` with a static factory and **not** use

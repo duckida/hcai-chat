@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Phase** | **P10 in progress** — `AGENTS.md` rewritten, storage contracts pinned, import/export orphan deleted, motion bug fixed. Open: CLS baseline unrecoverable, 13 invariants untested, tooltip migration, anti-jank item 5. |
+| **Phase** | **P10 complete** — `AGENTS.md` rewritten, storage contracts pinned, the last Radix import removed, the inert motion system fixed, all 30 invariants closed, anti-jank 5 done, title generation fixed. One item is unrecoverable rather than open: the CLS *baseline* was never captured at P0, so only current values can be measured. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
 | **Current test suite** | 38 files / **522 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
@@ -74,6 +74,67 @@ The feature never worked, so P5 deleted it instead of rewriting 814 lines: `lib/
 store action that existed only to refresh the list after an import. Nothing else touched those
 paths, so no test needed changing. Restoring the feature means re-adding all of it from git
 history.
+
+---
+
+## Findings from P10 — read before touching verification, hydration or the API route
+
+1. **A test that cannot fail is worse than no test, because it reads as coverage.** Two
+   arrived in this phase and both had to be rebuilt. The hydration test first compared the
+   server HTML against a run with empty storage — that catches a read whose value the markup
+   depends on, and nothing else; a read of a setting nothing currently renders leaves the
+   markup byte-identical and the test green, which is exactly the read that becomes a bug the
+   day someone starts rendering that setting. It now spies on `Storage.prototype.getItem` across
+   a `renderToString` and asserts zero reads, which named the offender on the first run. The
+   title-generation smoke check first scraped the sidebar for a non-default title and passed on
+   **`"Settings"`** — a navigation button. Both were found by asking what the assertion would
+   report if the thing it names were wrong, not by whether it was green. **Every check in this
+   phase was negative-controlled: break the thing, confirm the check fails, restore.** The
+   `streamChatCompletion` await check reports `file:line`; the sandbox-output gates fail when
+   the gate is forced on; the route's system-message hoist fails when the filter is removed; the
+   title check fails with the truncated fallback.
+
+2. **A React Aria tooltip cannot open under jsdom when its trigger contains element
+   children — and this is not a jsdom bug to work around, it is a coverage split.** Text
+   children open; `<span>`, `<svg>`, an icon plus a value — every trigger in this app — do
+   not. So the unit tests drive **focus**, which does work and is the more important half of the
+   contract anyway (it is what a keyboard user gets), and the hover half moved to smoke check
+   11 with a real `Input.dispatchMouseEvent`. That check needed **two** moves, not one: a single
+   `mouseMoved` from the pointer's existing position does not reliably produce an enter event,
+   which is what RAC's hover is built on. An `el.click()`-based helper could never have caught
+   any of this — a synthetic click does not open a pointer-driven tooltip.
+
+3. **`isOpen` on a RAC `TooltipTrigger` makes it inert.** It is uncontrolled-only in this
+   version: a controlled `false` means hover can never open it and `onOpenChange` is never
+   called. The context ring's click-to-pin was built on that assumption and had to go. It was
+   never asked for — the brief was "hover, but delayed and offset", which is what it does.
+
+4. **A `useState` initialiser runs on the server.** `ChatLayout` read the sidebar width there,
+   guarded by `typeof window === "undefined"` — which is exactly the guard that makes the bug
+   invisible: the *server* was safe and the first *client* paint disagreed with the server's
+   HTML, so a resized sidebar jumped on every load. Reading storage in a mount effect fixes it,
+   and the write effect then has to be gated on the read having happened or it persists the
+   default over the saved value on the way past. **The hydration invariant was not just untested
+   — it was false.**
+
+5. **A streamed turn whose whole output is a tool call rendered nothing.** `MessageList` showed
+   the streaming row only for text or thinking, so code written and run before the model said
+   anything left the thread blank — the run was invisible until the reply arrived, which is the
+   entire reason to watch one. Sandbox tools now count as content.
+
+6. **The model SDK rejects a system-role message in `messages`** —
+   `AI_InvalidPromptError: System messages are not allowed in the prompt or messages fields` —
+   so every title request was a 500, and the client's fallback (a truncated copy of the first
+   message) looks exactly like a title. Fixed in the route, not the client: the route is the
+   layer that knows the SDK's constraint, and `sanitizeMessages` still admits the `system` role,
+   so fixing the caller would have left a stored system message able to 500 the same way.
+
+7. **A captured DOM node goes stale the moment React replaces it.** The header-gating test
+   captured the web-search button once React replaced it on the catalog load and asserted on a
+   detached node, which reports neither disabled nor enabled — so the test would have passed
+   against a live, enabled button. The same test was also seeding `toolsSupported` directly,
+   which `loadModels()` overwrites a tick later. Both fixed by driving the *catalog* and
+   re-querying inside the assertion.
 
 ---
 
@@ -377,23 +438,28 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 4 | `theme-sunrise` survives a reload | **`hydrateSettings` reads storage on mount** |
 | 5 | dark mode survives a reload | next-themes FOUC path |
 | 6 | Save/Cancel reachable at 360×640 | **the P3b scroll fix — measures real overflow** |
+| 5b | no horizontal overflow at 360px | `scrollWidth` vs viewport; names the three widest offenders |
 | 7 | composer accepts input | `ChatInput` accepts typing |
 | 8 | user message is sent | Enter submit |
 | 9 | assistant reply streams back | live model turn + `ResponseMetrics` |
 | 10 | sent message survives reload | IndexedDB persistence |
+| 11 | context ring tooltip opens on hover | **the tooltip migration, in a real browser** — a real `Input.dispatchMouseEvent`, since `el.click()` cannot open a pointer-driven tooltip |
+| 12 | CLS under 0.1 | buffered `layout-shift` observer on a conversation restored from IndexedDB. **Current: 0.0002** |
+| 13 | artifact panel at three widths | the grid track: a real drag moves it 480 → 720 with `panelLeft === threadRight`; full-bleed + zero track at 390px |
+| 14 | conversation titled by the model | title read from **IndexedDB**, not the sidebar — see the trap below |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 10 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 17 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
 `API Error` transcript be read as this run's result, and a crashed run's orphan Chromium once
 held the fixed port so every later run died at launch.
 
-**Five traps this script encodes (each one produced a false alarm first):**
+**Traps this script encodes (each one produced a false alarm first):**
 
 - **Do not assert hydration state at fixed delay.** The theme class lands ~1.5s after load;
   assert with `waitFor`, never once after `sleep`.
@@ -416,6 +482,16 @@ held the fixed port so every later run died at launch.
   before any `try`, so a slow start used to escape `finally` and leak a browser; leaked
   browsers then starved the next launch until it timed out. Cleanup now wraps the spawn, with a
   `SIGKILL` fallback and a sweep of profiles whose owning pid is gone.
+- **Do not scrape the UI for a value the app stores.** The title check read the sidebar for a
+  non-default title and passed on `"Settings"` — a navigation button. Conversation titles live
+  in IndexedDB; read them there. A check that can match the wrong element will, given time.
+- **Do not click a toggle to put the app in a state you can seed.** The label reads "Toggle
+  artifacts **off**" precisely because artifacts are already on, so the click disabled them and
+  the panel rendered nothing while the track stayed reserved. Seed `localStorage`, then assert
+  the toggle is already in the expected state.
+- **A single `mouseMoved` does not produce an enter event.** Chromium needs the pointer to
+  approach from somewhere: two moves, a nearby point then the target. `scripts/smoke.mjs`
+  encodes this, and any new hover check needs it too.
 - **Do not read a Chromium launch timeout as a code failure.** The 15s budget raced the dev
   server's first compile and three consecutive runs failed with the identical
   `chromium debugging endpoint never came up` while the app was completely fine — verified by
@@ -430,20 +506,25 @@ held the fixed port so every later run died at launch.
 
 ---
 
-## Out-of-scope defects observed — reported, deliberately not fixed
+## Out-of-scope defects observed
 
-Both surfaced in the P4 smoke run. `src/app/api/*` and the root layout are outside this
-rewrite's charter (frontend only), and upstream owns those files — so they are recorded here
+Both surfaced in the P4 smoke run. `src/app/api/*` and the root layout were declared outside this
+rewrite's charter (frontend only), and upstream owns those files — so they were recorded here
 instead of patched mid-phase.
 
-1. **Conversation titles never generate — every new chat is titled "New Chat".**
-   `src/app/api/chat/route.js` passes both `instructions: systemPrompt` and
-   `messages: processedMessages` on the non-stream path. `generateTitle` (`src/lib/api-client.js`)
-   sends a `role: "system"` message, which survives sanitization into `processedMessages`, and
-   the AI SDK rejects it: `AI_InvalidPromptError: System messages are not allowed in the prompt
-   or messages fields. Use the instructions option instead.` → `POST /api/chat` **500** on every
-   title request (the streaming turn itself is unaffected). Reproduced on every live smoke run.
-2. **`src/app/layout.js:36` passes a *string* to React's `onError`.**
+1. ~~**Conversation titles never generate — every new chat is titled "New Chat".**~~ —
+   **fixed in P10** (`3d4344a`). It was listed because the charter was frontend-only, but a
+   client that calls the endpoint is not a client that cannot care: the fix is a hoisting step
+   in the route, and leaving it would have meant shipping a known-broken feature while
+   documenting that choice. The route now moves system-role content into `instructions`, which
+   is what the model SDK requires, and never passes it through as a message.
+   `generateTitle` (`src/lib/api-client.js`) sends a `role: "system"` message, which survived
+   sanitization into `processedMessages`, and the AI SDK rejected it with
+   `AI_InvalidPromptError: System messages are not allowed in the prompt or messages fields`
+   → `POST /api/chat` **500** on every title request. The client's fallback is a truncated copy
+   of the first message, which looks like a title, so the failure was invisible. Reproduced on
+   every live smoke run; smoke check 14 now fails on the reintroduced bug.
+2. **`src/app/layout.js:36` passes a *string* to React's `onError`.** — still open.
    `onError="this.onerror=null;this.remove();"` on the Simple Analytics `<script>`. React expects
    a function, so every page load logs `Expected onError listener to be a function, instead got a
    value of `string` type` — and the fallback that removes a failed script tag never runs.
@@ -464,7 +545,7 @@ instead of patched mid-phase.
 | **P7** ✅ | Thread: `useThreadScroll` + plain `overflow-y-auto` container; **`ui/scroll-area.jsx` deleted** (its only consumer); `MessageList` 16 props → 2 (turn + settings stores); one `Markdown` + one `useMessageText` replacing three copies; `ResponseMetrics` deduped and NaN-guarded; `aria-expanded` on four disclosures. 488 → **501 tests / 37 files**. | ✔ |
 | **P8** ✅ | Composer + ArtifactPanel: **framer-motion deleted** (app's only use) behind a project-owned opacity-fade token; panel reuses `Markdown`; artifact read/parse failures no longer hang; both drag handles on pointer events with capture and unconditional release; `aria-label` on the composer's icon buttons. 501 → **518 tests / 38 files**. Anti-jank 3 (app code), 4 (images) and 6 done; **item 5 deferred with reasons**. | ✔ |
 | **P9** ✅ | Delete legacy. `button`, `input`, `label`, `select`, `dialog`, `sheet` on Aria; six orphaned `ui/` files deleted; `shadcn` CLI + `components.json` gone; `framer-motion` and `tw-animate-css` dropped. `ui/tooltip.jsx` + `radix-ui` are the **only** holdouts left, and they are not blocked — see the P9 finding: the Aria tooltip works, my earlier probe used the wrong composition. | ✔ |
-| **P10** ⏳ | Verify. Done: `AGENTS.md` rewritten (it documented six `api-client` exports that do not exist, an AI SDK major two behind, and a deleted `components.json`); storage-key / IndexedDB-schema / credential-URL contracts pinned; the import/export orphan deleted; the inert motion system found and fixed; 17 invariants checked. **Open: the CLS baseline was never captured at P0, so "CLS vs baseline" is unrecoverable** — measure current values only; 13 invariants still untested; the tooltip migration is unblocked but undone (4 call sites, would remove the last `radix-ui` import); anti-jank item 5, the panel grid track. | |
+| **P10** ✅ | Verify. `AGENTS.md` rewritten (it documented six `api-client` exports that do not exist, an AI SDK major two behind, and a deleted `components.json`); storage-key / IndexedDB-schema / credential-URL contracts pinned; the import/export orphan deleted; the inert motion system found and fixed; **the last Radix file and the `radix-ui` dependency removed**; **all 30 invariants closed**; **anti-jank 5 done**; **title generation fixed**. 520 → **562 tests / 41 files**, deps 25 → 20. Smoke 10 → **17**. Three real bugs fell out of writing the tests — see the P10 findings. **The one thing not recoverable is the CLS *baseline***: never captured at P0, so the check asserts the published 0.1 threshold rather than a diff. Current value **0.0002**. | ✔ |
 
 **Single-writer rule:** an old hook is deleted in the same commit that lands its store. They never coexist. Legacy components that still need the data read it through a one-way adapter, enumerated here and deleted in P9.
 
@@ -482,11 +563,11 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 - [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
 - [x] SSE fallback to non-streaming does **not** duplicate the response; partial accumulators are cleared first. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the non-streaming fallback"; `api-client` "fires onFallbackStart before replaying the regenerated text"
 - [x] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`) — four `api-client` tests (retry / no retry on thinking / on error event / on tool result)
-- [ ] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation half covered ("commits the final deltas even if a chunk has not re-rendered"); **the across-turns context half has no test yet**
+- [x] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation: `use-chat-turn` "commits the final deltas even if a chunk has not re-rendered". Across turns: "sends the whole conversation, not just the newest message" asserts the second request's `messages` are `["first question", "ok", "and then?"]`
 - [x] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`) — conversations store "assigns messagesRef synchronously on creation" / "selects a conversation and syncs its messages"
 - [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`
-- [ ] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`) — errors shown, and a thinking-only turn commits; **"into the next turn" is not directly asserted**
-- [ ] `streamChatCompletion` is awaited by every caller. (`a957c70`) — structurally true (one caller, `await`ed); **not a test**
+- [x] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`) — errors shown; thinking-only turn commits; `use-chat-turn` "carries a turn's reasoning into the next request" asserts `thinking` survives both the commit and the next request body
+- [x] `streamChatCompletion` is awaited by every caller. (`a957c70`) — `source-contracts.test.js` "finds no floating call" walks every source file and reports `file:line`. Negative-controlled by deleting an `await`: it fails and names `src/hooks/use-chat-turn.js:466`
 - [x] Scrolling stays possible **while** streaming. (`fa45ae0`) — `useThreadScroll` "stops following once the user scrolls away from the bottom" / "keeps following for a movement that stays within the threshold" / "hands scrolling back when a turn ends"; the container is also focusable and labelled
 - [x] Error placeholders are stripped from history sent to the model. (`be48b7f`) — `api-client` "strips error placeholders and empty assistant records from the POSTed messages" (and the non-streaming fallback variant)
 
@@ -499,33 +580,33 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 
 ### Features & gating
 
-- [ ] Artifacts are parsed and the panel opens **only** when the artifacts toggle is on. (`f3f3e4d`)
-- [ ] Web search + artifacts can be enabled **at the same time**. (`a2e4c60`)
-- [ ] Web search, agent mode and calculator are disabled for models without tool support. (`396a4f3`)
+- [x] Artifacts are parsed and the panel opens **only** when the artifacts toggle is on. (`f3f3e4d`) — `MessageList` "renders an assistant message containing HTML artifacts" / "does not strip HTML fences when artifacts are disabled" / "shows the generating artifact state only when artifacts are enabled" / "renders streaming content with HTML fences as plain text when artifacts are disabled"
+- [x] Web search + artifacts can be enabled **at the same time**. (`a2e4c60`) — `ChatApp` "keeps both on when both are switched on", and "sends both capabilities to the model for one request" asserts one POST carries `artifacts: true` **and** `web_search` in `tools`. The settings half alone would have passed while the request still dropped one
+- [x] Web search, agent mode and calculator are disabled for models without tool support. (`396a4f3`) — `ChatApp` "turns web search and agent mode off when the model cannot call tools" (and off in storage, so it does not return on reload) / "disables the toggles in the header…" (native `disabled`, tooltip explains why). Driven by the **catalog**, not a store write: `loadModels()` on mount overwrites a seeded store, which is how the first version of this test passed against a live, enabled button
 - [x] ~~Import/export buttons live in Settings only, not the sidebar.~~ — **moot: feature deleted in P5**
 - [x] ~~LibreAssistant exports import; incompatible settings are skipped rather than crashing.~~ — **moot: feature deleted in P5.** The two `lib/settings.js` functions it left behind had no production consumer and were removed in P10, along with the five tests that were the only things referencing them.
-- [ ] Balance outage dialog offers the `openrouter/free` fallback. (`1f001b3`, `8e4489b`)
+- [x] Balance outage dialog offers the `openrouter/free` fallback. (`1f001b3`, `8e4489b`) — `ChatApp` "offers the free fallback and switches to it on request" (asserts the store's `selectedModel` afterwards) / "stays shut when the balance is fine"
 
 ### Persistence & hydration
 
 - [x] localStorage keys unchanged — users keep their settings. — `contracts.test.js` pins all 14 `storageKey` strings literally `hack_club_ai_key`, `e2b_api_key`, `color-mode`, `show_sandbox_code`, `show_sandbox_output`, `show_thinking`, `show_metrics`, `thinking_enabled`, `agent_mode_enabled`, `theme`, `model`, …
 - [x] IDB store name, key path and record shape unchanged — existing conversations load. — `contracts.test.js` asserts the store name and `keyPath: "id"` against a real opened database Migration test seeds pre-existing records.
-- [ ] Values read from localStorage hydrate in a mount effect, never during render (hydration mismatch). (AGENTS.md, `hasE2bKey` bug)
+- [x] Values read from localStorage hydrate in a mount effect, never during render (hydration mismatch). (AGENTS.md, `hasE2bKey` bug) — `settings.test.js` "starts at SSR-safe defaults before hydration" / "does not read storage during render"; `hydration.test.jsx` spies on `Storage.getItem` across a `renderToString` and asserts **zero** reads while rendering, names the offending key, and asserts hydration still arrives afterwards. **It found a live bug**: `ChatLayout` read the sidebar width in a `useState` initialiser, so a resized sidebar jumped on every load. Reading diffs instead of spying is what found it; diffing the HTML looked equivalent and could not have
 
 ### Security & sandbox
 
 - [x] Sandbox file downloads use the two-step token flow — the E2B key never appears in a URL. — `contracts.test.js` asserts the key is in the POST body and absent from the navigating URL (`28787a7`)
-- [ ] Sandbox tool output stays gated behind the show-input / show-output settings.
+- [x] Sandbox tool output stays gated behind the show-input / show-output settings. — `MessageList` "sandbox output gating": committed stdout shown/hidden, stderr hidden too, the code setting unaffected (they are independent), and the live stream gated the same way. Negative-controlled by forcing the gate on: all three hide-assertions fail. Writing them also **fixed a real defect** — the streaming row rendered only for text or thinking, so a turn that ran code before the model spoke showed an empty thread
 
 ### Layout & responsiveness
 
-- [ ] No horizontal overflow on mobile; `min-w-0` on flex wrappers. (`10130e7`, `47f19f8`)
-- [ ] CLS measured against the P0 baseline; target ≈ 0.
+- [x] No horizontal overflow on mobile; `min-w-0` on flex wrappers. (`10130e7`, `47f19f8`) — smoke 5b measures `documentElement.scrollWidth` at a 360×640 viewport and names the three widest offenders when it fails; smoke 13 re-checks it at 390px with the artifact panel open
+- [x] CLS measured; target ≈ 0. — smoke 12 measures it with a buffered `layout-shift` observer on the most shift-prone moment there is (a conversation restored from IndexedDB). **Current value 0.0002.** The *comparison* to the P0 baseline is unrecoverable — that number was never captured — so the check asserts the published 0.1 threshold instead of pretending to a diff it cannot make
 
 ### Build
 
-- [ ] mermaid loads lazily from CDN; `next build` does not OOM. (`cbcf214`, `abf3309`)
-- [ ] `page.js` still exports the component `search/page.js` renders with `initialQuery` / `initialSearchEnabled`.
+- [x] ~~mermaid loads lazily from CDN~~ **corrected, not claimed.** — The CDN loading was reverted upstream by `0c98634` (the AI SDK v7 migration); `src/lib/streamdown.js` is a plain static import again. What survives from `abf3309`/`cbcf214` is the part that actually prevents the OOM, and that is now asserted: `source-contracts.test.js` requires `--max-old-space-size` in the build script, `--webpack` in both build and dev, and the mermaid plugin constructed once at module scope rather than per render. `next build` completes in ~108s
+- [x] `page.js` still exports the component `search/page.js` renders with `initialQuery` / `initialSearchEnabled`. — `source-contracts.test.js` asserts both props are accepted **and forwarded to `ChatApp`** (destructuring and dropping them renders a normal home page from `/search`, with no error anywhere), and that `/search` imports that component and plumbs `q` and `search`
 
 ---
 
@@ -601,7 +682,7 @@ Nothing may be deleted except by the phase listed here.
 | 2 | rAF-coalesced streaming deltas — one DOM update per frame | **P6 ✅** |
 | 3 | Opacity-only transitions; no `animate-in` slide/zoom, no framer-motion | **P9 ✅** — `tw-animate-css` gone; every entrance is an opacity-only `hcai-fade-*` keyframe. **The utilities were inert until P10b** — see the `@theme inline` finding. |
 | 4 | Reserve space before content arrives (image aspect-ratio, code-block min-height) | **P8 ✅ (images)** / P9 (code blocks) |
-| 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | **Deferred — see below** |
+| 5 | Panel width as one `grid-template-columns` transition, not stepwise reflow | **P10 ✅** — `ChatLayout` owns the width and spends it as the third track; the panel no longer sets an inline width. Verified in a real browser at three widths, which was the stated reason for deferring it. |
 | 6 | `setPointerCapture` on all drag handles, clamped and persisted | **P8 ✅** |
 
 **Item 4, precisely:** image attachments already reserved their box through
@@ -609,21 +690,29 @@ next/image's `width`/`height` attributes plus a `loaded` placeholder, so that
 half needed nothing. Code blocks are Streamdown's output and are still not
 reserved — left for P10, and recorded as an open item rather than claimed.
 
-**Item 5, still deferred (P10).** Moving the panel width out of the panel and
-onto a `grid-template-columns` track means lifting that state from
-`ArtifactPanel` into `ChatLayout`, which owns the row, and re-deciding the track
-in three states the panel currently handles entirely on its own: desktop,
-mobile (where the panel is `position: fixed` and must contribute a zero track),
-and fullscreen (where it is a fixed overlay). That is a layout refactor across
-three components with a real chance of a regression that neither the unit tests
-nor the smoke script can see — the smoke script measures the settings dialog at
-360×640, not the artifact panel at three widths.
+**Item 5, done (P10).** Deferred twice for one reason: neither the unit tests nor the
+smoke script could see it, so a three-state layout refactor (desktop track,
+mobile fixed, fullscreen overlay) had no way to prove itself. The way out was to
+build the missing verification rather than keep citing its absence.
 
-The cheaper half of the same problem is done: resizing no longer runs through
-per-element width writes, and the transition is suppressed during a drag so
-the thread does not reflow behind a moving edge. What remains is the row
-itself, and that belongs with P9, where the layout-affecting deletions land and
-the diff is expected to be large enough to review as a unit.
+`ChatLayout` owns the row, so it owns the panel width, and spends it as a third
+`grid-template-columns` track. The panel lost its inline width — writing one
+fought the track and re-laid the thread out a pixel at a time. `rightPanel`
+became a function, because the row has to hand the width down and the panel is
+built in `ChatApp`. All three states are covered in the unit tests, and smoke 13
+covers them for real: it seeds a conversation containing an artifact (the panel
+does not exist without one), then checks that a real CDP drag moves the track
+480 → 720 with `panelLeft === threadRight` and no overflow, and that at 390px the
+panel reports `position: fixed` at `left: 0, right: 390` with a zero track.
 
-Baseline CLS/scroll-jank measurement: **still not recorded** — P10, and it has to
-be captured against the `8aa44a6` baseline, not against P7's container.
+The `panelWidth` tests moved to `ChatLayout`, because that is where the state is
+now. What stayed in `ArtifactPanel` are prop-contract tests: the panel *reports*
+a width and the row *decides* what to do with it.
+
+Baseline CLS/scroll-jank measurement: **the baseline half is unrecoverable.** It was
+never captured at P0, so there is nothing to compare against and no honest way to
+manufacture one after the fact. What is measured is the current value, on the
+shift-prone moment (a conversation restored from IndexedDB): **CLS 0.0002**,
+horizontal overflow 0px at both 360px and 390px with the artifact panel open.
+Smoke 12 asserts the published 0.1 "good" threshold, and says so in the check name
+rather than implying a comparison it does not make.
