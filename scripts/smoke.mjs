@@ -810,6 +810,79 @@ async function main() {
     );
     await setViewport(1280, 900, false);
     await sleep(500);
+
+    // ---- 14. the conversation gets a real title -------------------------
+    // Title generation sends a system-role message, which the model SDK
+    // rejects outright; the 500 was invisible because the client falls back to
+    // a truncated copy of the first message. So the check is not "is there a
+    // title" but "is it the fallback" — the failure looked like success.
+    await evalJs(`(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('hcai-chat', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('conversations', 'readwrite');
+        tx.objectStore('conversations').clear();
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      localStorage.setItem('artifacts_enabled', 'false');
+      return true;
+    })()`);
+    await navigate(3500);
+    const titleProbe = "What is the capital of Portugal? Answer in one word.";
+    const canTitle = await typeInto("textarea", titleProbe);
+    if (canTitle) {
+      await pressEnter("textarea");
+      // Read the title from IndexedDB rather than from the sidebar. A previous
+      // version of this check scraped the sidebar and matched a navigation
+      // button called "Settings" — a green check on a title that was never
+      // generated, which is the same illusion the 500 produced.
+      const readTitles = () =>
+        evalJs(`(async () => {
+          const db = await new Promise((resolve, reject) => {
+            const request = indexedDB.open('hcai-chat', 1);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+          });
+          const rows = await new Promise((resolve, reject) => {
+            const tx = db.transaction('conversations', 'readonly');
+            const request = tx.objectStore('conversations').getAll();
+            request.onsuccess = () => resolve(request.result || []);
+            request.onerror = () => reject(request.error);
+          });
+          return rows
+            .filter((c) => (c.messages || []).length >= 2)
+            .map((c) => c.title || '');
+        })()`);
+
+      // Generation is a second round trip after the reply, so it lands after
+      // the turn is already on screen.
+      const titles = await waitFor(
+        async () => {
+          const found = await readTitles();
+          return found.some((t) => t && t !== "New Chat") ? found : false;
+        },
+        25000,
+        500,
+      ).catch(() => []);
+      const generated = (Array.isArray(titles) ? titles : []).find(
+        (t) => t && t !== "New Chat",
+      );
+      check(
+        "conversation is titled by the model, not the truncated fallback",
+        Boolean(generated) && !generated.endsWith("..."),
+        `titles=${JSON.stringify(titles)}`,
+      );
+    } else {
+      check(
+        "conversation is titled by the model, not the truncated fallback",
+        false,
+        "composer unavailable",
+      );
+    }
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {

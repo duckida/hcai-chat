@@ -117,6 +117,104 @@ describe("/api/chat POST", () => {
     expect(call.instructions).not.toMatch(/Artifact Mode/);
   });
 
+  // The title generator sends a system message on every conversation, and the
+  // SDK rejects one in `messages` with AI_InvalidPromptError — a 500, and a
+  // conversation silently titled from a truncated copy of the user's message.
+  // The SDK mock here cannot raise that error, so the contract is asserted
+  // directly: the system message becomes instructions, and never a message.
+  it("hoists a system message into instructions instead of passing it through", async () => {
+    const { generateText } = await import("ai");
+    generateText.mockResolvedValue({ text: "Quick title", finishReason: "stop" });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [
+          { role: "system", content: "Return ONLY a short title." },
+          { role: "user", content: "how do I reverse a list" },
+        ],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    const call = generateText.mock.calls[0][0];
+    expect(call.instructions).toContain("Return ONLY a short title.");
+    expect(call.messages.map((m) => m.role)).toEqual(["user"]);
+  });
+
+  it("joins several system messages and ignores empty ones", async () => {
+    const { generateText } = await import("ai");
+    generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [
+          { role: "system", content: "First instruction." },
+          { role: "system", content: "   " },
+          { role: "user", content: "hi" },
+          { role: "system", content: "Second instruction." },
+        ],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    const call = generateText.mock.calls[0][0];
+    expect(call.instructions).toContain("First instruction.");
+    expect(call.instructions).toContain("Second instruction.");
+    expect(call.instructions).not.toContain("   \n");
+    expect(call.messages).toHaveLength(1);
+  });
+
+  it("keeps the date preamble alongside a hoisted system message", async () => {
+    const { generateText } = await import("ai");
+    generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [
+          { role: "system", content: "Be brief." },
+          { role: "user", content: "hi" },
+        ],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    // The hoisted text is appended, not substituted: the model still needs to
+    // know what day it is.
+    const { instructions } = generateText.mock.calls[0][0];
+    expect(instructions).toMatch(/^Current date: /);
+    expect(instructions).toContain("Be brief.");
+  });
+
+  it("flattens an array-shaped system message", async () => {
+    const { generateText } = await import("ai");
+    generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [
+          {
+            role: "system",
+            content: [{ type: "text", text: "Array shaped instruction." }],
+          },
+          { role: "user", content: "hi" },
+        ],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    const call = generateText.mock.calls[0][0];
+    expect(call.instructions).toContain("Array shaped instruction.");
+    expect(call.messages).toHaveLength(1);
+  });
+
   it("passes maxTokens to generateText when provided", async () => {
     const { generateText } = await import("ai");
     generateText.mockResolvedValue({ text: "ok", finishReason: "stop" });

@@ -4,7 +4,7 @@ import {
   ARTIFACT_AGENT_MODE_INSTRUCTIONS,
   ARTIFACT_INSTRUCTIONS,
 } from "@/lib/artifacts";
-import { sanitizeMessages } from "@/lib/messages";
+import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { getToolOutput } from "@/lib/tool-stream.mjs";
 import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
@@ -152,18 +152,38 @@ export async function POST(req) {
 
     let systemPrompt = `Current date: ${dateStr}. Current time: ${timeStr} UTC.`;
     const sanitizedMessages = sanitizeMessages(messages);
-    const processedMessages = sanitizedMessages.map((msg) => {
-      if (msg.role === "assistant" && msg.thinking) {
-        return {
-          ...msg,
-          content: [
-            { type: "reasoning", text: msg.thinking },
-            { type: "text", text: msg.content || "" },
-          ],
-        };
-      }
-      return msg;
-    });
+
+    /**
+     * A system-role message is a legitimate thing for a client to send — the
+     * title generator sends one on every conversation — but the model SDK
+     * rejects it outright with `AI_InvalidPromptError: System messages are not
+     * allowed in the prompt or messages fields`, which surfaced as a 500 and a
+     * conversation titled "how do I reverse a lis...". The route is where the
+     * SDK's constraint is known, so the hoisting happens here rather than
+     * forcing every caller to fold its instructions into a user turn.
+     */
+    const systemInstructions = sanitizedMessages
+      .filter((msg) => msg.role === "system")
+      .map((msg) => getMessageText(msg.content))
+      .filter((text) => text.trim() !== "");
+    if (systemInstructions.length > 0) {
+      systemPrompt += `\n\n${systemInstructions.join("\n\n")}`;
+    }
+
+    const processedMessages = sanitizedMessages
+      .filter((msg) => msg.role !== "system")
+      .map((msg) => {
+        if (msg.role === "assistant" && msg.thinking) {
+          return {
+            ...msg,
+            content: [
+              { type: "reasoning", text: msg.thinking },
+              { type: "text", text: msg.content || "" },
+            ],
+          };
+        }
+        return msg;
+      });
 
     if (artifacts) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;
