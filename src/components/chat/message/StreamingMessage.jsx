@@ -32,6 +32,7 @@ const selectDisplaySettings = (state) => ({
 const StreamingMessage = memo(function StreamingMessage({
   streamingContent,
   streamingThinking,
+  streamingToolChips,
 }) {
   const {
     thinkingEnabled,
@@ -53,13 +54,15 @@ const StreamingMessage = memo(function StreamingMessage({
       <MessageRow variant="assistant">
         {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
         {agentModeEnabled && <AgentIndicator />}
-        {streamingThinking && thinkingEnabled && (
-          <ThinkingBlock
-            thinking={streamingThinking}
-            isStreaming={true}
-            defaultView={showThinking ? "open" : "closed"}
-          />
-        )}
+        {(streamingThinking || streamingToolChips?.length > 0) &&
+          thinkingEnabled && (
+            <ThinkingBlock
+              thinking={streamingThinking}
+              chips={streamingToolChips}
+              isStreaming={true}
+              defaultView={showThinking ? "open" : "closed"}
+            />
+          )}
         {streamingContent && (
           <div className={MESSAGE_BODY_CLASS}>
             {cleanedText ? (

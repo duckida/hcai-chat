@@ -1,9 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  appendTurnChip,
+  appendTurnChipArgs,
   appendTurnDelta,
   beginTurn,
   clearTurnDeltas,
+  fillLastSearchChip,
   predictContextUsage,
+  readTurnChips,
   readTurnDeltas,
   resetTurn,
   setContextUsage,
@@ -69,6 +73,7 @@ describe("turn store", () => {
       streamingThinking: "",
       streamingError: null,
       streamingSandboxTools: [],
+      streamingToolChips: [],
       streamingConversationId: null,
       contextUsage: 0,
     });
@@ -86,6 +91,7 @@ describe("turn store", () => {
       streamingThinking: "",
       streamingError: null,
       streamingSandboxTools: [],
+      streamingToolChips: [],
       streamingConversationId: "conv-1",
       contextUsage: 0,
     });
@@ -215,5 +221,100 @@ describe("turn store", () => {
 
     resetTurn();
     expect(snapshot().streamingSandboxTools).toEqual([]);
+  });
+
+  describe("tool-call chips", () => {
+    it("pins a chip to the thinking buffer, not the rendered mirror", () => {
+      appendTurnDelta("thinking", "let me check this ");
+      // The buffer has the text immediately; the rendered mirror does not
+      // paint until the next frame. The commit reads the buffer, so the
+      // offset has to come from there too, or the chip lands wherever the
+      // last paint happened to be.
+      expect(readTurnDeltas().thinking).toBe("let me check this ");
+      expect(snapshot().streamingThinking).toBe("");
+
+      appendTurnChip({ index: 0, tool: "javascript_calculator" });
+      expect(readTurnChips()[0].at).toBe("let me check this ".length);
+
+      appendTurnDelta("thinking", "afterwards");
+      flushFrames();
+      expect(readTurnDeltas().thinking).toBe("let me check this afterwards");
+      // The reasoning grew past the chip; the pin did not move.
+      expect(readTurnChips()[0].at).toBe("let me check this ".length);
+    });
+
+    it("keeps one chip per call even when start and completion both report", () => {
+      appendTurnChip({ index: 0, tool: "web_search" });
+      appendTurnChip({ index: 0, tool: "web_search" });
+
+      expect(readTurnChips()).toHaveLength(1);
+    });
+
+    it("promotes argument fragments to a label as soon as they parse", () => {
+      appendTurnChip({ index: 0, tool: "javascript_calculator" });
+
+      // Half a JSON document: nothing to show yet, and no throwing either.
+      appendTurnChipArgs(0, '{"expres');
+      expect(readTurnChips()[0].label).toBeUndefined();
+
+      appendTurnChipArgs(0, 'sion":"5 + 5"}');
+      expect(readTurnChips()[0].args).toBe('{"expression":"5 + 5"}');
+      expect(readTurnChips()[0].label).toBe("5 + 5");
+    });
+
+    it("labels a search from its query", () => {
+      appendTurnChip({ index: 0, tool: "web_search" });
+      appendTurnChipArgs(0, '{"query":"opencode vs claude"}');
+
+      expect(readTurnChips()[0].label).toBe("opencode vs claude");
+    });
+
+    it("lets argument fragments for an index with no chip land nowhere", () => {
+      appendTurnChipArgs(7, '{"expression":"1 + 1"}');
+
+      expect(readTurnChips()).toEqual([]);
+    });
+
+    it("fills search chips in call order, keeping only real sites", () => {
+      appendTurnChip({ index: 0, tool: "web_search" });
+      appendTurnChipArgs(0, '{"query":"first"}');
+      appendTurnChip({ index: 1, tool: "web_search" });
+      appendTurnChipArgs(1, '{"query":"second"}');
+
+      fillLastSearchChip([
+        { url: "https://www.reddit.com/r/x" },
+        "txt.com",
+        { url: "https://www.reddit.com/r/y" },
+        "just some words",
+      ]);
+      const [first, second] = readTurnChips();
+      // Oldest unfilled wins, www is stripped, the same site twice is one
+      // pill, and free text is not a domain.
+      expect(first.sources).toEqual(["reddit.com", "txt.com"]);
+      expect(second.sources).toBeUndefined();
+
+      fillLastSearchChip(["https://example.org/a"]);
+      expect(readTurnChips()[0].sources).toEqual(["reddit.com", "txt.com"]);
+      expect(readTurnChips()[1].sources).toEqual(["example.org"]);
+    });
+
+    it("drops chips with the reasoning they are pinned to", () => {
+      appendTurnDelta("thinking", "checking ");
+      appendTurnChip({ index: 0, tool: "javascript_calculator" });
+
+      clearTurnDeltas();
+
+      expect(readTurnChips()).toEqual([]);
+      expect(readTurnDeltas()).toEqual({ content: "", thinking: "" });
+    });
+
+    it("hands back a copy so the stream cannot be mutated from outside", () => {
+      appendTurnChip({ index: 0, tool: "web_search" });
+
+      const chips = readTurnChips();
+      chips.push({ index: 9, tool: "something", at: 0 });
+
+      expect(readTurnChips()).toHaveLength(1);
+    });
   });
 });

@@ -1207,6 +1207,99 @@ async function main() {
         reopened.terminal,
       JSON.stringify({ collapsed, reopened }),
     );
+
+    // ---- 20. thinking chips render inside the reasoning -----------------
+    // The interleave is DOM order, which jsdom can see; what only a real
+    // browser proves is that Streamdown paints the segments beside the
+    // pills at all, that the site pills are real links, and that the
+    // collapsed block expands to show them. The offsets are pinned in the
+    // seed, so the expected order is exact rather than model-dependent.
+    await evalJs(`(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('hcai-chat', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('conversations', 'readwrite');
+        const store = tx.objectStore('conversations');
+        store.clear();
+        store.put({
+          id: 'smoke-chips',
+          title: 'Seeded chips',
+          createdAt: new Date().toISOString(),
+          model: 'xiaomi/mimo-v2.5',
+          contextUsage: 0,
+          messages: [
+            { role: 'user', content: 'compute then search' },
+            {
+              role: 'assistant',
+              content: 'All done.',
+              thinking:
+                'Before answering I will compute. Then I looked up the docs. All ready.',
+              thinkingChips: [
+                { tool: 'javascript_calculator', at: 33, label: '5 + 5' },
+                {
+                  tool: 'web_search',
+                  at: 60,
+                  label: 'opencode vs claude',
+                  sources: ['reddit.com', 'example.org'],
+                },
+              ],
+            },
+          ],
+        });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      return true;
+    })()`);
+    await navigate(3500);
+
+    const chipReport = await evalJs(`(async () => {
+      const toggle = [...document.querySelectorAll('button')].find((b) =>
+        (b.textContent || '').includes('Thinking'),
+      );
+      if (!toggle) return { error: 'no thinking toggle' };
+      if (toggle.getAttribute('aria-expanded') !== 'true') {
+        toggle.click();
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const block = toggle.closest('.mb-4');
+      const panel = block ? block.lastElementChild : null;
+      if (!panel || panel === toggle) return { error: 'never expanded' };
+      const text = panel.textContent;
+      const links = [...panel.querySelectorAll('a')].map((a) => ({
+        text: a.textContent,
+        href: a.getAttribute('href'),
+      }));
+      const at = (needle) => text.indexOf(needle);
+      return {
+        pre: at('Before answering I will compute.'),
+        calc: at('5 + 5'),
+        mid: at('Then I looked up the docs.'),
+        tail: at('All ready.'),
+        links,
+        // Sources replace the query pill: the sketch shows sites, not the
+        // search string they came from.
+        query: text.includes('opencode vs claude'),
+      };
+    })()`);
+    check(
+      "thinking chips render in order, as links, inside the reasoning",
+      !chipReport.error &&
+        chipReport.pre >= 0 &&
+        chipReport.calc > chipReport.pre &&
+        chipReport.mid > chipReport.calc &&
+        chipReport.tail > chipReport.mid &&
+        !chipReport.query &&
+        chipReport.links.length === 2 &&
+        chipReport.links[0].text === "reddit.com" &&
+        chipReport.links[0].href === "https://reddit.com" &&
+        chipReport.links[1].text === "example.org" &&
+        chipReport.links[1].href === "https://example.org",
+      JSON.stringify(chipReport),
+    );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {

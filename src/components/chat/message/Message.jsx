@@ -52,6 +52,7 @@ const Message = memo(function Message({ message }) {
     contentImages.length > 0 ||
     (attachments && attachments.length > 0) ||
     !!message.thinking ||
+    (message.thinkingChips && message.thinkingChips.length > 0) ||
     hasSources ||
     !!message.webSearch ||
     (showMetrics && !!message.metrics);
@@ -64,6 +65,7 @@ const Message = memo(function Message({ message }) {
         {isAssistant && (
           <ThinkingBlock
             thinking={message.thinking}
+            chips={message.thinkingChips}
             defaultView={showThinking ? "open" : "closed"}
           />
         )}

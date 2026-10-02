@@ -347,4 +347,117 @@ describe("MessageList", () => {
     });
     expect(screen.getByText(/thinking/i)).toBeInTheDocument();
   });
+
+  it("renders a persisted thinking chip inside the expanded block", () => {
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: "answer",
+          thinking: "I should compute that. So it is done.",
+          thinkingChips: [
+            { tool: "javascript_calculator", at: 23, label: "5 + 5" },
+          ],
+        },
+      ],
+      settings: { showThinking: true },
+    });
+
+    const body = document.body.textContent;
+    expect(body).toContain("5 + 5");
+    // The pill sits between the reasoning before the call and after it.
+    expect(body.indexOf("I should compute that.")).toBeLessThan(
+      body.indexOf("5 + 5"),
+    );
+    expect(body.indexOf("5 + 5")).toBeLessThan(body.indexOf("So it is done."));
+  });
+
+  it("renders live streaming chips for the active conversation", () => {
+    renderList({
+      messages: [{ role: "user", content: "hello" }],
+      activeConversation: "conv-a",
+      turn: {
+        streamingConversationId: "conv-a",
+        isLoading: true,
+        streamingThinking: "computing. ",
+        streamingToolChips: [
+          {
+            index: 0,
+            tool: "javascript_calculator",
+            at: 11,
+            args: "",
+            label: "5 + 5",
+          },
+        ],
+      },
+      settings: { thinkingEnabled: true, showThinking: true },
+    });
+
+    expect(screen.getByText(/computing/)).toBeInTheDocument();
+    expect(screen.getByText("5 + 5")).toBeInTheDocument();
+  });
+
+  it("shows a chips-only stream without a second thinking placeholder", () => {
+    renderList({
+      messages: [{ role: "user", content: "hello" }],
+      activeConversation: "conv-a",
+      turn: {
+        streamingConversationId: "conv-a",
+        isLoading: true,
+        streamingToolChips: [
+          { index: 0, tool: "javascript_calculator", at: 0, label: "5 + 5" },
+        ],
+      },
+      settings: { thinkingEnabled: true, showThinking: true },
+    });
+
+    expect(screen.getByText("5 + 5")).toBeInTheDocument();
+    // The chip's own block is the thinking block. The empty indicator
+    // placeholder is for a stream with nothing to show yet — with a chip
+    // already on screen it would be a second "Thinking" for no reason.
+    expect(
+      screen.getAllByRole("button", { name: /thinking/i }),
+    ).toHaveLength(1);
+  });
+
+  it("keeps a message whose only content is a chip renderable", () => {
+    // The gates (hasRenderableContent in the list, hasVisibleBody in the
+    // row) both had to learn about chips: a tool call can arrive before the
+    // model writes a single reasoned word, and dropping the row would drop
+    // the only trace of what the model did.
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: "",
+          thinkingChips: [
+            { tool: "javascript_calculator", at: 0, label: "5 + 5" },
+          ],
+        },
+      ],
+      settings: { showThinking: true },
+    });
+
+    expect(screen.getByText("5 + 5")).toBeInTheDocument();
+  });
+
+  it("hides live chips that belong to another conversation", () => {
+    renderList({
+      messages: [{ role: "user", content: "hello" }],
+      activeConversation: "conv-b",
+      turn: {
+        streamingConversationId: "conv-a",
+        isLoading: true,
+        streamingThinking: "other chat reasoning",
+        streamingToolChips: [
+          { index: 0, tool: "javascript_calculator", at: 0, label: "9 * 9" },
+        ],
+      },
+      settings: { thinkingEnabled: true, showThinking: true },
+    });
+
+    expect(screen.queryByText("9 * 9")).not.toBeInTheDocument();
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+    expect(screen.getByText("hello")).toBeInTheDocument();
+  });
 });

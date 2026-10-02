@@ -92,5 +92,11 @@ export function hasRenderableContent(message) {
       : getMessageText(message.content);
   if (messageText.trim() !== "") return true;
   if (message.thinking && message.thinking.trim() !== "") return true;
+  // A turn that spent itself on tool calls before the model wrote anything
+  // still has something to draw: its chips. Without this the message is
+  // filtered out of the thread entirely. Deliberately *not* mirrored into
+  // hasSendableContent — chips are display-only, and an empty assistant turn
+  // must still never be sent to the provider.
+  if (message.thinkingChips && message.thinkingChips.length > 0) return true;
   return false;
 }

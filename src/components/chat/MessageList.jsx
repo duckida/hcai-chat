@@ -36,6 +36,7 @@ export default function MessageList({ messages, activeConversation = null }) {
     streamingThinking,
     streamingError,
     streamingSandboxTools,
+    streamingToolChips,
     streamingConversationId,
   } = useTurn();
   const { thinkingEnabled, showThinking } = useSettings(
@@ -71,6 +72,10 @@ export default function MessageList({ messages, activeConversation = null }) {
     () => (streamVisible ? streamingSandboxTools : []),
     [streamVisible, streamingSandboxTools],
   );
+  const liveToolChips = useMemo(
+    () => (streamVisible ? streamingToolChips : []),
+    [streamVisible, streamingToolChips],
+  );
 
   const { scrollRef, userScrolledAway, handleScroll, scrollToBottom } =
     useThreadScroll({ isStreaming });
@@ -80,6 +85,7 @@ export default function MessageList({ messages, activeConversation = null }) {
     !!renderedStreamingContent ||
     !!renderedStreamingThinking ||
     liveSandboxTools.length > 0 ||
+    liveToolChips.length > 0 ||
     !!liveStreamingError;
 
   const completedTool = liveSandboxTools.find((t) => t.status === "complete");
@@ -134,16 +140,19 @@ export default function MessageList({ messages, activeConversation = null }) {
               */}
               {(renderedStreamingContent ||
                 renderedStreamingThinking ||
-                liveSandboxTools.length > 0) && (
+                liveSandboxTools.length > 0 ||
+                liveToolChips.length > 0) && (
                 <StreamingMessage
                   streamingContent={renderedStreamingContent}
                   streamingThinking={renderedStreamingThinking}
+                  streamingToolChips={liveToolChips}
                 />
               )}
 
               {isStreaming &&
                 !renderedStreamingContent &&
                 !renderedStreamingThinking &&
+                liveToolChips.length === 0 &&
                 thinkingEnabled && (
                   <div className="w-full animate-hcai-fade-in-slow">
                     <MessageRow variant="assistant">

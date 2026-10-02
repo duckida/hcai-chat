@@ -47,6 +47,34 @@ const makeStreamResponse = (chunks) => {
 const delta = (content) =>
   `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
 
+// The thinking/tool frames, in the shapes src/app/api/chat/route.js emits:
+// a start carries the name and an id (api-client reads the id as "complete"),
+// argument deltas carry only the index and a fragment, the final tool-call
+// carries only index and id.
+const think = (text) =>
+  `data: ${JSON.stringify({ choices: [{ delta: { thinking: text } }] })}\n\n`;
+
+const toolStart = (index, id, name) =>
+  `data: ${JSON.stringify({
+    choices: [
+      {
+        delta: {
+          tool_calls: [{ index, id, function: { name, arguments: "" } }],
+        },
+      },
+    ],
+  })}\n\n`;
+
+const toolArgs = (index, fragment) =>
+  `data: ${JSON.stringify({
+    choices: [
+      { delta: { tool_calls: [{ index, function: { arguments: fragment } }] } },
+    ],
+  })}\n\n`;
+
+const searchResult = (sources) =>
+  `data: ${JSON.stringify({ type: "search_result", sources, content: "ok" })}\n\n`;
+
 // A stream that delivers one content delta, then aborts the body read — the
 // same shape as the proxy's mid-stream QUIC reset.
 function makeAbortableStreamResponse(partialText, deltaCount) {
@@ -318,6 +346,106 @@ describe("useChatTurn", () => {
     expect(assistant.error).toBeFalsy();
     expect(result.result.current.stream.streamingError).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe("thinking chips", () => {
+    const assistantOf = (result) =>
+      result.result.current.conversations.messages.find(
+        (m) => m.role === "assistant",
+      );
+
+    it("commits a calculator chip pinned where the reasoning was interrupted", async () => {
+      const prefix = "I should check this. ";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          makeStreamResponse([
+            think(prefix),
+            toolStart(0, "call_1", "javascript_calculator"),
+            toolArgs(0, '{"expression":"5 + 5"}'),
+            think("The sum is straightforward."),
+            delta("The answer is 10."),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+      );
+      const result = await setup();
+
+      await act(async () => {
+        await result.result.current.stream.send("whats 5+5", []);
+      });
+
+      const assistant = assistantOf(result);
+      expect(assistant.thinking).toBe(
+        `${prefix}The sum is straightforward.`,
+      );
+      expect(assistant.thinkingChips).toEqual([
+        // `at` is the prefix's length, not the whole reasoning: the chip
+        // belongs *inside* the thinking at the moment the model reached for
+        // the tool, and the text that arrived afterwards must not drag it.
+        { tool: "javascript_calculator", at: prefix.length, label: "5 + 5" },
+      ]);
+    });
+
+    it("fills a search chip with domains once the results arrive", async () => {
+      const prefix = "Let me look that up. ";
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          makeStreamResponse([
+            think(prefix),
+            toolStart(0, "call_1", "web_search"),
+            toolArgs(0, '{"query":"opencode vs claude"}'),
+            searchResult([
+              "https://www.reddit.com/r/ai",
+              "txt.com",
+              "just some words",
+            ]),
+            think("Now I can answer."),
+            delta("Here it is."),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+      );
+      const result = await setup({ webSearchEnabled: true });
+
+      await act(async () => {
+        await result.result.current.stream.send("search for it", []);
+      });
+
+      expect(assistantOf(result).thinkingChips).toEqual([
+        {
+          tool: "web_search",
+          at: prefix.length,
+          label: "opencode vs claude",
+          sources: ["reddit.com", "txt.com"],
+        },
+      ]);
+    });
+
+    it("never chips a sandbox tool — its commands belong to the side panel", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          makeStreamResponse([
+            think("Let me run the code. "),
+            toolStart(0, "call_1", "execute_code"),
+            toolArgs(0, '{"code":"print(1)"}'),
+            delta("It printed."),
+            "data: [DONE]\n\n",
+          ]),
+        ),
+      );
+      const result = await setup();
+
+      await act(async () => {
+        await result.result.current.stream.send("run it", []);
+      });
+
+      const assistant = assistantOf(result);
+      expect(assistant.thinking).toBe("Let me run the code. ");
+      expect(assistant.thinkingChips).toBeUndefined();
+    });
   });
 
   it("restores context usage for the conversation it is reset to", async () => {

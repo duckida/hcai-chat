@@ -16,10 +16,14 @@ import {
   messagesRef,
 } from "@/stores/conversations";
 import {
+  appendTurnChip,
+  appendTurnChipArgs,
   appendTurnDelta,
   beginTurn,
   clearTurnDeltas,
+  fillLastSearchChip,
   predictContextUsage,
+  readTurnChips,
   readTurnDeltas,
   resetTurn,
   setContextUsage,
@@ -299,6 +303,9 @@ export function useChatTurn({
           // re-rendered since the last chunk arrived.
           const { content: finalContent, thinking: finalThinking } =
             readTurnDeltas();
+          // Chips are read before the clear below — the clear drops them with
+          // the reasoning text they are pinned to.
+          const finalChips = readTurnChips();
 
           if (!finalContent && !finalThinking) {
             const errorMsg = {
@@ -322,6 +329,20 @@ export function useChatTurn({
             role: "assistant",
             content: finalContent,
             thinking: finalThinking || undefined,
+            // `index` and the raw argument buffer are stream plumbing; the
+            // pill only needs where it goes, what it says, and which sites
+            // the search returned. A message with no chips carries no field
+            // at all, so legacy thinking renders exactly as before.
+            ...(finalChips.length > 0
+              ? {
+                  thinkingChips: finalChips.map((chip) => ({
+                    tool: chip.tool,
+                    at: chip.at,
+                    label: chip.label,
+                    sources: chip.sources,
+                  })),
+                }
+              : {}),
             ...(includeSources
               ? {
                   sources: sources.length > 0 ? sources : undefined,
@@ -372,6 +393,22 @@ export function useChatTurn({
         const onToolCall = (call) => {
           if (call.arguments && !call.complete) {
             bumpPredictedUsage(call.arguments.length);
+          }
+
+          // Thinking-block chips record here, *outside* the agent guard:
+          // web search and the calculator run in ordinary chats, where this
+          // early return would otherwise swallow their calls. The stream
+          // delivers reasoning and tool calls in order, so pinning the chip
+          // to the thinking buffer's length at this moment places it exactly
+          // where the model interrupted itself. Sandbox tools are excluded —
+          // their commands belong to the side panel, not the thread.
+          if (call.name && !SANDBOX_TOOL_NAMES.includes(call.name)) {
+            appendTurnChip({ index: call.index, tool: call.name });
+            if (call.arguments) {
+              appendTurnChipArgs(call.index, call.arguments);
+            }
+          } else if (!call.name && call.arguments) {
+            appendTurnChipArgs(call.index, call.arguments);
           }
 
           if (!needsAgentMode) return;
@@ -490,6 +527,10 @@ export function useChatTurn({
           onSearchResult: needsWebSearch
             ? (searchSources) => {
                 sources = searchSources;
+                // The domains land on the chip pinned where the call
+                // happened; without this the pill would show the query
+                // forever.
+                fillLastSearchChip(searchSources);
               }
             : null,
           onMetrics: (metricsData) => {

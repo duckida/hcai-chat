@@ -6,6 +6,7 @@ const initialState = {
   streamingThinking: "",
   streamingError: null,
   streamingSandboxTools: [],
+  streamingToolChips: [],
   streamingConversationId: null,
   contextUsage: 0,
 };
@@ -73,11 +74,14 @@ export function resetTurn() {
  */
 export function clearTurnDeltas(patch = {}) {
   discardBuffers();
-  turnStore.setState({
+  turnStore.setState((state) => ({
     streamingContent: "",
     streamingThinking: "",
+    // Only when there is something to clear: a fresh [] would differ from
+    // the state's own by reference and notify listeners over nothing.
+    ...(state.streamingToolChips.length > 0 ? { streamingToolChips: [] } : {}),
     ...patch,
-  });
+  }));
 }
 
 export function beginTurn(conversationId) {
@@ -127,6 +131,112 @@ export function updateSandboxTools(updater) {
   turnStore.setState((state) => ({
     streamingSandboxTools: updater(state.streamingSandboxTools),
   }));
+}
+
+/**
+ * Tool calls that belong in the thinking block, as chips pinned to the offset
+ * they arrived at in the reasoning. Like the sandbox tools these write the
+ * store directly rather than riding a frame: a turn makes a handful of tool
+ * calls, and the ordering they need is precise rather than smooth.
+ *
+ * Sandbox tools are never appended here — their transcript is the side panel,
+ * and no trace of a command belongs in the thread. The caller filters, and
+ * `appendTurnChipArgs` no-ops for indexes that never got a chip, so argument
+ * deltas for a sandbox tool land nowhere.
+ */
+export function appendTurnChip({ index, tool }) {
+  const chips = turnStore.getState().streamingToolChips;
+  if (chips.some((chip) => chip.index === index)) return;
+  turnStore.setState({
+    streamingToolChips: [
+      ...chips,
+      {
+        index,
+        tool,
+        // The *buffer*, not the rendered mirror: the committed thinking is
+        // the buffer, so the offset has to match it exactly even when the
+        // last frame has not painted yet.
+        at: buffers.thinking.length,
+        args: "",
+      },
+    ],
+  });
+}
+
+/**
+ * Accumulate a tool call's streamed arguments and promote them to a label as
+ * soon as they parse. Arguments arrive as fragments after the tool-input-start
+ * event, so most of the time this sees half a JSON document and must leave the
+ * previous label alone.
+ */
+export function appendTurnChipArgs(index, fragment) {
+  const state = turnStore.getState();
+  const chip = state.streamingToolChips.find((c) => c.index === index);
+  if (!chip) return;
+  const args = chip.args + fragment;
+  const label = parseChipLabel(args) ?? chip.label;
+  turnStore.setState({
+    streamingToolChips: state.streamingToolChips.map((c) =>
+      c.index === index ? { ...c, args, label } : c,
+    ),
+  });
+}
+
+/**
+ * A search's domains fill the chip that was pinned where the call happened.
+ * The sources arrive one event later (at the step's end, before the
+ * post-search reasoning), so until now the chip showed only the query. The
+ * *oldest* unfilled search chip wins: two searches in one turn must fill in
+ * call order, not whichever the model mentioned last.
+ */
+export function fillLastSearchChip(rawSources) {
+  const domains = [...new Set(rawSources.map(sourceDomain).filter(Boolean))];
+  const chips = turnStore.getState().streamingToolChips;
+  let target = null;
+  for (const chip of chips) {
+    if (chip.tool === "web_search" && !chip.sources) {
+      target = chip;
+      break;
+    }
+  }
+  if (!target) return;
+  turnStore.setState({
+    streamingToolChips: chips.map((chip) =>
+      chip === target ? { ...chip, sources: domains } : chip,
+    ),
+  });
+}
+
+/** The chips as the commit reads them — a copy, so the stream cannot be mutated from outside. */
+export function readTurnChips() {
+  return [...turnStore.getState().streamingToolChips];
+}
+
+function parseChipLabel(args) {
+  if (!args) return undefined;
+  try {
+    const parsed = JSON.parse(args);
+    if (parsed && typeof parsed === "object") {
+      if (typeof parsed.expression === "string") return parsed.expression;
+      if (typeof parsed.query === "string") return parsed.query;
+    }
+  } catch {}
+  return undefined;
+}
+
+function sourceDomain(source) {
+  const raw =
+    typeof source === "string" ? source : source?.url || source?.link || "";
+  if (!raw) return null;
+  try {
+    return new URL(raw).hostname.replace(/^www\./, "");
+  } catch {
+    // Citations are sometimes bare domains already. Anything with a space is
+    // free text and does not earn a pill.
+    return /\s/.test(raw) || !raw.includes(".")
+      ? null
+      : raw.replace(/^www\./, "");
+  }
 }
 
 export function useTurn() {

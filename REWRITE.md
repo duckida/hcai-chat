@@ -271,6 +271,42 @@ history.
       `onTogglePanel` (reported path red), and a gate that never renders
       (smoke 21/22, check 19 red with `found: false`).
 
+14. ~~**Tool calls were a separate list below the thinking; they now sit inside the
+    reasoning where they happened.**~~ — **done** (user's sketch: `reddit.com`,
+    `txt.com`, `5+5` pills interleaved with the reasoning). A chip records
+    `at = <thinking buffer length at the moment the call arrived>` — the *buffer*, not
+    the rendered mirror, because that is what the commit reads — and `splitThinking`
+    turns offsets into event positions: sorted by arrival, clamped to the text, keyed
+    `t<cursor>` / `c<at>-<order>` so a growing tail never renumbers an earlier pill.
+    - **Capture sits before the agent guard, and sandbox tools are excluded.**
+      Web search and the calculator run in ordinary chats, where the guard would
+      swallow their calls; `execute_code`/`run_command` are excluded because their
+      transcript *is* the side panel — no command belongs in the thread
+      (`appendTurnChipArgs` also no-ops for indexes that never got a chip, so a
+      sandbox tool's argument deltas land nowhere).
+    - **Labels promote, sources fill in call order.** Argument fragments accumulate
+      and parse into `expression`/`query` when they form JSON (half a document keeps
+      the previous label); search results fill the *oldest unfilled* `web_search`
+      chip, with `www.` stripped, duplicates collapsed and free text dropped. The
+      commit persists `{tool, at, label, sources}` only when there is at least one
+      chip — a legacy message carries no field at all. `hasRenderableContent` and
+      `hasVisibleBody` learned chips (a turn that spent itself on tool calls before
+      its first reasoned word still has something to draw); `hasSendableContent`
+      deliberately did not, so an empty assistant turn is never sent upstream.
+    - **Two bugs caught before shipping, by writing the tests first.** The rewrite
+      of `ThinkingBlock` called `i` that the `map` callback never bound — every
+      existing test stayed green because nothing rendered the expanded body; the
+      component tests found it immediately. And the first version of the offset
+      test asserted against `readTurnDeltas()` when it meant the mirror — the
+      buffer *is* `readTurnDeltas()` (AGENTS said so; the test read it backwards).
+    - **Verified:** 615 unit tests (26 new: buffer pinning, label promotion,
+      oldest-unfilled fill, split/clamp/key order, interleaved DOM order, stream
+      gating, chips-only gates) against eight negative controls — mirror `at`,
+      fill-last, unfiltered sandbox chips, dropped persistence, dropped sort,
+      dropped placeholder gate, dropped conversation gate, and each half of the
+      render gate (predicate and row) — plus smoke 20, which expands the block in
+      a real browser and measures the pill order and the `https://` links.
+
 ---
 
 ## Findings from P9 — read before touching the component layer
@@ -587,12 +623,13 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 17 | a tall thread scrolls while the composer stays on screen | a seeded 12,870px conversation: composer bottom inside the viewport, `scrollHeight > clientHeight` with a real `scrollTop` change, page itself not scrollable. **P10 finding 11 — the one class of layout bug no jsdom test can see** |
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 | 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
+| 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two `https://` domain links, no leftover query. **P10 finding 14** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 22 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 23 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
