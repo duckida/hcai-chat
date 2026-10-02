@@ -75,6 +75,11 @@ export function useChatTurn({
   // and the usage attribution cursor must not survive into the next mount.
   const isSubmittingRef = useRef(false);
   const isStreamingComplete = useRef(false);
+  // Armed by onFallbackStart: the dead stream's partial must be dropped, but
+  // only once the replay actually delivers — not before, or a replay that
+  // fails too would leave the user with nothing. Read by onChunk, the single
+  // funnel every replayed byte goes through.
+  const pendingReplayClear = useRef(false);
   const activeUsageConversationRef = useRef(null);
   const lastUsageRef = useRef(null);
   const predictedOutputTokensRef = useRef(0);
@@ -220,6 +225,7 @@ export function useChatTurn({
       let metrics = null;
       const sandboxResults = [];
       isStreamingComplete.current = false;
+      pendingReplayClear.current = false;
 
       // The conversation may have been removed (deleted) or the user may
       // have started a new chat while this stream was still running. Apply
@@ -278,6 +284,12 @@ export function useChatTurn({
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
           snapToActualUsage();
+          // Keep whatever arrived before the failure: text the user already
+          // read must not vanish into an empty box. The commit carries both
+          // the partial and the error — the thread renders them together,
+          // and hasSendableContent keeps the record out of later requests.
+          const { content: partialContent, thinking: partialThinking } =
+            readTurnDeltas();
           clearTurnDeltas({
             streamingError: {
               title: "API Error",
@@ -288,7 +300,8 @@ export function useChatTurn({
 
           const errorMessage = {
             role: "assistant",
-            content: "",
+            content: partialContent,
+            ...(partialThinking ? { thinking: partialThinking } : {}),
             error: { title: "API Error", details: error.message },
           };
           commitMessages(errorMessage);
@@ -386,6 +399,14 @@ export function useChatTurn({
         };
 
         const onChunk = (chunk, type) => {
+          // First byte of a replay replaces the dead stream's partial rather
+          // than appending to it (which would show the response twice). If
+          // no byte ever arrives, the buffers keep their partial and the
+          // error path below commits it instead of an empty box.
+          if (pendingReplayClear.current) {
+            pendingReplayClear.current = false;
+            clearTurnDeltas({ streamingSandboxTools: [] });
+          }
           bumpPredictedUsage(chunk.length);
           appendTurnDelta(type, chunk);
         };
@@ -557,18 +578,22 @@ export function useChatTurn({
           sandboxId: needsAgentMode ? sandboxId : null,
           onSandboxResult: needsAgentMode ? onSandboxResult : null,
           onFallbackStart: () => {
-            // The non-streaming retry regenerates the whole answer. Drop the
-            // partial text the dead stream already accumulated, otherwise the
-            // replay appends to it and the response appears twice.
+            // The replay regenerates the whole answer, so the dead stream's
+            // partial must not double up underneath it — but do not drop it
+            // yet: if the replay fails too, that text is all the user has.
+            // Keep it on screen and swap it for the regenerated text on the
+            // first replay chunk (see onChunk).
             sources = [];
             metrics = null;
             sandboxResults.length = 0;
             isStreamingComplete.current = false;
-            clearTurnDeltas({ streamingSandboxTools: [] });
+            pendingReplayClear.current = true;
           },
         });
       } catch (error) {
         isStreamingComplete.current = true;
+        const { content: partialContent, thinking: partialThinking } =
+          readTurnDeltas();
         clearTurnDeltas({
           streamingError: {
             title: "Error",
@@ -579,7 +604,8 @@ export function useChatTurn({
 
         const errorMessage = {
           role: "assistant",
-          content: "",
+          content: partialContent,
+          ...(partialThinking ? { thinking: partialThinking } : {}),
           error: {
             title: "Error",
             details: error.message || "An unexpected error occurred.",

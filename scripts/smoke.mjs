@@ -1300,6 +1300,122 @@ async function main() {
         chipReport.links[1].href === "https://example.org",
       JSON.stringify(chipReport),
     );
+
+    // ---- 21. a stream cut before [DONE] must not look complete ---------
+    // The server closes a success with `data: [DONE]`. If the connection
+    // dies first, the client cannot know the answer is whole, and committing
+    // the partial as a finished response is the silent-cutoff bug. Patch
+    // fetch in-page: the first *streamed* /api/chat carrying this probe
+    // returns one delta and closes with no marker — exactly what a
+    // connection cut mid-answer looks like on the wire. The client must
+    // detect it (the console warn) and complete through the replay, whose
+    // non-streaming request passes through to the real model. If the cut
+    // prefix is still on screen when the turn ends, detection failed.
+    const CUT_PREFIX = "the cut prefix ";
+    const probeArmed = await evalJs(`(() => {
+      const realFetch = window.fetch.bind(window);
+      let hit = false;
+      window.fetch = (input, init) => {
+        const url = typeof input === 'string' ? input : (input && input.url) || '';
+        const body = init && typeof init.body === 'string' ? init.body : '';
+        if (
+          !hit &&
+          url.includes('/api/chat') &&
+          body.includes('"stream":true') &&
+          body.includes('SMOKE_CUT_PROBE')
+        ) {
+          hit = true;
+          const enc = new TextEncoder();
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(enc.encode(
+                'data: {"choices":[{"delta":{"content":"the cut prefix "}}]}\\n\\n',
+              ));
+              controller.close();
+            },
+          });
+          return Promise.resolve(new Response(stream, {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          }));
+        }
+        return realFetch(input, init);
+      };
+      return true;
+    })()`);
+    check("truncation probe armed", probeArmed === true);
+
+    await typeInto(
+      "textarea",
+      "SMOKE_CUT_PROBE Reply with exactly the word SMOKEREPLAYOK and nothing else.",
+    );
+    await pressEnter("textarea");
+    await sleep(1200);
+    let cutSent = (await pageText()).includes("SMOKE_CUT_PROBE");
+    if (!cutSent) {
+      await evalJs(
+        `(() => { const b = [...document.querySelectorAll('main button')].find(x =>
+            (x.getAttribute('aria-label')||'').match(/send/i) ||
+            x.querySelector('svg.lucide-send, svg.lucide-arrow-up'));
+          if (b) { b.click(); return true; } return false; })()`,
+      );
+      await sleep(1200);
+      cutSent = (await pageText()).includes("SMOKE_CUT_PROBE");
+    }
+    check("truncation probe message is sent", cutSent);
+
+    if (cutSent) {
+      // Two phases, anchored on the cut prefix itself — not on quiet/IDLE
+      // heuristics, which race the replay: the partial keeps text on screen,
+      // so the "still thinking" placeholder unmounts while the replay is
+      // still running and the turn can look idle for those seconds.
+      // 1) the truncated delta must land (a latch that missed means a real
+      //    stream, which must fail this check);
+      // 2) only the replay can take the prefix away.
+      let cutText = "";
+      let appeared = false;
+      const cutStarted = Date.now();
+      while (Date.now() - cutStarted < 30000) {
+        cutText = await pageText();
+        if (cutText.includes(CUT_PREFIX)) {
+          appeared = true;
+          break;
+        }
+        if (/API Error/.test(cutText)) break;
+        await sleep(500);
+      }
+      while (
+        appeared &&
+        Date.now() - cutStarted < 120000 &&
+        cutText.includes(CUT_PREFIX) &&
+        !/API Error/.test(cutText)
+      ) {
+        await sleep(1000);
+        cutText = await pageText();
+      }
+      const cutErr = cutText.match(/API Error.{0,140}/s);
+      if (cutErr) {
+        skip(
+          "a stream cut before [DONE] is replayed, not committed",
+          `assistant turn errored — ${cutErr[0].replace(/\s+/g, " ").trim()}`,
+        );
+      } else {
+        const warned = consoleEntries.some((e) =>
+          e.text.includes("EOF without the [DONE]"),
+        );
+        const noCutLeft = appeared && !cutText.includes(CUT_PREFIX);
+        check(
+          "a stream cut before [DONE] is replayed, not committed",
+          warned && noCutLeft,
+          JSON.stringify({
+            appeared,
+            warned,
+            noCutLeft,
+            tail: cutText.slice(-160),
+          }),
+        );
+      }
+    }
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {

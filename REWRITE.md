@@ -305,7 +305,50 @@ history.
       fill-last, unfiltered sandbox chips, dropped persistence, dropped sort,
       dropped placeholder gate, dropped conversation gate, and each half of the
       render gate (predicate and row) — plus smoke 20, which expands the block in
-      a real browser and measures the pill order and the `https://` links.
+      a real browser and measures the pill order and the deep links.
+
+15. ~~**Responses silently cut off when a connection died mid-answer.**~~ —
+    **fixed.** The server closes every success with `data: [DONE]` (route.js,
+    after the usage frame) and writes a keepalive comment every 5s — the
+    protocol was already complete. The client threw the completion marker away
+    (`parseSseFrame` returned null for `[DONE]`) and then decided "finished"
+    from the fact that the bytes stopped, so a clean early close after *any*
+    delivered content committed silently as a complete response: no error, no
+    retry, an answer that just ends. Every `api-client` fixture ended with
+    `[DONE]`, so the partial-then-EOF-no-marker case was never tested.
+    - **Completion is what the server said, not what the bytes did.**
+      `sse-parser` now dispatches `[DONE]` as `SSE_DONE`; `streamOnce` decides
+      EOF in precedence order: empty → replay (the oldest retry invariant,
+      marker or not); marker → complete; a delivered error frame or tool/search
+      result → complete, *never* replayed over (their work already happened);
+      content without the marker → a truncation, routed into the same
+      one-time non-streaming replay a transport failure already used.
+    - **A failed turn keeps what it wrote.** `onFallbackStart` used to wipe the
+      partial *before* the replay started, and a failed replay committed
+      `content: ""` — a double failure destroyed text the user had already
+      read. The wipe moved to the first replay *chunk* (the buffers hold the
+      partial until real replacement text exists), and `makeOnError`/the outer
+      `catch` commit the partial alongside the error; `MessageList` renders
+      that body above the error card instead of hiding it. An error message
+      still carries the `error` field, so `hasSendableContent` keeps the
+      truncated record out of later requests.
+    - **A wedged connection recovers instead of spinning.** A pending
+      `reader.read()` never settles on its own and a background tab may never
+      be scheduled again; the read loop arms a 15s silence timer (keepalives
+      are 5s, so silence is a dead connection, not a slow model) and checks
+      staleness on `visibilitychange` — because tab timers are throttled to
+      once a minute or worse. Either path cancels the reader, which surfaces
+      as an EOF and lands in the truncation check.
+    - **Verified:** 40 `api-client` tests (+6: truncation replay, marker
+      completion, both precedence branches, fake-timer stall, visibility
+      recovery), `sse-parser` `SSE_DONE` dispatch, `use-chat-turn` partial
+      preservation (+2), `MessageList` partial-plus-card (+1) — eight negative
+      controls, each break-verified (marker dropped, precedence disabled,
+      eager wipe, disabled lazy clear, empty-box error, neutered timer,
+      removed visibility listener, dropped body render) — plus smoke 21,
+      which patches `fetch` in a real browser to cut the first streamed
+      response after one delta with no marker and asserts the console warn
+      fired and the cut prefix was replaced by the replayed answer.
 
 ---
 
@@ -624,12 +667,13 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 | 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
 | 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two `https://` domain links, no leftover query. **P10 finding 14** |
+| 21 | a stream cut before `[DONE]` is replayed, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer. Asserts the truncation console warn fired and the cut prefix is gone when the turn ends (the non-streaming replay passed through to the real model). **Finding 15 — the silent-cutoff fix** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 23 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 26 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
@@ -749,6 +793,7 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 - [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
 - [x] SSE fallback to non-streaming does **not** duplicate the response; partial accumulators are cleared first. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the non-streaming fallback"; `api-client` "fires onFallbackStart before replaying the regenerated text"
 - [x] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`) — four `api-client` tests (retry / no retry on thinking / on error event / on tool result)
+- [x] A clean EOF after delivered content **without the server's `[DONE]` marker is a truncation, not a completion**, and replays exactly once; an EOF after the marker completes. A failed turn commits the partial text it had alongside the error, never `content: ""`, and a silent connection past 15s is cancelled into that same path. — finding 15: `sse-parser` `SSE_DONE` tests, `api-client` truncation / precedence / stall / visibility tests, `use-chat-turn` partial-preservation tests, `MessageList` partial-plus-card test, smoke 21
 - [x] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation: `use-chat-turn` "commits the final deltas even if a chunk has not re-rendered". Across turns: "sends the whole conversation, not just the newest message" asserts the second request's `messages` are `["first question", "ok", "and then?"]`
 - [x] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`) — conversations store "assigns messagesRef synchronously on creation" / "selects a conversation and syncs its messages"
 - [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`

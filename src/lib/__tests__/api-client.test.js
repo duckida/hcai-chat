@@ -539,6 +539,252 @@ describe("streamChatCompletion", () => {
     expect(onComplete).toHaveBeenCalled();
   });
 
+  it("replays a stream that delivered content but never sent [DONE]", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"half an ans"}}]}\n\n',
+          // Connection cut mid-answer: the stream ends with no [DONE].
+        ]),
+      )
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ text: "the whole answer" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    const onFallbackStart = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onFallbackStart).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith("the whole answer", "content");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("does not replay a stream that completed with [DONE]", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      makeStreamResponse([
+        'data: {"choices":[{"delta":{"content":"done"}}]}\n\n',
+        "data: [DONE]\n\n",
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not replay after a server error event that arrived without [DONE]", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeStreamResponse(['data: {"type":"error","error":"Oops"}\n\n']),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toBe("Oops");
+  });
+
+  it("does not replay after a tool result that arrived without [DONE]", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        makeStreamResponse([
+          'data: {"type":"search_result","sources":["https://example.org/a"],"content":"found"}\n\n',
+          // Connection dies after the tool result: no [DONE].
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onSearchResult = vi.fn();
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError: vi.fn(),
+      onSearchResult,
+      onComplete,
+    });
+
+    // The search already ran and its result is on screen — replaying would
+    // re-run it, and the invariant says tool work is never re-done.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(onSearchResult).toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalled();
+  });
+
+  it("cancels a stalled read after the silence timeout and replays", async () => {
+    vi.useFakeTimers();
+    try {
+      const encoder = new TextEncoder();
+      let readCount = 0;
+      let resolveHang;
+      const hang = new Promise((resolve) => {
+        resolveHang = resolve;
+      });
+      const cancel = vi.fn(() => {
+        resolveHang({ done: true, value: undefined });
+        return Promise.resolve();
+      });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn(() => {
+                readCount += 1;
+                if (readCount === 1) {
+                  return Promise.resolve({
+                    done: false,
+                    value: encoder.encode(
+                      'data: {"choices":[{"delta":{"content":"partial "}}]}\n\n',
+                    ),
+                  });
+                }
+                // Wedged: this read never settles on its own.
+                return hang;
+              }),
+              cancel,
+            }),
+          },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "recovered" }),
+        });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const onChunk = vi.fn();
+      const promise = streamChatCompletion({
+        messages: [],
+        model: TEST_MODEL,
+        onChunk,
+        onError: vi.fn(),
+        onComplete: vi.fn(),
+      });
+
+      // The server keepalives every 5s, so silence past the 15s tolerance is
+      // a dead connection, not a slow model.
+      await vi.advanceTimersByTimeAsync(15_000);
+      await promise;
+
+      expect(cancel).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(onChunk).toHaveBeenCalledWith("recovered", "content");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels a stale read when the tab becomes visible again", async () => {
+    // Only Date is faked: the stall timer must stay asleep so this can only
+    // pass on the visibility branch, not on the timeout it exists to cover
+    // (a background tab throttles its timers to once a minute or worse).
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const encoder = new TextEncoder();
+      let readCount = 0;
+      let resolveHang;
+      const hang = new Promise((resolve) => {
+        resolveHang = resolve;
+      });
+      const cancel = vi.fn(() => {
+        resolveHang({ done: true, value: undefined });
+        return Promise.resolve();
+      });
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          body: {
+            getReader: () => ({
+              read: vi.fn(() => {
+                readCount += 1;
+                if (readCount === 1) {
+                  return Promise.resolve({
+                    done: false,
+                    value: encoder.encode(
+                      'data: {"choices":[{"delta":{"content":"partial "}}]}\n\n',
+                    ),
+                  });
+                }
+                return hang;
+              }),
+              cancel,
+            }),
+          },
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "recovered" }),
+        });
+      vi.stubGlobal("fetch", fetchMock);
+
+      const onChunk = vi.fn();
+      const promise = streamChatCompletion({
+        messages: [],
+        model: TEST_MODEL,
+        onChunk,
+        onError: vi.fn(),
+        onComplete: vi.fn(),
+      });
+      // Let the fetch and the first read settle so the loop is parked on the
+      // second (hanging) read before the tab "returns".
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      vi.setSystemTime(Date.now() + 16_000);
+      document.dispatchEvent(new Event("visibilitychange"));
+      await promise;
+
+      expect(cancel).toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(onChunk).toHaveBeenCalledWith("recovered", "content");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("handles malformed JSON lines by ignoring them", async () => {
     const lines = [
       "data: not-json\n\n",

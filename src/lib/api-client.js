@@ -155,7 +155,9 @@ async function postChat(body, model, stream) {
  * actually delivered. That record is the retry decision: a clean EOF with
  * nothing in it means the response was dropped upstream before its first
  * delta, and tool results count as delivered because their work already
- * happened server-side and must never be re-run.
+ * happened server-side and must never be re-run. `completed` records the
+ * server's own end-of-stream marker, which is the only proof that what was
+ * delivered is the whole answer.
  */
 function createFrameRouter({
   model,
@@ -172,9 +174,15 @@ function createFrameRouter({
     toolCall: false,
     serverEvent: false,
     serverError: false,
+    completed: false,
   };
 
   const route = (event) => {
+    if (event.type === "sse_done") {
+      delivered.completed = true;
+      return;
+    }
+
     if (event.type === "usage") {
       onMetrics?.(event.usage);
       return;
@@ -235,14 +243,34 @@ function createFrameRouter({
     delivered.serverEvent ||
     delivered.serverError;
 
-  return { route, anyDelivered };
+  return {
+    route,
+    anyDelivered,
+    delivered,
+    wasCompleted: () => delivered.completed,
+  };
 }
 
 /**
- * Read the SSE body to its end, reporting whether the stream turned out to be
- * empty. A partial frame left in the buffer at EOF cannot be salvaged, so it is
- * dispatched as-is and ignored if it does not parse — we complete the message
- * with what we have rather than hanging.
+ * How long the read loop tolerates a silent connection. The server writes a
+ * keepalive comment every 5s, so 15s without a byte means the connection is
+ * wedged (a throttled background tab, a dead proxy) — not that the model is
+ * still thinking.
+ */
+const STALL_TIMEOUT_MS = 15_000;
+
+/**
+ * Read the SSE body to its end and decide what its ending means. A partial
+ * frame left in the buffer at EOF cannot be salvaged, so it is dispatched as
+ * is and ignored if it does not parse — we complete the message with what we
+ * have rather than hanging.
+ *
+ * Completion is what the server *said*, not what the bytes did: the `[DONE]`
+ * marker. Content that arrived without it is a connection that died
+ * mid-answer, and is reported upward for replay instead of being committed
+ * as a finished response.
+ *
+ * @returns {Promise<boolean>} true when the caller should replay once
  */
 async function streamOnce(body, router, model, onComplete) {
   const response = await postChat(body, model, true);
@@ -251,20 +279,71 @@ async function streamOnce(body, router, model, onComplete) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      parser.write(decoder.decode());
-      parser.end();
-      break;
+  // A pending read() never settles on its own on a wedged connection, and a
+  // background tab may never be scheduled again — cancelling the reader turns
+  // the stall into an EOF, which lands in the truncation check below. The
+  // visibility check covers the return to a tab whose timer was throttled to
+  // once a minute while the connection was already dead.
+  let lastByteAt = Date.now();
+  let stallTimer = null;
+  const cancelRead = () => {
+    reader.cancel().catch(() => {});
+  };
+  const armStallTimer = () => {
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(cancelRead, STALL_TIMEOUT_MS);
+  };
+  const onVisibility = () => {
+    if (
+      document.visibilityState === "visible" &&
+      Date.now() - lastByteAt >= STALL_TIMEOUT_MS
+    ) {
+      cancelRead();
     }
-    parser.write(decoder.decode(value, { stream: true }));
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  armStallTimer();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        parser.write(decoder.decode());
+        parser.end();
+        break;
+      }
+      lastByteAt = Date.now();
+      armStallTimer();
+      parser.write(decoder.decode(value, { stream: true }));
+    }
+  } finally {
+    clearTimeout(stallTimer);
+    document.removeEventListener("visibilitychange", onVisibility);
   }
 
+  // Order matters. Empty (with or without the marker) replays — an answer
+  // that arrived as nothing is the oldest retry invariant here. An explicit
+  // error frame or a delivered tool/search result never replays: their work
+  // already happened, and re-running it would duplicate side effects the
+  // client has already shown. Content without the marker is a truncation —
+  // the connection ended before the server said it was done — and goes
+  // through the same one-time replay as an empty stream.
   if (!router.anyDelivered()) return true;
 
-  await onComplete?.();
-  return false;
+  if (router.wasCompleted()) {
+    await onComplete?.();
+    return false;
+  }
+
+  if (router.delivered.serverEvent || router.delivered.serverError) {
+    await onComplete?.();
+    return false;
+  }
+
+  console.warn(
+    "[stream] EOF without the [DONE] marker after delivered content — replaying the truncated response",
+  );
+  return true;
 }
 
 async function replayOnce(body, model, handlers) {
@@ -300,9 +379,12 @@ async function replayOnce(body, model, handlers) {
  * (bytes cut mid-JSON by a dropped connection) waits in the buffer for more
  * data instead of being silently dropped.
  *
- * If the SSE transport fails (e.g. the proxy's QUIC error), or the stream ends
- * cleanly but delivered nothing at all, the request is retried **once** with
- * `stream: false` and the JSON result is replayed through the same callbacks.
+ * If the SSE transport fails (e.g. the proxy's QUIC error), the stream ends
+ * cleanly but delivered nothing at all, or content arrived without the
+ * server's `[DONE]` marker (a connection cut mid-answer), the request is
+ * retried **once** with `stream: false` and the JSON result is replayed
+ * through the same callbacks. A delivered error frame or tool result is
+ * never replayed over.
  *
  * @param {object} options
  */

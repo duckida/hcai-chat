@@ -12,15 +12,25 @@
 const FRAME_BOUNDARY = /\r\n\r\n|\n\n|\r\r/;
 
 /**
+ * The server's end-of-stream marker. Dispatched as an object rather than
+ * dropped, because a reader cannot otherwise tell "the server finished" from
+ * "the bytes stopped" — and mistaking the second for the first is exactly how
+ * a connection cut mid-answer used to become a response that quietly ends
+ * early and looks complete.
+ */
+export const SSE_DONE = Object.freeze({ type: "sse_done" });
+
+/**
  * Decode one raw SSE frame into an object, or null for anything that is not a
- * JSON `data:` payload: line comments, `[DONE]`, and frames cut mid-JSON by a
- * dropped connection (which cannot be salvaged and must not throw).
+ * JSON `data:` payload: line comments and frames cut mid-JSON by a dropped
+ * connection (which cannot be salvaged and must not throw). `[DONE]` decodes
+ * to `SSE_DONE`.
  */
 export function parseSseFrame(raw) {
   const trimmed = raw.trim();
   if (!trimmed.startsWith("data: ")) return null;
   const data = trimmed.slice(6);
-  if (data === "[DONE]") return null;
+  if (data === "[DONE]") return SSE_DONE;
   try {
     return JSON.parse(data);
   } catch {

@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronDown } from "lucide-react";
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { useThreadScroll } from "@/hooks/use-thread-scroll";
 import { hasRenderableContent } from "@/lib/messages";
 import { useSettings } from "@/stores/settings";
@@ -116,11 +116,21 @@ export default function MessageList({ messages, activeConversation = null }) {
             <>
               {activeMessages.map((message, index) => {
                 if (message.error) {
+                  // A failed turn may still hold the partial it wrote before
+                  // it died — show that text above the card instead of
+                  // hiding it. An error with no body renders the card alone,
+                  // exactly as before.
+                  const partial = hasRenderableContent({
+                    ...message,
+                    error: undefined,
+                  });
                   return (
-                    <ErrorMessage
-                      key={`error-${message.id || index}`}
-                      error={message.error}
-                    />
+                    <Fragment key={`error-${message.id || index}`}>
+                      {partial && (
+                        <Message message={{ ...message, error: undefined }} />
+                      )}
+                      <ErrorMessage error={message.error} />
+                    </Fragment>
                   );
                 }
                 return (

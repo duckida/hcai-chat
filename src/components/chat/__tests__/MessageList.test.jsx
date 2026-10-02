@@ -96,6 +96,23 @@ describe("MessageList", () => {
     expect(screen.getByText("Something failed")).toBeInTheDocument();
   });
 
+  it("renders the partial answer above the error card when a failed turn has one", () => {
+    // A turn that died mid-answer commits its partial with the error. The
+    // text the user already read must stay on screen next to the card.
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: "Half an answer that never fin",
+          error: { title: "Oops", details: "Something failed" },
+        },
+      ],
+    });
+    expect(screen.getByText("Half an answer that never fin")).toBeInTheDocument();
+    expect(screen.getByText("Oops")).toBeInTheDocument();
+    expect(screen.getByText("Something failed")).toBeInTheDocument();
+  });
+
   it("filters out empty user messages", () => {
     const messages = [
       { id: "1", role: "user", content: "hello" },

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createSseParser, parseSseFrame } from "@/lib/sse-parser";
+import {
+  createSseParser,
+  parseSseFrame,
+  SSE_DONE,
+} from "@/lib/sse-parser";
 
 const toChunk = (s) => new TextEncoder().encode(s);
 
@@ -126,10 +130,24 @@ describe("parseSseFrame", () => {
   it("returns null for anything that is not a decodable data frame", () => {
     expect(parseSseFrame(": keepalive comment")).toBeNull();
     expect(parseSseFrame("event: message")).toBeNull();
-    expect(parseSseFrame("data: [DONE]")).toBeNull();
     expect(parseSseFrame("")).toBeNull();
     expect(parseSseFrame("   ")).toBeNull();
     // Cut mid-JSON by a dropped connection: cannot be salvaged, must not throw.
     expect(parseSseFrame('data: {"choices": [')).toBeNull();
+  });
+
+  it("decodes [DONE] as the completion event, not null", () => {
+    // The reader must be able to tell "the server finished" from "the bytes
+    // stopped" — dropping the marker is how a connection cut mid-answer used
+    // to be committed as a complete response.
+    expect(parseSseFrame("data: [DONE]")).toBe(SSE_DONE);
+    expect(parseSseFrame("data: [DONE]\n")).toBe(SSE_DONE);
+  });
+
+  it("dispatches the completion event through the parser", () => {
+    const events = [];
+    const parser = createSseParser((event) => events.push(event));
+    parser.write("data: [DONE]\n\n");
+    expect(events).toEqual([SSE_DONE]);
   });
 });

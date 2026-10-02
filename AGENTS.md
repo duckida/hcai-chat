@@ -110,10 +110,18 @@ a store read, that is the leak the check exists to prevent.
 ### SSE resilience
 The Caddy proxy advertises HTTP/3 and can reset long-lived SSE streams
 mid-tool-execution. `api-client.js` retries **once** via the non-streaming path
-— on transport failure, and on a clean EOF that delivered nothing at all. Tool
-results and error frames count as *delivered* and must never trigger a retry,
-because their work already happened server-side. `sse-parser.js` holds the frame
-buffer; a partial frame waits for its boundary rather than being decoded early.
+— on transport failure, on a clean EOF that delivered nothing at all, and on a
+clean EOF that delivered content **without the server's `data: [DONE]` marker**:
+the marker is the only proof the answer is whole, so content without it is a
+truncation, not a completion (finding 15 — this was the silent cutoff bug).
+Precedence: empty → retry; marker → complete; a delivered error frame or
+tool/search result → complete and never retried, because their work already
+happened server-side. A failed turn commits whatever partial text it has
+alongside the error instead of `content: ""`. A read silent for 15s (the
+server keepalives every 5s), or one that goes stale while its tab is
+backgrounded, is cancelled into that same EOF decision instead of hanging.
+`sse-parser.js` holds the frame buffer; a partial frame waits for its boundary
+rather than being decoded early, and `[DONE]` dispatches as `SSE_DONE`.
 
 ### Storage and schema are contracts
 `contracts.test.js` pins the fourteen `localStorage` storage keys, the

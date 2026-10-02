@@ -324,6 +324,71 @@ describe("useChatTurn", () => {
     );
   });
 
+  it("replaces the partial with the complete text when the retry delivers", async () => {
+    // The stream dies after one delta with no [DONE]; the replay regenerates
+    // the answer. The partial must be swapped out, not appended to — a user
+    // must never see the response twice.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.stream) {
+          return Promise.resolve(
+            makeStreamResponse([delta("Half an answer that never fin")]),
+          );
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ text: "The complete answer." }),
+        });
+      }),
+    );
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("hi", []);
+    });
+
+    const message = result.result.current.conversations.messages[1];
+    expect(message.content).toBe("The complete answer.");
+    expect(message.error).toBeUndefined();
+  });
+
+  it("keeps the partial text and thinking when the retry also fails", async () => {
+    // Both the stream and its replay are gone. Whatever arrived before the
+    // failure is all the user has of that answer — committing an empty box
+    // would destroy text they already read.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        const parsed = JSON.parse(opts.body);
+        if (parsed.stream) {
+          return Promise.resolve(
+            makeStreamResponse([
+              think("Considering it. "),
+              delta("Half an answer that never fin"),
+              // No [DONE]: the connection was cut mid-answer.
+            ]),
+          );
+        }
+        return Promise.reject(new Error("network is gone"));
+      }),
+    );
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("hi", []);
+    });
+
+    const message = result.result.current.conversations.messages[1];
+    expect(message.role).toBe("assistant");
+    expect(message.content).toBe("Half an answer that never fin");
+    expect(message.thinking).toBe("Considering it. ");
+    expect(message.error).toBeTruthy();
+    expect(message.error.details).toContain("network is gone");
+  });
+
   it("commits a thinking-only turn without an error or a retry", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       makeStreamResponse([
