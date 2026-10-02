@@ -240,6 +240,37 @@ history.
       beside the thread — negative-controlled by dropping `sandboxRuns` from the gate
       (20/21, check 18 red).
 
+13. ~~**Closing the panel was a one-way door: the "Open side panel" button
+    existed, passed every test, and could not be clicked by anyone.**~~ —
+    **fixed.** The button rendered *inside* the panel's own grid track, and
+    that track is `0px` wide when the panel is closed — a strip at the right
+    edge of the viewport, so the button's rect came out at `left: 1280` on a
+    1280px window: `visibility: visible`, `display: flex`, entirely off-screen,
+    `elementFromPoint` → `null`. jsdom found it with `queryByLabelText` and
+    every unit test stayed green; only a real layout engine can see that an
+    element exists and is still unreachable. The geometry predates the sandbox
+    panel — the Close button and the dismissed state arrived in `b1271bd`
+    (finding 10), and `scripts/smoke.mjs` had never once clicked Close, so
+    nothing ever exercised the way back.
+    - **Fix mirrors the sidebar, which had the same problem and the same
+      answer.** A collapsed sidebar cannot host its reopen either; it has
+      `Expand sidebar` in the Header. The panel now has `Open side panel`
+      there too, gated on `panelAvailable && !panelOpen` — availability kept
+      separate from openness so a chat with nothing to show never advertises
+      a button that cannot do anything. `ArtifactPanel`'s in-track desktop
+      toggle is deleted; the mobile pill stays, because it is `position:
+      fixed` and never depended on the track.
+    - **Tests had to learn geometry's half of the story.** The two dismiss
+      tests now *click* the collapsed affordance and demand the track come
+      back (the reported path), the artifact one also demands the button be
+      absent while open, and smoke 19 measures what jsdom cannot: the rect
+      inside the viewport, `elementFromPoint` hitting the button, then the
+      click restoring the track and terminal. Negative-controlled four ways:
+      dropping `!panelOpen` (open-state assertion red), dropping
+      `panelAvailable` (dead button on a fresh chat, red), an inert
+      `onTogglePanel` (reported path red), and a gate that never renders
+      (smoke 21/22, check 19 red with `found: false`).
+
 ---
 
 ## Findings from P9 — read before touching the component layer
@@ -555,12 +586,13 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 16 | sidebar titles sit close to the edge | the prose `ul` rule above: title text measured from the sidebar's own left edge, so a collapsed sidebar cannot pass it by accident. **Current: 22px (was 46px)** |
 | 17 | a tall thread scrolls while the composer stays on screen | a seeded 12,870px conversation: composer bottom inside the viewport, `scrollHeight > clientHeight` with a real `scrollTop` change, page itself not scrollable. **P10 finding 11 — the one class of layout bug no jsdom test can see** |
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
+| 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 21 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 22 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's

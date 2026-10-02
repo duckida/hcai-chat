@@ -33,10 +33,18 @@ describe("ArtifactPanel", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("offers the toggle when closed and the panel when open", () => {
+  it("offers a way back when closed, and the panel when open", () => {
     const { rerender } = renderPanel();
+    // The desktop reopen button moved to the Header: this component's own
+    // track is zero pixels wide when closed, so anything it rendered here
+    // was laid out past the right edge of the viewport and clipped.
     expect(
-      screen.getByRole("button", { name: /open side panel/i }),
+      screen.queryByRole("button", { name: /open side panel/i }),
+    ).not.toBeInTheDocument();
+    // What remains in the closed state is the floating pill (fixed-position,
+    // so the collapsed track cannot hide it).
+    expect(
+      screen.getByRole("button", { name: /open artifact/i }),
     ).toBeInTheDocument();
 
     rerender(
@@ -48,7 +56,7 @@ describe("ArtifactPanel", () => {
       />,
     );
     expect(
-      screen.queryByRole("button", { name: /open side panel/i }),
+      screen.queryByRole("button", { name: /open artifact/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /copy code/i }),

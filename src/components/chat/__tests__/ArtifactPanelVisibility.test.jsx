@@ -128,6 +128,8 @@ describe("artifact panel follows the conversation", () => {
     setSetting("artifactsEnabled", true);
     render(<ChatApp />);
     await waitFor(() => expect(trackWidth()).toBe(480));
+    // While open, the header offers no second way to open it.
+    expect(panelCollapsed()).toBeNull();
 
     await userEvent.click(screen.getByLabelText("Close"));
 
@@ -135,6 +137,14 @@ describe("artifact panel follows the conversation", () => {
     expect(panelOpen()).toBeNull();
     // The artifact still exists, so the collapsed affordance stays available.
     expect(panelCollapsed()).toBeTruthy();
+
+    // ...and it works. The toggle used to be rendered into the closed
+    // panel's own zero-width track: in the document, off-screen, past the
+    // right edge of the viewport. It lives in the Header now, and this
+    // click is the way back.
+    await userEvent.click(panelCollapsed());
+    await waitFor(() => expect(trackWidth()).toBe(480));
+    expect(panelOpen()).toBeTruthy();
   });
 
   it("leaves the track collapsed when a new chat has nothing to show", async () => {
@@ -301,6 +311,14 @@ describe("artifact panel follows the conversation", () => {
     expect(terminal()).toBeNull();
     // The runs still exist, so the collapsed affordance stays available.
     expect(panelCollapsed()).toBeTruthy();
+
+    // The reported path: dismiss the sandbox panel and get it back. This
+    // click reaches the Header's reopen button — the closed panel's own
+    // track is zero pixels wide, so nothing rendered inside it was ever
+    // clickable.
+    await userEvent.click(panelCollapsed());
+    await waitFor(() => expect(trackWidth()).toBe(480));
+    expect(terminal()).toBeTruthy();
   });
 
   it("reopens for the next turn's first run after being dismissed", async () => {

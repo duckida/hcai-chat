@@ -203,13 +203,16 @@ export default function ChatApp({
   ]);
 
   // Open whenever there is something to show and the user has not dismissed it
-  // on this visit. All three branches of the guard are needed: artifacts that
-  // exist, a fence still arriving, and commands that ran.
-  const panelOpen =
-    !panelDismissed &&
-    (messageArtifacts.length > 0 ||
-      !!streamingArtifact ||
-      sandboxRuns.length > 0);
+  // on this visit. All three branches of the content guard are needed: artifacts
+  // that exist, a fence still arriving, and commands that ran. Availability is
+  // kept separate from the open decision because the Header needs to know
+  // whether there is anything to *reopen* — a closed panel with nothing behind
+  // it must not advertise a button that cannot do anything.
+  const panelAvailable =
+    messageArtifacts.length > 0 ||
+    !!streamingArtifact ||
+    sandboxRuns.length > 0;
+  const panelOpen = !panelDismissed && panelAvailable;
 
   // Which half of the panel is showing. A preference, not a fact: it resets
   // per conversation to the artifact (the historical behavior), and the panel
@@ -316,6 +319,8 @@ export default function ChatApp({
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         panelOpen={panelOpen}
+        panelAvailable={panelAvailable}
+        onTogglePanel={handleToggleArtifactPanel}
         isDesktop={isDesktop}
         contextUsage={stream.contextUsage}
         toolsSupported={toolsSupported}

@@ -63,6 +63,8 @@ export default function ChatLayout({
   children,
   artifactFullscreen = false,
   panelOpen = false,
+  panelAvailable = false,
+  onTogglePanel,
   isDesktop = false,
   contextUsage = 0,
   toolsSupported = true,
@@ -278,6 +280,9 @@ export default function ChatLayout({
           agentModeEnabled={agentModeEnabled}
           onAgentModeChange={onAgentModeChange}
           artifactFullscreen={artifactFullscreen}
+          panelOpen={panelOpen}
+          panelAvailable={panelAvailable}
+          onTogglePanel={onTogglePanel}
           contextUsage={contextUsage}
           toolsSupported={toolsSupported}
           hasE2bKey={hasE2bKey}

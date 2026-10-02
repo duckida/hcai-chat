@@ -1150,6 +1150,63 @@ async function main() {
         sandboxPanel.docScroll <= sandboxPanel.viewport + 1,
       JSON.stringify(sandboxPanel),
     );
+
+    // ---- 19. a dismissed panel can be opened again ---------------------
+    // The closed panel's track is zero pixels wide at the right edge of the
+    // viewport, so the reopen button that used to live *inside* it was laid
+    // out past the edge and clipped: in the document, visible to every unit
+    // test, hittable by nothing. Only a real layout engine can tell a toggle
+    // that exists from one you can press, so the geometry — inside the
+    // viewport, under the pointer — is the assertion, and the click that
+    // follows is the wiring. Check 18 leaves the panel open; this closes it.
+    await click(
+      `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Close')`,
+      "panel Close",
+    );
+    const collapsed = await evalJs(`(() => {
+      const row = document.querySelector('.grid');
+      const parts = row.style.gridTemplateColumns.trim().split(/\\s+/);
+      const btn = document.querySelector('button[aria-label="Open side panel"]');
+      const out = {
+        track: parseInt(parts[parts.length - 1], 10),
+        found: !!btn,
+        vw: window.innerWidth,
+      };
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        out.rect = { left: Math.round(r.left), top: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
+        out.inside = r.left >= 0 && r.right <= out.vw && r.width > 0;
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        out.hit = !!hit && (hit === btn || btn.contains(hit));
+      }
+      return out;
+    })()`);
+    let reopened = null;
+    if (collapsed.found) {
+      await click(
+        `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Open side panel')`,
+        "Open side panel",
+      );
+      reopened = await evalJs(`(() => {
+        const row = document.querySelector('.grid');
+        const parts = row.style.gridTemplateColumns.trim().split(/\\s+/);
+        return {
+          track: parseInt(parts[parts.length - 1], 10),
+          terminal: !!document.querySelector('[aria-label="Cloud sandbox terminal"]'),
+        };
+      })()`);
+    }
+    check(
+      "a dismissed panel reopens from the Header",
+      collapsed.track === 0 &&
+        collapsed.found &&
+        collapsed.inside &&
+        collapsed.hit &&
+        !!reopened &&
+        reopened.track > 0 &&
+        reopened.terminal,
+      JSON.stringify({ collapsed, reopened }),
+    );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);
   } finally {

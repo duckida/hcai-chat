@@ -8,7 +8,6 @@ import {
   Eye,
   Minimize,
   PanelRightClose,
-  PanelRightOpen,
   Puzzle,
   Share2,
   Terminal,
@@ -156,18 +155,14 @@ export default function ArtifactPanel({
     <>
       {!isOpen ? (
         <div className="animate-hcai-fade-in">
-          {/* Desktop toggle button */}
-          <div className="hidden md:flex items-start pt-3 pr-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onToggle}
-              className="h-8 w-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-              aria-label="Open side panel"
-            >
-              <PanelRightOpen className="w-4 h-4" />
-            </Button>
-          </div>
+          {/*
+            The desktop reopen lives in the Header: this component's own
+            track is zero pixels wide when closed, at the viewport's right
+            edge, so a button rendered here was laid out off-screen and
+            clipped — the reason a dismissed panel used to be unrecoverable.
+            What stays is the floating pill, which is position: fixed and
+            therefore fine.
+          */}
           {/* Mobile floating pill */}
           <div className="md:hidden fixed bottom-28 left-1/2 -translate-x-1/2 z-40">
             <button

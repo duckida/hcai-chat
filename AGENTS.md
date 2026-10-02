@@ -164,6 +164,15 @@ Traps, all of which have cost real debugging time:
   regex quantifier instead of a literal, edits *nothing* — the check stays green and
   reads as a pass. Grep the source for the break first. And never run
   `sed 's/^$/…/'` over a file: it rewrites every blank line in it.
+- **A control that exists in the DOM can still be unreachable.** The closed
+  side panel's grid track is `0px` wide at the viewport's right edge, and the
+  reopen button rendered *inside* it came out at `left: 1280` on a 1280px
+  window — `visible`, `flex`, off-screen, `elementFromPoint` → `null` — while
+  `queryByLabelText` passed for weeks. Any control living in a collapsed,
+  zero-sized or off-screen container needs its geometry checked in
+  `scripts/smoke.mjs` (`getBoundingClientRect` inside the viewport **and**
+  `elementFromPoint` hitting it), not just a presence assertion. Presence is
+  free; reachability is layout, and jsdom has none.
 - **A measurement that is constant in the test environment can never fail.** jsdom matches no
   media query, so `useIsDesktop()` is `false` in every test and `ChatLayout`'s panel track is
   always `0px` — a check for "the track is wrongly reserved for a panel that rendered nothing"

@@ -7,6 +7,7 @@ import {
   Cloud,
   Globe,
   Menu,
+  PanelRightOpen,
   Puzzle,
 } from "lucide-react";
 import ContextUsage from "@/components/chat/ContextUsage";
@@ -65,6 +66,9 @@ export default function Header({
   agentModeEnabled,
   onAgentModeChange,
   artifactFullscreen = false,
+  panelOpen = false,
+  panelAvailable = false,
+  onTogglePanel,
   contextUsage = 0,
   toolsSupported = true,
   hasE2bKey = false,
@@ -170,7 +174,26 @@ export default function Header({
       </div>
 
       {!artifactFullscreen && (
-        <div className="flex items-center shrink-0">
+        <div className="flex items-center shrink-0 gap-1">
+          {/*
+            The only way back into a dismissed panel. Its own collapsed state
+            cannot host this button: the closed panel's grid track is zero
+            pixels wide at the viewport's right edge, so a toggle rendered
+            there is laid out off-screen and clipped — present in the DOM,
+            unreachable by pointer. Same pattern, same side of the header as
+            the sidebar's Expand button, for the same reason.
+          */}
+          {panelAvailable && !panelOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onTogglePanel}
+              aria-label="Open side panel"
+              className="hidden md:flex h-7 w-7 sm:h-8 sm:w-8 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <PanelRightOpen className="w-4 h-4" />
+            </Button>
+          )}
           <ContextUsage
             used={contextUsage}
             modelId={selectedModel}
