@@ -299,7 +299,7 @@ history.
       component tests found it immediately. And the first version of the offset
       test asserted against `readTurnDeltas()` when it meant the mirror — the
       buffer *is* `readTurnDeltas()` (AGENTS said so; the test read it backwards).
-    - **Verified:** 615 unit tests (26 new: buffer pinning, label promotion,
+    - **Verified:** 615 unit tests (27 new: buffer pinning, label promotion,
       oldest-unfilled fill, split/clamp/key order, interleaved DOM order, stream
       gating, chips-only gates) against eight negative controls — mirror `at`,
       fill-last, unfiltered sandbox chips, dropped persistence, dropped sort,
