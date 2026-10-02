@@ -1243,7 +1243,10 @@ async function main() {
                   tool: 'web_search',
                   at: 60,
                   label: 'opencode vs claude',
-                  sources: ['reddit.com', 'example.org'],
+                  sources: [
+                    { domain: 'reddit.com', href: 'https://reddit.com/r/blahsdjdl' },
+                    { domain: 'example.org', href: 'https://example.org/search?q=smoke' },
+                  ],
                 },
               ],
             },
@@ -1295,9 +1298,9 @@ async function main() {
         !chipReport.query &&
         chipReport.links.length === 2 &&
         chipReport.links[0].text === "reddit.com" &&
-        chipReport.links[0].href === "https://reddit.com" &&
+        chipReport.links[0].href === "https://reddit.com/r/blahsdjdl" &&
         chipReport.links[1].text === "example.org" &&
-        chipReport.links[1].href === "https://example.org",
+        chipReport.links[1].href === "https://example.org/search?q=smoke",
       JSON.stringify(chipReport),
     );
 

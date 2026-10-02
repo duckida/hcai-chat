@@ -190,7 +190,17 @@ export function appendTurnChipArgs(index, fragment) {
  * call order, not whichever the model mentioned last.
  */
 export function fillLastSearchChip(rawSources) {
-  const domains = [...new Set(rawSources.map(sourceDomain).filter(Boolean))];
+  // One pill per site: the first result for a domain owns the link, so a
+  // second hit from the same site adds no width — but the href stays the
+  // full result URL, so the pill opens what the search actually returned.
+  const entries = [];
+  const seen = new Set();
+  for (const source of rawSources) {
+    const entry = sourceEntry(source);
+    if (!entry || seen.has(entry.domain)) continue;
+    seen.add(entry.domain);
+    entries.push(entry);
+  }
   const chips = turnStore.getState().streamingToolChips;
   let target = null;
   for (const chip of chips) {
@@ -202,7 +212,7 @@ export function fillLastSearchChip(rawSources) {
   if (!target) return;
   turnStore.setState({
     streamingToolChips: chips.map((chip) =>
-      chip === target ? { ...chip, sources: domains } : chip,
+      chip === target ? { ...chip, sources: entries } : chip,
     ),
   });
 }
@@ -224,18 +234,30 @@ function parseChipLabel(args) {
   return undefined;
 }
 
-function sourceDomain(source) {
+/**
+ * One pill entry: where it points (the full result URL — what a click should
+ * open) and what it says (the bare domain — a path makes pills unusably
+ * wide). Citations arrive as URL strings or `{ url }`/`{ link }` objects;
+ * bare domains without a scheme still get one.
+ */
+function sourceEntry(source) {
   const raw =
     typeof source === "string" ? source : source?.url || source?.link || "";
-  if (!raw) return null;
+  if (!raw || /\s/.test(raw)) return null; // free text earns no pill
   try {
-    return new URL(raw).hostname.replace(/^www\./, "");
+    const url = new URL(raw.includes("://") ? raw : `https://${raw}`);
+    return {
+      domain: url.hostname.replace(/^www\./, ""),
+      href: url.toString(),
+    };
   } catch {
-    // Citations are sometimes bare domains already. Anything with a space is
-    // free text and does not earn a pill.
-    return /\s/.test(raw) || !raw.includes(".")
-      ? null
-      : raw.replace(/^www\./, "");
+    // Not parseable — a citation is sometimes a bare domain already.
+    return raw.includes(".")
+      ? {
+          domain: raw.replace(/^www\./, ""),
+          href: `https://${raw}`,
+        }
+      : null;
   }
 }
 

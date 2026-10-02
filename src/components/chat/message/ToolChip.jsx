@@ -39,22 +39,33 @@ export default function ToolChip({ chip }) {
   if (chip.tool === "web_search" && chip.sources?.length > 0) {
     return (
       <span className="my-1 flex flex-wrap gap-1.5">
-        {chip.sources.map((domain) => (
-          <a
-            key={domain}
-            href={`https://${domain}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={PILL_CLASS}
-          >
-            <span
-              aria-hidden="true"
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{ backgroundColor: `hsl(${domainHue(domain)} 62% 52%)` }}
-            />
-            {domain}
-          </a>
-        ))}
+        {chip.sources.map((source) => {
+          // New chips carry { domain, href }; persisted legacy ones are bare
+          // domain strings and keep their old target. Either way the label
+          // is the domain and the link is the full result URL.
+          const { domain, href } =
+            typeof source === "string"
+              ? { domain: source, href: `https://${source}` }
+              : source;
+          return (
+            <a
+              key={domain}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={PILL_CLASS}
+            >
+              <span
+                aria-hidden="true"
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{
+                  backgroundColor: `hsl(${domainHue(domain)} 62% 52%)`,
+                }}
+              />
+              {domain}
+            </a>
+          );
+        })}
       </span>
     );
   }

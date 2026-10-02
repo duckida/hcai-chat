@@ -287,7 +287,12 @@ history.
     - **Labels promote, sources fill in call order.** Argument fragments accumulate
       and parse into `expression`/`query` when they form JSON (half a document keeps
       the previous label); search results fill the *oldest unfilled* `web_search`
-      chip, with `www.` stripped, duplicates collapsed and free text dropped. The
+      chip, one pill per site — the first result for a domain owns the link — with
+      `www.` stripped, duplicates collapsed and free text dropped. A source is stored
+      as `{ domain, href }`: the pill is *labelled* by the bare domain (a path makes
+      pills unusably wide) and *links to the full result URL* (a domain-only target
+      throws away what the search returned). Legacy persisted chips are bare domain
+      strings and still render, with `https://<domain>` as their target. The
       commit persists `{tool, at, label, sources}` only when there is at least one
       chip — a legacy message carries no field at all. `hasRenderableContent` and
       `hasVisibleBody` learned chips (a turn that spent itself on tool calls before
@@ -666,7 +671,7 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 17 | a tall thread scrolls while the composer stays on screen | a seeded 12,870px conversation: composer bottom inside the viewport, `scrollHeight > clientHeight` with a real `scrollTop` change, page itself not scrollable. **P10 finding 11 — the one class of layout bug no jsdom test can see** |
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 | 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
-| 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two `https://` domain links, no leftover query. **P10 finding 14** |
+| 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two links labelled by domain but targeting the full result URL, no leftover query. **P10 finding 14** |
 | 21 | a stream cut before `[DONE]` is replayed, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer. Asserts the truncation console warn fired and the cut prefix is gone when the turn ends (the non-streaming replay passed through to the real model). **Finding 15 — the silent-cutoff fix** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored

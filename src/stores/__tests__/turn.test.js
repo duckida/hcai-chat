@@ -289,13 +289,22 @@ describe("turn store", () => {
       ]);
       const [first, second] = readTurnChips();
       // Oldest unfilled wins, www is stripped, the same site twice is one
-      // pill, and free text is not a domain.
-      expect(first.sources).toEqual(["reddit.com", "txt.com"]);
+      // pill (whose link is the *first* result), free text is not a domain,
+      // and every pill keeps its full result URL as the target.
+      expect(first.sources).toEqual([
+        { domain: "reddit.com", href: "https://www.reddit.com/r/x" },
+        { domain: "txt.com", href: "https://txt.com/" },
+      ]);
       expect(second.sources).toBeUndefined();
 
       fillLastSearchChip(["https://example.org/a"]);
-      expect(readTurnChips()[0].sources).toEqual(["reddit.com", "txt.com"]);
-      expect(readTurnChips()[1].sources).toEqual(["example.org"]);
+      expect(readTurnChips()[0].sources).toEqual([
+        { domain: "reddit.com", href: "https://www.reddit.com/r/x" },
+        { domain: "txt.com", href: "https://txt.com/" },
+      ]);
+      expect(readTurnChips()[1].sources).toEqual([
+        { domain: "example.org", href: "https://example.org/a" },
+      ]);
     });
 
     it("drops chips with the reasoning they are pinned to", () => {

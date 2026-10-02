@@ -174,6 +174,32 @@ describe("ThinkingBlock", () => {
     expect(screen.queryByText("opencode vs claude")).not.toBeInTheDocument();
   });
 
+  it("labels a source pill by its domain but links to the full result URL", () => {
+    renderOpen({
+      thinking: "Looking.",
+      chips: [
+        {
+          tool: "web_search",
+          at: 8,
+          label: "opencode vs claude",
+          sources: [
+            { domain: "reddit.com", href: "https://reddit.com/r/blahsdjdl" },
+            { domain: "txt.com", href: "https://txt.com/search?q=hi" },
+          ],
+        },
+      ],
+    });
+
+    // A path in the label would make pills unusably wide; a domain-only
+    // target would throw away what the search actually returned.
+    const reddit = screen.getByRole("link", { name: "reddit.com" });
+    expect(reddit).toHaveAttribute("href", "https://reddit.com/r/blahsdjdl");
+    expect(screen.getByRole("link", { name: "txt.com" })).toHaveAttribute(
+      "href",
+      "https://txt.com/search?q=hi",
+    );
+  });
+
   it("still renders a block when only a chip exists", () => {
     renderOpen({
       thinking: "",

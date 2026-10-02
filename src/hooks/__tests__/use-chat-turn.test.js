@@ -483,7 +483,10 @@ describe("useChatTurn", () => {
           tool: "web_search",
           at: prefix.length,
           label: "opencode vs claude",
-          sources: ["reddit.com", "txt.com"],
+          sources: [
+            { domain: "reddit.com", href: "https://www.reddit.com/r/ai" },
+            { domain: "txt.com", href: "https://txt.com/" },
+          ],
         },
       ]);
     });
