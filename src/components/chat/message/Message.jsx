@@ -9,31 +9,25 @@ import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import ImageAttachment, { FileBubble } from "./MessageParts";
 import MessageRow from "./MessageRow";
 import SourcesBlock from "./SourcesBlock";
-import StreamingSandboxBlock from "./StreamingSandboxBlock";
 import ThinkingBlock from "./ThinkingBlock";
 import useMessageText from "./useMessageText";
 
 /**
- * How a persisted message presents itself — artifacts, reasoning, sandbox
- * output, metrics — is all display settings, so a committed message reads them
- * itself rather than being handed six flags it never varies.
+ * How a persisted message presents itself — artifacts, reasoning, metrics —
+ * is all display settings, so a committed message reads them itself rather
+ * than being handed flags it never varies. Sandbox runs deliberately do not
+ * appear here: their transcript lives in the Cloud sandbox side panel.
  */
 const selectDisplaySettings = (state) => ({
   artifactsEnabled: state.artifactsEnabled,
   showThinking: state.showThinking,
-  showSandboxCode: state.showSandboxCode,
-  showSandboxOutput: state.showSandboxOutput,
   showMetrics: state.showMetrics,
 });
 
 const Message = memo(function Message({ message }) {
-  const {
-    artifactsEnabled,
-    showThinking,
-    showSandboxCode,
-    showSandboxOutput,
-    showMetrics,
-  } = useSettings(selectDisplaySettings);
+  const { artifactsEnabled, showThinking, showMetrics } = useSettings(
+    selectDisplaySettings,
+  );
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
@@ -59,7 +53,6 @@ const Message = memo(function Message({ message }) {
     (attachments && attachments.length > 0) ||
     !!message.thinking ||
     hasSources ||
-    (message.sandboxResults && message.sandboxResults.length > 0) ||
     !!message.webSearch ||
     (showMetrics && !!message.metrics);
 
@@ -112,29 +105,6 @@ const Message = memo(function Message({ message }) {
 
         {isAssistant && hasSources && (
           <SourcesBlock sources={message.sources} />
-        )}
-
-        {isAssistant && message.sandboxResults?.length > 0 && (
-          <div className="space-y-2">
-            {message.sandboxResults.map((result, i) => (
-              <StreamingSandboxBlock
-                key={`${result.tool}-${result.code || result.command || i}`}
-                tool={{
-                  index: i,
-                  tool: result.tool,
-                  code: result.code || result.command || "",
-                  status: "complete",
-                  stdout: result.stdout || "",
-                  stderr: result.stderr || "",
-                  exitCode: result.exitCode,
-                  conversationId: result.conversationId,
-                  sandboxId: result.sandboxId,
-                }}
-                showSandboxCode={showSandboxCode}
-                showSandboxOutput={showSandboxOutput}
-              />
-            ))}
-          </div>
         )}
 
         {isAssistant && showMetrics && message.metrics && (

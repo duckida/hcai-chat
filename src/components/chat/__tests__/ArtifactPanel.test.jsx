@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ArtifactPanel from "../ArtifactPanel";
 
@@ -35,7 +36,7 @@ describe("ArtifactPanel", () => {
   it("offers the toggle when closed and the panel when open", () => {
     const { rerender } = renderPanel();
     expect(
-      screen.getByRole("button", { name: /open artifact panel/i }),
+      screen.getByRole("button", { name: /open side panel/i }),
     ).toBeInTheDocument();
 
     rerender(
@@ -47,7 +48,7 @@ describe("ArtifactPanel", () => {
       />,
     );
     expect(
-      screen.queryByRole("button", { name: /open artifact panel/i }),
+      screen.queryByRole("button", { name: /open side panel/i }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /copy code/i }),
@@ -196,5 +197,139 @@ describe("ArtifactPanel", () => {
     expect(code.querySelector("img")).toBeNull();
     expect(document.querySelector("img")).toBeNull();
     expect(window.pwned).toBeUndefined();
+  });
+
+  describe("Cloud sandbox tab", () => {
+    const RUN = {
+      key: "persisted-0",
+      tool: "run_command",
+      code: "ls",
+      stdout: "wow desktop etc",
+      stderr: "",
+      exitCode: 0,
+      status: "complete",
+    };
+
+    const artifactFrame = () => screen.queryByTitle("Artifact Preview");
+    const terminal = () =>
+      screen.queryByLabelText("Cloud sandbox terminal");
+    const artifactTab = () =>
+      screen.queryByRole("button", { name: "Artifact" });
+    const sandboxTab = () =>
+      screen.queryByRole("button", { name: "Cloud sandbox" });
+
+    /** The panel's tab is controlled by ChatApp, so drive it like the app does. */
+    function ControlledPanel(props) {
+      const [tab, setTab] = useState("artifact");
+      return (
+        <ArtifactPanel tab={tab} onTabChange={setTab} {...props} />
+      );
+    }
+
+    it("shows the terminal instead of the preview when its tab is active", () => {
+      renderPanel({ isOpen: true, sandboxRuns: [RUN], tab: "sandbox" });
+
+      expect(terminal()).toBeTruthy();
+      expect(artifactFrame()).toBeNull();
+      // The artifact-only controls belong to the other tab; showing them over
+      // a terminal would offer a copy button for source that is not there.
+      expect(
+        screen.queryByRole("button", { name: /copy code/i }),
+      ).toBeNull();
+      expect(
+        screen.getByRole("button", { name: /enter fullscreen/i }),
+      ).toBeTruthy();
+    });
+
+    it("offers both tabs only when the conversation has both", () => {
+      const { rerender } = renderPanel({ isOpen: true, sandboxRuns: [] });
+      // Artifact-only: a static label, not a one-option tab strip.
+      expect(artifactTab()).toBeNull();
+      expect(sandboxTab()).toBeNull();
+      expect(screen.getByText("Artifact")).toBeInTheDocument();
+
+      rerender(
+        <ArtifactPanel
+          artifacts={[ARTIFACT]}
+          sandboxRuns={[RUN]}
+          isOpen
+          onToggle={vi.fn()}
+          onFullscreenToggle={vi.fn()}
+        />,
+      );
+      expect(artifactTab()).toBeTruthy();
+      expect(sandboxTab()).toBeTruthy();
+      expect(artifactTab()).toHaveAttribute("aria-pressed", "true");
+      expect(sandboxTab()).toHaveAttribute("aria-pressed", "false");
+    });
+
+    it("labels a sandbox-only conversation Cloud sandbox, without tabs", () => {
+      renderPanel({
+        artifacts: [],
+        sandboxRuns: [RUN],
+        isOpen: true,
+      });
+
+      expect(screen.getByText("Cloud sandbox")).toBeInTheDocument();
+      expect(artifactTab()).toBeNull();
+      expect(terminal()).toBeTruthy();
+    });
+
+    it("switches between the two sides", async () => {
+      const user = userEvent.setup();
+      render(
+        <ControlledPanel
+          artifacts={[ARTIFACT]}
+          sandboxRuns={[RUN]}
+          isOpen
+          onToggle={vi.fn()}
+          onFullscreenToggle={vi.fn()}
+        />,
+      );
+      expect(artifactFrame()).toBeTruthy();
+      expect(terminal()).toBeNull();
+
+      await user.click(screen.getByRole("button", { name: "Cloud sandbox" }));
+      expect(terminal()).toBeTruthy();
+      expect(artifactFrame()).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Cloud sandbox" }),
+      ).toHaveAttribute("aria-pressed", "true");
+
+      await user.click(screen.getByRole("button", { name: "Artifact" }));
+      expect(artifactFrame()).toBeTruthy();
+      expect(terminal()).toBeNull();
+    });
+
+    it("falls back rather than rendering a panel with nothing to show", () => {
+      // Tab says sandbox, conversation has no runs: the artifact is the only
+      // thing it can pay the track for.
+      const artifactSide = renderPanel({
+        isOpen: true,
+        sandboxRuns: [],
+        tab: "sandbox",
+      });
+      expect(artifactFrame()).toBeTruthy();
+      expect(terminal()).toBeNull();
+      artifactSide.unmount();
+
+      renderPanel({
+        artifacts: [],
+        isOpen: true,
+        sandboxRuns: [RUN],
+        tab: "artifact",
+      });
+      expect(terminal()).toBeTruthy();
+      expect(artifactFrame()).toBeNull();
+    });
+
+    it("renders nothing when there is neither an artifact nor a run", () => {
+      const { container } = renderPanel({
+        artifacts: [],
+        sandboxRuns: [],
+        isOpen: true,
+      });
+      expect(container).toBeEmptyDOMElement();
+    });
   });
 });

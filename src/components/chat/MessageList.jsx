@@ -47,8 +47,9 @@ export default function MessageList({ messages, activeConversation = null }) {
   );
 
   // Only the stream owned by the conversation on screen may render — a stream
-  // running for another conversation must never leak its text, thinking,
-  // placeholder, or sandbox blocks into this one.
+  // running for another conversation must never leak its text, thinking or
+  // placeholder into this one. The sandbox transcript lives in the side panel,
+  // which gates its own copy of the same values the same way.
   const streamVisible =
     streamingConversationId == null ||
     streamingConversationId === activeConversation;
@@ -125,11 +126,11 @@ export default function MessageList({ messages, activeConversation = null }) {
               })}
 
               {/*
-                Sandbox tools count as content. The row used to appear only for
-                text or thinking, so a turn that wrote and ran code before the
-                model said anything showed an empty thread — the code and its
-                output were invisible until the reply arrived, which is the
-                whole point of watching a sandbox run.
+                A running sandbox tool still counts as content, even though its
+                transcript moved to the side panel: the row has to exist while
+                the run is quiet, or a turn that wrote and ran code before the
+                model said anything would show an empty thread until the reply
+                arrived.
               */}
               {(renderedStreamingContent ||
                 renderedStreamingThinking ||
@@ -137,7 +138,6 @@ export default function MessageList({ messages, activeConversation = null }) {
                 <StreamingMessage
                   streamingContent={renderedStreamingContent}
                   streamingThinking={renderedStreamingThinking}
-                  streamingSandboxTools={liveSandboxTools}
                 />
               )}
 

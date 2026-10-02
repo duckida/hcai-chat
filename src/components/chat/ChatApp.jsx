@@ -71,6 +71,7 @@ export default function ChatApp({
     );
     stream.resetForConversation(conv ?? null);
     setPanelDismissed(false);
+    setPanelTab("artifact");
     // activeConversation is the real dependency; conversations.find returns a
     // stable reference for the same id, so listing it would re-run on every
     // messages patch.
@@ -153,21 +154,94 @@ export default function ChatApp({
     return extractHtmlArtifacts(stream.streamingContent);
   }, [stream.streamingContent, streamArtifacts]);
 
+  // Every command this conversation ran, as one transcript: the runs already
+  // persisted on committed messages, plus the live ones — but only while their
+  // turn is still running, because the same runs are committed to the message
+  // the moment it finishes, and showing both would double every line. The
+  // conversation gate matches the thread's: a stream running for some other
+  // chat is not content of this one.
+  const sandboxRuns = useMemo(() => {
+    const runs = [];
+    for (const msg of conversations.messages) {
+      if (msg.role !== "assistant" || !Array.isArray(msg.sandboxResults))
+        continue;
+      for (const result of msg.sandboxResults) {
+        runs.push({
+          key: `persisted-${runs.length}`,
+          tool: result.tool,
+          code: result.code || result.command || "",
+          stdout: result.stdout || "",
+          stderr: result.stderr || "",
+          exitCode: result.exitCode ?? null,
+          status: "complete",
+        });
+      }
+    }
+    const liveIsMine =
+      stream.isLoading &&
+      stream.streamingConversationId === conversations.activeConversation;
+    if (liveIsMine) {
+      for (const tool of stream.streamingSandboxTools) {
+        runs.push({
+          key: `live-${tool.index}`,
+          tool: tool.tool,
+          code: tool.code || "",
+          stdout: tool.stdout || "",
+          stderr: tool.stderr || "",
+          exitCode: tool.exitCode ?? null,
+          status: tool.status,
+        });
+      }
+    }
+    return runs;
+  }, [
+    conversations.messages,
+    conversations.activeConversation,
+    stream.isLoading,
+    stream.streamingConversationId,
+    stream.streamingSandboxTools,
+  ]);
+
   // Open whenever there is something to show and the user has not dismissed it
-  // on this visit. Both branches of the guard are needed: artifacts that exist,
-  // and a fence still arriving.
-  const artifactPanelOpen =
-    !panelDismissed && (messageArtifacts.length > 0 || !!streamingArtifact);
+  // on this visit. All three branches of the guard are needed: artifacts that
+  // exist, a fence still arriving, and commands that ran.
+  const panelOpen =
+    !panelDismissed &&
+    (messageArtifacts.length > 0 ||
+      !!streamingArtifact ||
+      sandboxRuns.length > 0);
+
+  // Which half of the panel is showing. A preference, not a fact: it resets
+  // per conversation to the artifact (the historical behavior), and the panel
+  // falls back on its own when the requested side has nothing to show.
+  const [panelTab, setPanelTab] = useState("artifact");
 
   // An arriving artifact reopens a panel that was closed before the answer
   // finished — otherwise the user closes it once mid-turn and never sees the
-  // thing the turn was for.
+  // thing the turn was for. The first command of a turn does the same, and
+  // brings its own side of the panel with it: a run you can watch is the whole
+  // point of agent mode. A streaming artifact wins the switch, so a panel
+  // that is actively generating is not yanked away mid-fence.
   useEffect(() => {
     if (streamingArtifact && !hadStreamingArtifactRef.current) {
       setPanelDismissed(false);
     }
     hadStreamingArtifactRef.current = !!streamingArtifact;
   }, [streamingArtifact]);
+
+  const liveRunCount =
+    stream.isLoading &&
+    stream.streamingConversationId === conversations.activeConversation
+      ? stream.streamingSandboxTools.length
+      : 0;
+  const hadLiveRunRef = useRef(false);
+  useEffect(() => {
+    if (liveRunCount > 0 && !hadLiveRunRef.current) {
+      setPanelDismissed(false);
+      if (!streamingArtifact) setPanelTab("sandbox");
+    }
+    hadLiveRunRef.current = liveRunCount > 0;
+  }, [liveRunCount, streamingArtifact]);
 
   // Derive total cost from persisted messages
   const totalCost = useMemo(() => {
@@ -241,7 +315,7 @@ export default function ChatApp({
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
-        artifactPanelOpen={artifactPanelOpen}
+        panelOpen={panelOpen}
         isDesktop={isDesktop}
         contextUsage={stream.contextUsage}
         toolsSupported={toolsSupported}
@@ -252,7 +326,10 @@ export default function ChatApp({
           <ArtifactPanel
             artifacts={messageArtifacts}
             streamingArtifact={streamingArtifact}
-            isOpen={artifactPanelOpen}
+            sandboxRuns={sandboxRuns}
+            tab={panelTab}
+            onTabChange={setPanelTab}
+            isOpen={panelOpen}
             onToggle={handleToggleArtifactPanel}
             fullscreen={artifactFullscreen}
             onFullscreenToggle={() => setArtifactFullscreen((prev) => !prev)}

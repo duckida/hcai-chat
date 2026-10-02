@@ -410,7 +410,7 @@ describe("SidebarContent conversations", () => {
 // stub, because the stub is where the reflow would have hidden.
 describe("artifact panel track", () => {
   const ARTIFACT = "<div>hello artifact</div>";
-  const handle = () => screen.getByRole("separator", { name: /resize artifact/i });
+  const handle = () => screen.getByRole("separator", { name: /resize side panel/i });
   const row = () => document.querySelector(".grid");
   const trackWidth = () => {
     // "auto minmax(0, 1fr) 480px" splits on the space inside minmax() too, so
@@ -422,7 +422,7 @@ describe("artifact panel track", () => {
   const withPanel = (overrides = {}) =>
     baseProps({
       isDesktop: true,
-      artifactPanelOpen: true,
+      panelOpen: true,
       rightPanel: (panel) => (
         <ArtifactPanel
           artifacts={[ARTIFACT]}
@@ -449,7 +449,7 @@ describe("artifact panel track", () => {
   });
 
   it("collapses the track when the panel is closed", () => {
-    render(<ChatLayout {...withPanel({ artifactPanelOpen: false })} />);
+    render(<ChatLayout {...withPanel({ panelOpen: false })} />);
 
     expect(trackWidth()).toBe(0);
   });
@@ -460,7 +460,7 @@ describe("artifact panel track", () => {
     // The overlay is fixed and covers the row; a live track would push the
     // thread sideways behind it for no reason.
     expect(trackWidth()).toBe(0);
-    expect(screen.getByRole("separator", { name: /resize artifact/i })).toBeTruthy();
+    expect(screen.getByRole("separator", { name: /resize side panel/i })).toBeTruthy();
   });
 
   it("collapses the track on a narrow viewport, where the panel is fixed", () => {

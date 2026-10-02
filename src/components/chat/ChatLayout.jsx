@@ -62,7 +62,7 @@ export default function ChatLayout({
   rightPanel,
   children,
   artifactFullscreen = false,
-  artifactPanelOpen = false,
+  panelOpen = false,
   isDesktop = false,
   contextUsage = 0,
   toolsSupported = true,
@@ -163,7 +163,7 @@ export default function ChatLayout({
   // fixed and full-bleed). All three collapse to zero, which is what makes the
   // open/close transition a single track animation.
   const panelTrack =
-    artifactPanelOpen && !artifactFullscreen && isDesktop ? panelWidth : 0;
+    panelOpen && !artifactFullscreen && isDesktop ? panelWidth : 0;
 
   const panelApi = {
     width: panelWidth,

@@ -719,7 +719,6 @@ async function main() {
           id: 'smoke-artifact',
           title: 'Seeded artifact',
           createdAt: new Date().toISOString(),
-          artifactPanelOpen: false,
           model: 'xiaomi/mimo-v2.5',
           contextUsage: 0,
           messages: [
@@ -746,7 +745,7 @@ async function main() {
         const tracks = row.style.gridTemplateColumns;
         const parts = tracks.trim().split(/\\s+/);
         const track = parseInt(parts[parts.length - 1], 10);
-        const panelEl = document.querySelector('[aria-label="Resize artifact panel"]');
+        const panelEl = document.querySelector('[aria-label="Resize side panel"]');
         // The element, not just its rect: the position check needs
         // getComputedStyle, which rejects a DOMRect.
         const panelNode = panelEl ? panelEl.parentElement : null;
@@ -789,7 +788,7 @@ async function main() {
 
     // Dragging the separator must move the track, not the whole row.
     const dragged = await evalJs(`(() => {
-      const handle = document.querySelector('[aria-label="Resize artifact panel"]');
+      const handle = document.querySelector('[aria-label="Resize side panel"]');
       if (!handle) return null;
       const box = handle.getBoundingClientRect();
       return { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + box.height / 2) };
@@ -1062,6 +1061,94 @@ async function main() {
         tall.scrolled > 0 &&
         !tall.pageScrollable,
       JSON.stringify(tall),
+    );
+
+    // ---- 18. the Cloud sandbox side of the panel owns a real track ----
+    // The command transcript moved out of the thread and into the same
+    // right-hand track the artifact preview uses. jsdom proves the open
+    // derivation; only a browser proves a conversation whose *only* content
+    // is commands still pays exactly one track, paints the transcript at a
+    // real shell prompt, and keeps the thread beside it rather than under it.
+    await evalJs(`(async () => {
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open('hcai-chat', 1);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('conversations', 'readwrite');
+        const store = tx.objectStore('conversations');
+        store.clear();
+        store.put({
+          id: 'smoke-sandbox',
+          title: 'Seeded sandbox',
+          createdAt: new Date().toISOString(),
+          model: 'xiaomi/mimo-v2.5',
+          contextUsage: 0,
+          messages: [
+            { role: 'user', content: 'run ls for me' },
+            {
+              role: 'assistant',
+              content: 'Done.',
+              sandboxResults: [
+                {
+                  tool: 'run_command',
+                  command: 'ls',
+                  stdout: 'smoke stdout line',
+                  stderr: '',
+                  exitCode: 0,
+                  conversationId: 'smoke-sandbox',
+                },
+              ],
+            },
+          ],
+        });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      return true;
+    })()`);
+    await navigate(3500);
+
+    const sandboxPanel = await evalJs(`(() => {
+      const row = document.querySelector('.grid');
+      if (!row) return { error: 'no grid row' };
+      const parts = row.style.gridTemplateColumns.trim().split(/\\s+/);
+      const track = parseInt(parts[parts.length - 1], 10);
+      const terminal = document.querySelector('[aria-label="Cloud sandbox terminal"]');
+      const handles = document.querySelectorAll('[aria-label="Resize side panel"]');
+      const text = terminal ? terminal.textContent : '';
+      const thread = document.querySelector('section[aria-label="Conversation"]');
+      const threadBox = thread ? thread.getBoundingClientRect() : null;
+      const panelNode = handles[0] ? handles[0].parentElement : null;
+      const panelBox = panelNode ? panelNode.getBoundingClientRect() : null;
+      return {
+        track,
+        terminal: !!terminal,
+        prompt: text.includes('/workspace $'),
+        stdout: text.includes('smoke stdout line'),
+        exit: text.includes('exit 0'),
+        handles: handles.length,
+        panelLeft: panelBox ? Math.round(panelBox.left) : null,
+        threadRight: threadBox ? Math.round(threadBox.right) : null,
+        docScroll: document.documentElement.scrollWidth,
+        viewport: window.innerWidth,
+      };
+    })()`);
+    check(
+      "a conversation that ran commands opens the Cloud sandbox panel",
+      !sandboxPanel.error &&
+        sandboxPanel.track > 0 &&
+        sandboxPanel.terminal &&
+        sandboxPanel.prompt &&
+        sandboxPanel.stdout &&
+        sandboxPanel.exit &&
+        // One panel, one track: two resize handles would mean the artifact
+        // and the terminal are both claiming the same column.
+        sandboxPanel.handles === 1 &&
+        sandboxPanel.panelLeft === sandboxPanel.threadRight &&
+        sandboxPanel.docScroll <= sandboxPanel.viewport + 1,
+      JSON.stringify(sandboxPanel),
     );
   } catch (e) {
     check("smoke script ran to completion", false, e.message);

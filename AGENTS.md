@@ -66,7 +66,9 @@ because the stream loop reads them in the same tick it mutates state.
 - `src/components/primitives/` — the Aria layer. `button`, `dialog`, `input`,
   `label`, `menu`, `popover`, `select`, `sheet`, `tooltip`, plus `index.js`.
 - `src/components/chat/` — `ChatApp` (the composition root), `ChatLayout`,
-  `Header`, `SidebarContent`, `MessageList`, `ChatInput`, `ArtifactPanel`,
+  `Header`, `SidebarContent`, `MessageList`, `ChatInput`, `ArtifactPanel`
+  (the right panel: artifact preview **and** the `SandboxTerminal` command
+  transcript on one track, switched by header tabs), `SandboxTerminal`,
   `ModelPicker`, `ContextUsage`, `ResponseMetrics`, `CustomLink`,
   `ThinkingIndicator`, and `message/` (row/bodypart components).
 - `src/components/settings/` — `SettingsModal` orchestrator + one file per
@@ -157,6 +159,11 @@ Traps, all of which have cost real debugging time:
   check that scraped the sidebar and matched a nav button called `"Settings"`,
   and a header-gating check that asserted on a DOM node React had already
   replaced. A green check is not evidence; a red one under a deliberate break is.
+  **Verify the break landed before trusting the red-or-green at all**: a `perl -0pi`
+  pattern that drifted from what `biome format` actually printed, or a `?` read as a
+  regex quantifier instead of a literal, edits *nothing* — the check stays green and
+  reads as a pass. Grep the source for the break first. And never run
+  `sed 's/^$/…/'` over a file: it rewrites every blank line in it.
 - **A measurement that is constant in the test environment can never fail.** jsdom matches no
   media query, so `useIsDesktop()` is `false` in every test and `ChatLayout`'s panel track is
   always `0px` — a check for "the track is wrongly reserved for a panel that rendered nothing"

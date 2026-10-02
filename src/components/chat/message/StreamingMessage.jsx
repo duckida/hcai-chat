@@ -6,7 +6,6 @@ import ThinkingIndicator from "../ThinkingIndicator";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import { AgentIndicator, WebSearchIndicator } from "./MessageParts";
 import MessageRow from "./MessageRow";
-import StreamingSandboxBlock from "./StreamingSandboxBlock";
 import ThinkingBlock from "./ThinkingBlock";
 import useMessageText from "./useMessageText";
 
@@ -15,8 +14,6 @@ const selectDisplaySettings = (state) => ({
   webSearchEnabled: state.webSearchEnabled,
   agentModeEnabled: state.agentModeEnabled,
   artifactsEnabled: state.artifactsEnabled,
-  showSandboxCode: state.showSandboxCode,
-  showSandboxOutput: state.showSandboxOutput,
   showThinking: state.showThinking,
 });
 
@@ -26,19 +23,21 @@ const selectDisplaySettings = (state) => ({
  * them from the turn store instead would mean every message row in every open
  * conversation rendered whatever stream happened to be in flight. Only the
  * presentation settings are looked up here.
+ *
+ * Sandbox commands are not rendered in the thread at all — their transcript
+ * is the Cloud sandbox side panel — so the tool list never reaches this
+ * component; MessageList only consults it to decide the row exists while a
+ * run is quiet.
  */
 const StreamingMessage = memo(function StreamingMessage({
   streamingContent,
   streamingThinking,
-  streamingSandboxTools,
 }) {
   const {
     thinkingEnabled,
     webSearchEnabled,
     agentModeEnabled,
     artifactsEnabled,
-    showSandboxCode,
-    showSandboxOutput,
     showThinking,
   } = useSettings(selectDisplaySettings);
 
@@ -54,14 +53,6 @@ const StreamingMessage = memo(function StreamingMessage({
       <MessageRow variant="assistant">
         {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
         {agentModeEnabled && <AgentIndicator />}
-        {streamingSandboxTools?.map((tool) => (
-          <StreamingSandboxBlock
-            key={tool.index}
-            tool={tool}
-            showSandboxCode={showSandboxCode}
-            showSandboxOutput={showSandboxOutput}
-          />
-        ))}
         {streamingThinking && thinkingEnabled && (
           <ThinkingBlock
             thinking={streamingThinking}

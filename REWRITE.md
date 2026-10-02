@@ -209,6 +209,37 @@ history.
     Negative-controlled by dropping the class: `composerBottom: 13016` against a 900px
     viewport, `clientH === scrollH`, `scrolled: 0`.
 
+12. ~~**Sandbox commands were inline blocks in the thread; they are now a terminal in the
+    right panel — and every gate around the panel had to learn there are two content
+    kinds.**~~ — **done** (user's sketch: a `Cloud sandbox` side showing `/workspace $ ls`
+    entries). The panel's open state stayed a derivation, never a store field:
+    `open = (hasArtifact || streamingArtifact || hasSandboxRuns) && !dismissed`, so a chat
+    whose *only* content is commands pays exactly one track, a new chat still pays none, and
+    `ArtifactPanelVisibility` pins both directions. Three traps fell out:
+    - **The live and persisted runs are the same runs.** `streamingSandboxTools` is still in
+      the store after the turn ends (the generated-files pills read it there), and
+      `makeOnComplete` commits `sandboxResults` to the message in the same batch — so the
+      terminal's live list is gated on `isLoading && streamingConversationId === active`.
+      Drop either half: the first prints every command twice after each turn, the second
+      opens the panel for another conversation's stream. Both are negative-controlled.
+    - **The panel follows the conversation; the tab follows the turn.** Tab state lives in
+      `ChatApp` (so the fullscreen remount keeps it), resets per conversation, and the first
+      run of a turn switches it to `sandbox` *unless a streaming artifact is arriving* —
+      with the same one-transition-per-turn ref the artifact reopen rule uses, so a
+      dismissed panel comes back for the next turn's first command without nagging
+      within one.
+    - **A panel that hosts two things may not be named after one.** The collapsed/open
+      affordances are now `Open side panel` / `Resize side panel` (smoke's two selectors
+      moved with them), the mobile pill says what it will actually open, and the preview/code
+      controls render only on the artifact side — a copy button for source that is not there
+      is a lie. `showSandboxCode` / `showSandboxOutput` kept their meaning and moved with the
+      content they gate: they now read inside `SandboxTerminal` from the store, exactly as
+      `Message` reads its own display flags. The inline `StreamingSandboxBlock` is deleted;
+      the thread keeps only row visibility during a quiet run and the generated-files pills.
+      Smoke 18 is the browser half: one handle, one track, prompt + stdout + `exit 0` painted
+      beside the thread — negative-controlled by dropping `sandboxRuns` from the gate
+      (20/21, check 18 red).
+
 ---
 
 ## Findings from P9 — read before touching the component layer
@@ -523,12 +554,13 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 15 | no React errors or warnings in the console | console captured from **first paint** (`Runtime.consoleAPICalled` + `Log.entryAdded`), not polled. Aimed at what React 19 actually says — not the `onError listener` string React 18 said and 19 does not, which is why an earlier version of this check could never fail. Excludes Simple Analytics, the dev font-preload hint and Chromium's own `verbose` DOM advice, each with a reason |
 | 16 | sidebar titles sit close to the edge | the prose `ul` rule above: title text measured from the sidebar's own left edge, so a collapsed sidebar cannot pass it by accident. **Current: 22px (was 46px)** |
 | 17 | a tall thread scrolls while the composer stays on screen | a seeded 12,870px conversation: composer bottom inside the viewport, `scrollHeight > clientHeight` with a real `scrollTop` change, page itself not scrollable. **P10 finding 11 — the one class of layout bug no jsdom test can see** |
+| 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 20 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 21 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
@@ -666,6 +698,7 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 ### Features & gating
 
 - [x] Artifacts are parsed and the **message body** follows the toggle; the **panel** follows the conversation. (`f3f3e4d`, P10 finding 10) — The body half: `MessageList` "renders an assistant message containing HTML artifacts" / "does not strip HTML fences when artifacts are disabled" / "shows the generating artifact state only when artifacts are enabled" / "renders streaming content with HTML fences as plain text when artifacts are disabled". The panel half changed on request: a chat that already owns an artifact opens it even with the toggle off, because switching artifacts off for the next chat used to blank it when you came back (`ArtifactPanelVisibility` "keeps the panel available after artifacts are switched off"). What the panel never does is spend a track on nothing (`ArtifactPanelVisibility` "closes when dismissed, and does not reopen behind the user" / "leaves the track collapsed when a new chat has nothing to show" / "does not reserve the track for a conversation with nothing to show") — all five negative-controlled, and they pin `matchMedia` to a desktop viewport because jsdom otherwise reports a 0px track in every case
+- [x] Sandbox commands render only in the Cloud sandbox side panel — never as inline thread blocks — and the one panel track is never paid for nothing. (`16cae5e`, P10 finding 12) — `SandboxTerminal` "hides stdout when the setting is off" / "hides stderr too, so a failing command cannot leak through" / "hides the command without hiding its output" (the two display settings stay independent); `ArtifactPanel` "shows the terminal instead of the preview when its tab is active" / "offers both tabs only when the conversation has both" / "falls back rather than rendering a panel with nothing to show"; `ArtifactPanelVisibility` "opens the terminal for a conversation that ran commands" / "opens the terminal for a run happening right now" / "ignores a run that belongs to another conversation" / "reopens for the next turn's first run after being dismissed" / "brings its own side of the panel when a run starts" / "spends one track on a conversation that has both sides"; smoke 18 in a real browser. All negative-controlled (gate, conversation gate, reopen, tab switch, tabs, fallback, both settings gates, status rendering, smoke gate)
 - [x] Web search + artifacts can be enabled **at the same time**. (`a2e4c60`) — `ChatApp` "keeps both on when both are switched on", and "sends both capabilities to the model for one request" asserts one POST carries `artifacts: true` **and** `web_search` in `tools`. The settings half alone would have passed while the request still dropped one
 - [x] Web search, agent mode and calculator are disabled for models without tool support. (`396a4f3`) — `ChatApp` "turns web search and agent mode off when the model cannot call tools" (and off in storage, so it does not return on reload) / "disables the toggles in the header…" (native `disabled`, tooltip explains why). Driven by the **catalog**, not a store write: `loadModels()` on mount overwrites a seeded store, which is how the first version of this test passed against a live, enabled button
 - [x] ~~Import/export buttons live in Settings only, not the sidebar.~~ — **moot: feature deleted in P5**
