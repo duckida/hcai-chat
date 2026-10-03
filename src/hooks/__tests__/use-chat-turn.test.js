@@ -294,21 +294,13 @@ describe("useChatTurn", () => {
   });
 
   it("stores an error placeholder when the response is empty", async () => {
-    // An empty stream triggers one non-streaming retry; when the retry also
-    // returns nothing, the turn commits as an error placeholder.
+    // An empty stream triggers one streamed retry; when the retry also
+    // delivers nothing, the turn commits as an error placeholder.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((url, opts) => {
-        const parsed = JSON.parse(opts.body);
-        if (parsed.stream) {
-          return Promise.resolve(makeStreamResponse(["data: [DONE]\n\n"]));
-        }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ text: "" }),
-        });
-      }),
+      vi.fn().mockImplementation(() =>
+        Promise.resolve(makeStreamResponse(["data: [DONE]\n\n"])),
+      ),
     );
     const result = await setup();
 
@@ -325,23 +317,25 @@ describe("useChatTurn", () => {
   });
 
   it("replaces the partial with the complete text when the retry delivers", async () => {
-    // The stream dies after one delta with no [DONE]; the replay regenerates
-    // the answer. The partial must be swapped out, not appended to — a user
-    // must never see the response twice.
+    // The stream dies after one delta with no [DONE]; the retry streams a
+    // regenerated answer. The partial must be swapped out, not appended to —
+    // a user must never see the response twice.
+    let streamed = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((url, opts) => {
-        const parsed = JSON.parse(opts.body);
-        if (parsed.stream) {
+      vi.fn().mockImplementation(() => {
+        streamed += 1;
+        if (streamed === 1) {
           return Promise.resolve(
             makeStreamResponse([delta("Half an answer that never fin")]),
           );
         }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ text: "The complete answer." }),
-        });
+        return Promise.resolve(
+          makeStreamResponse([
+            delta("The complete answer."),
+            "data: [DONE]\n\n",
+          ]),
+        );
       }),
     );
     const result = await setup();
@@ -356,14 +350,15 @@ describe("useChatTurn", () => {
   });
 
   it("keeps the partial text and thinking when the retry also fails", async () => {
-    // Both the stream and its replay are gone. Whatever arrived before the
+    // Both the stream and its retry are gone. Whatever arrived before the
     // failure is all the user has of that answer — committing an empty box
     // would destroy text they already read.
+    let streamed = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((url, opts) => {
-        const parsed = JSON.parse(opts.body);
-        if (parsed.stream) {
+      vi.fn().mockImplementation(() => {
+        streamed += 1;
+        if (streamed === 1) {
           return Promise.resolve(
             makeStreamResponse([
               think("Considering it. "),
@@ -773,23 +768,25 @@ describe("useChatTurn", () => {
     });
   });
 
-  it("does not duplicate the response when a dropped stream triggers the non-streaming fallback", async () => {
+  it("does not duplicate the response when a dropped stream triggers the streamed retry", async () => {
     // The proxy can kill an SSE stream mid-response (QUIC reset). The client
-    // retries with stream:false, which regenerates the whole answer. That
-    // replay must replace the partial text, not append to it — otherwise the
-    // message contains the answer twice.
+    // retries with a fresh streamed request, which regenerates the whole
+    // answer. That retry must replace the partial text, not append to it —
+    // otherwise the message contains the answer twice.
+    let streamed = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation((url, opts) => {
-        const parsed = JSON.parse(opts.body);
-        if (parsed.stream) {
+      vi.fn().mockImplementation(() => {
+        streamed += 1;
+        if (streamed === 1) {
           return Promise.resolve(makeAbortableStreamResponse("Partial", 1));
         }
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => ({ text: "The whole answer, start to finish." }),
-        });
+        return Promise.resolve(
+          makeStreamResponse([
+            delta("The whole answer, start to finish."),
+            "data: [DONE]\n\n",
+          ]),
+        );
       }),
     );
 

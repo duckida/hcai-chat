@@ -130,11 +130,11 @@ function buildRequestBody({
   return body;
 }
 
-async function postChat(body, model, stream) {
+async function postChat(body, model) {
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...body, stream }),
+    body: JSON.stringify({ ...body, stream: true }),
   });
 
   if (!response.ok) {
@@ -291,10 +291,11 @@ const STALL_TIMEOUT_MS = 15_000;
  * mid-answer, and is reported upward for replay instead of being committed
  * as a finished response.
  *
- * @returns {Promise<boolean>} true when the caller should replay once
+ * @returns {Promise<boolean>} true when this attempt must be treated as
+ *   failed — the first attempt replays over it, the retry reports an error
  */
 async function streamOnce(body, router, model, onComplete) {
-  const response = await postChat(body, model, true);
+  const response = await postChat(body, model);
 
   const parser = createSseParser(router.route);
   const reader = response.body.getReader();
@@ -362,31 +363,61 @@ async function streamOnce(body, router, model, onComplete) {
   }
 
   console.warn(
-    "[stream] EOF without the [DONE] marker after delivered content — replaying the truncated response",
+    "[stream] EOF without the [DONE] marker after delivered content — the response is truncated",
   );
   return true;
 }
 
+/**
+ * The one retry, and the last one. It streams like the first attempt, with a
+ * fresh frame router so this attempt's ending is judged on its own evidence —
+ * the first attempt's delivered record would call any empty ending a
+ * truncation. Streaming is load-bearing, not stylistic: a non-streaming retry
+ * holds the connection with *zero bytes* for the whole regeneration, which is
+ * exactly what a proxy read-timeout kills, so a long answer can finish at the
+ * provider and still die on the way back (finding 16 — it did, billed at
+ * 44k tokens / 8m28s, while the client saw a plain-text 502).
+ */
 async function replayOnce(body, model, handlers) {
-  const { onChunk, onError, onComplete, onSandboxResult, onFallbackStart } =
-    handlers;
-  try {
-    // The non-streaming retry regenerates the whole answer, so callers must
-    // discard whatever the dead stream already accumulated — otherwise the
-    // replay appends to it and the response appears twice.
-    onFallbackStart?.();
-    const response = await postChat(body, model, false);
-    const data = await response.json();
+  const {
+    onChunk,
+    onError,
+    onToolCall,
+    onSearchResult,
+    onMetrics,
+    onSandboxResult,
+    onComplete,
+    onFallbackStart,
+  } = handlers;
 
-    if (data.text) {
-      onChunk(data.text, "content");
+  const retryRouter = createFrameRouter({
+    model,
+    onChunk,
+    onError,
+    onToolCall,
+    onSearchResult,
+    onMetrics,
+    onSandboxResult,
+  });
+
+  try {
+    // The retry regenerates the whole answer, so callers must discard
+    // whatever the dead stream already accumulated — otherwise the retry
+    // appends to it and the response appears twice. If no byte ever arrives,
+    // the buffers keep their partial and the error below commits it.
+    onFallbackStart?.();
+    const needsAnother = await streamOnce(body, retryRouter, model, onComplete);
+    if (needsAnother) {
+      // No third attempt: bounded retries, or a flaky network turns into a
+      // regeneration loop. The error commits whatever partial arrived.
+      onError(
+        new Error(
+          retryRouter.anyDelivered()
+            ? `Connection lost during the retry — the response for "${model}" was cut off before it finished.`
+            : `No response received from model "${model}". The model may be overloaded or unavailable.`,
+        ),
+      );
     }
-    if (Array.isArray(data.sandboxResults) && onSandboxResult) {
-      for (const sandboxResult of data.sandboxResults) {
-        onSandboxResult(sandboxResult);
-      }
-    }
-    await onComplete?.();
   } catch (error) {
     onError(error);
   }
@@ -403,9 +434,12 @@ async function replayOnce(body, model, handlers) {
  * If the SSE transport fails (e.g. the proxy's QUIC error), the stream ends
  * cleanly but delivered nothing at all, or content arrived without the
  * server's `[DONE]` marker (a connection cut mid-answer), the request is
- * retried **once** with `stream: false` and the JSON result is replayed
- * through the same callbacks. A delivered error frame or tool result is
- * never replayed over.
+ * retried **once** with a fresh streamed request whose frames run through the
+ * same callbacks. It streams for the reason the first attempt does: the
+ * server's keepalives and the deltas keep bytes flowing, so a proxy cannot
+ * idle-timeout a long regeneration the way the old silent non-streaming retry
+ * could (finding 16). A delivered error frame or tool result is never
+ * replayed over, and there is no third attempt.
  *
  * @param {object} options
  */
@@ -473,17 +507,20 @@ export const streamChatCompletion = async ({
     needsReplay = await streamOnce(body, router, model, onComplete);
   } catch (error) {
     console.warn(
-      "[stream] Streaming failed, falling back to non-streaming:",
+      "[stream] Streaming failed, retrying with a fresh streamed request:",
       error.message,
     );
     needsReplay = true;
   }
 
-  // Exactly one replay, whichever path asked for it.
+  // Exactly one retry, whichever path asked for it.
   if (needsReplay) {
     await replayOnce(body, model, {
       onChunk,
       onError,
+      onToolCall,
+      onSearchResult,
+      onMetrics,
       onComplete,
       onSandboxResult,
       onFallbackStart,

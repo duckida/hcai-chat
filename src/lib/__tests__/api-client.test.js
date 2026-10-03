@@ -214,7 +214,7 @@ describe("streamChatCompletion", () => {
     ]);
   });
 
-  it("uses the sanitized messages for the non-streaming fallback too", async () => {
+  it("uses the sanitized messages for the streamed retry too", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({
@@ -223,11 +223,12 @@ describe("streamChatCompletion", () => {
         text: async () => JSON.stringify({ error: "stream failed" }),
         json: async () => ({ error: "stream failed" }),
       })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ text: "fallback ok" }),
-      });
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"recovered ok"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const onChunk = vi.fn();
@@ -246,15 +247,20 @@ describe("streamChatCompletion", () => {
       onError: vi.fn(),
     });
 
-    expect(onChunk).toHaveBeenCalledWith("fallback ok", "content");
-    const fallbackBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(fallbackBody.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(onChunk).toHaveBeenCalledWith("recovered ok", "content");
+    const retryBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(retryBody.messages).toEqual([{ role: "user", content: "hi" }]);
+    // The retry streams — a silent JSON request for a long answer is what a
+    // proxy read-timeout kills (finding 16).
+    expect(retryBody.stream).toBe(true);
   });
 
   it("fires onFallbackStart before replaying the regenerated text", async () => {
+    let streamedCalls = 0;
     const fetchMock = vi.fn().mockImplementation((url, opts) => {
-      const parsed = JSON.parse(opts.body);
-      if (parsed.stream) {
+      JSON.parse(opts.body);
+      streamedCalls += 1;
+      if (streamedCalls === 1) {
         // A proxy mid-stream abort: the fetch "succeeds" but the body throws
         // partway through, leaving the client with a partial answer.
         return Promise.resolve({
@@ -283,11 +289,12 @@ describe("streamChatCompletion", () => {
           },
         });
       }
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ text: "Full answer, complete" }),
-      });
+      return Promise.resolve(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"Full answer, complete"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -488,15 +495,16 @@ describe("streamChatCompletion", () => {
     expect(onComplete).toHaveBeenCalled();
   });
 
-  it("retries non-streaming when the stream ends without delivering anything", async () => {
+  it("retries with a fresh streamed request when nothing was delivered", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(makeStreamResponse(["data: [DONE]\n\n"]))
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ text: "recovered" }),
-      });
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const onChunk = vi.fn();
@@ -513,6 +521,7 @@ describe("streamChatCompletion", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream).toBe(true);
     expect(onFallbackStart).toHaveBeenCalledTimes(1);
     expect(onChunk).toHaveBeenCalledWith("recovered", "content");
     expect(onComplete).toHaveBeenCalled();
@@ -597,11 +606,12 @@ describe("streamChatCompletion", () => {
           // Connection cut mid-answer: the stream ends with no [DONE].
         ]),
       )
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({ text: "the whole answer" }),
-      });
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"the whole answer"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
     vi.stubGlobal("fetch", fetchMock);
 
     const onChunk = vi.fn();
@@ -618,10 +628,66 @@ describe("streamChatCompletion", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream).toBe(true);
     expect(onFallbackStart).toHaveBeenCalledTimes(1);
     expect(onChunk).toHaveBeenCalledWith("the whole answer", "content");
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("reports an error when the retry is itself cut, without a third attempt", async () => {
+    // Exactly one retry: a flaky network must not become a regeneration loop.
+    // The retry's partial is committed alongside the error by the caller.
+    const fetchMock = vi.fn().mockImplementation(() =>
+      makeStreamResponse([
+        'data: {"choices":[{"delta":{"content":"chop"}}]}\n\n',
+        // Both attempts end with content and no [DONE].
+      ]),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toContain("cut off");
+    expect(onError.mock.calls[0][0].message).toContain(TEST_MODEL);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("reports an error when the retry also delivers nothing", async () => {
+    // The empty ending can no longer reach onComplete: with the first
+    // attempt's partial still buffered, that would silently commit a
+    // truncated answer as if it were whole.
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(() => makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    const onComplete = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+      onComplete,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toContain(
+      `No response received from model "${TEST_MODEL}"`,
+    );
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it("does not replay a stream that completed with [DONE]", async () => {
@@ -735,11 +801,12 @@ describe("streamChatCompletion", () => {
             }),
           },
         })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({ text: "recovered" }),
-        });
+        .mockResolvedValueOnce(
+          makeStreamResponse([
+            'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+        );
       vi.stubGlobal("fetch", fetchMock);
 
       const onChunk = vi.fn();
@@ -758,6 +825,7 @@ describe("streamChatCompletion", () => {
 
       expect(cancel).toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream).toBe(true);
       expect(onChunk).toHaveBeenCalledWith("recovered", "content");
     } finally {
       vi.useRealTimers();
@@ -803,11 +871,12 @@ describe("streamChatCompletion", () => {
             }),
           },
         })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({ text: "recovered" }),
-        });
+        .mockResolvedValueOnce(
+          makeStreamResponse([
+            'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\n',
+            "data: [DONE]\n\n",
+          ]),
+        );
       vi.stubGlobal("fetch", fetchMock);
 
       const onChunk = vi.fn();
@@ -828,6 +897,7 @@ describe("streamChatCompletion", () => {
 
       expect(cancel).toHaveBeenCalled();
       expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream).toBe(true);
       expect(onChunk).toHaveBeenCalledWith("recovered", "content");
     } finally {
       vi.useRealTimers();

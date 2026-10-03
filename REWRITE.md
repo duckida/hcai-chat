@@ -327,7 +327,8 @@ history.
       marker or not); marker → complete; a delivered error frame or tool/search
       result → complete, *never* replayed over (their work already happened);
       content without the marker → a truncation, routed into the same
-      one-time non-streaming replay a transport failure already used.
+      one-time replay a transport failure already used (now itself streamed —
+      finding 16).
     - **A failed turn keeps what it wrote.** `onFallbackStart` used to wipe the
       partial *before* the replay started, and a failed replay committed
       `content: ""` — a double failure destroyed text the user had already
@@ -354,6 +355,46 @@ history.
       which patches `fetch` in a real browser to cut the first streamed
       response after one delta with no marker and asserts the console warn
       fired and the cut prefix was replaced by the replayed answer.
+
+16. ~~**An 8-minute answer died on the way back, and the user saw a JSON parse
+    error.**~~ — fixed, in two parts. The chain: a connection was cut early
+    (finding 15's case) and the one-time retry was a **non-streaming** request,
+    which sends *zero bytes* for the whole regeneration — exactly what a proxy
+    read-timeout kills. The provider completed the answer (44,017 tokens, 8m28s)
+    and it was billed; the proxy answered the silent leg with a plain-text
+    `502 Bad Gateway`. `postChat`'s unguarded `response.json()` then threw
+    `Unexpected token 'B', "Bad Gateway" is not valid JSON`, and that SyntaxError
+    *became* the user-facing error. The answer was unrecoverable, and the context
+    indicator froze at 887 tokens because the truncated turn never carried a
+    `usage` frame.
+    - **Error bodies are not JSON by contract.** A proxy answers a dead upstream
+      with whatever it has — plain text, HTML. `postChat` reads the body as
+      `text()` first and parses JSON only if it yields an object; otherwise it
+      surfaces `Chat API Error (502) using model "…" — Bad Gateway` (HTML bodies
+      skipped, `statusText` fallback).
+    - **The retry streams too.** Keepalives keep bytes flowing, so no proxy can
+      idle-timeout a long regeneration, and the `usage` frame arrives with the
+      answer — the context ring heals instead of freezing. The retry keeps a
+      fresh frame router so its ending is judged on its own evidence, and the
+      exactly-one-retry invariant is unchanged: never a third attempt. Outcome
+      mapping: delivered → the router's normal completion; cut again →
+      `onError(… cut off before it finished)`; empty →
+      `onError(No response received from model "…")` — never `onComplete`,
+      which with the original partial still buffered would silently commit a
+      truncated answer as if it were whole (a pre-existing hole this closes).
+      `route.js`'s non-streaming branch now only serves `generateTitle`.
+    - **Known limitation, deliberately not fixed:** a client-side cut does not
+      abort the server-side generation — the orphaned run still bills.
+    - **Verified:** 631 unit tests — `api-client` at 44 (+2: the retry being cut
+      again errors without a third attempt; the empty retry errors with the
+      model named), six existing tests rewritten to the streamed retry, four
+      `use-chat-turn` mocks rewritten — against three negative controls, each
+      break-verified by grep first: `stream: false` in `postChat` (the five
+      `stream === true` assertions went red), the outcome mapping removed
+      (exactly the two new tests red), the lazy replay-clear dropped (both
+      duplication tests red) — plus smoke 22, which patches `fetch` in-page so
+      *both* streamed probe attempts answer with a plain-text `502` and asserts
+      the error card carries `502 … Bad Gateway`, not `Unexpected token`.
 
 ---
 
@@ -672,13 +713,14 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 | 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
 | 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two links labelled by domain but targeting the full result URL, no leftover query. **P10 finding 14** |
-| 21 | a stream cut before `[DONE]` is replayed, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer. Asserts the truncation console warn fired and the cut prefix is gone when the turn ends (the non-streaming replay passed through to the real model). **Finding 15 — the silent-cutoff fix** |
+| 21 | a stream cut before `[DONE]` is replayed, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer. Asserts the truncation console warn fired and the cut prefix is gone when the turn ends (the streamed retry passed through to the real model; the prefix's first render is latched by a `MutationObserver`, because the retry can replace it faster than any text poll). **Finding 15 — the silent-cutoff fix, hardened under finding 16's streamed retry** |
+| 22 | a proxy's plain-text `502` surfaces as an HTTP error, not a parse crash | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so *every* streamed request carrying the probe — retry included, no latch — answers with a plain-text `502 Bad Gateway` (route.js only ever returns JSON, so this is a proxy answering for a dead upstream). Asserts the error card carries `502 … Bad Gateway` and never `Unexpected token` / `not valid JSON`. **Finding 16 — the production incident** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
 `.smoke-key`, then reloads so the settings store hydrates from it. The value is never echoed
 and never written to the repo (`.gitignore` rule landed *before* the file did — verify with
 `git check-ignore -v .smoke-key`). Without a key, check 9 is `SKIP`, not FAIL: a missing
-credential is a prerequisite, not a regression. **Current: 26 ok / 0 skipped / 0 failed.**
+credential is a prerequisite, not a regression. **Current: 29 ok / 0 skipped / 0 failed.**
 
 **Profile isolation.** Each run gets `/tmp/opencode/hcai-smoke-<pid>` and a freshly allocated
 debug port, both cleaned up afterwards. A shared profile once let the previous run's
@@ -729,6 +771,14 @@ held the fixed port so every later run died at launch.
   each retry — the signature of starvation, not a regression. Stop the server before the test
   gate and start it only for smoke. Check `uptime` and `ps -eo pcpu,pmem,comm` before believing a
   timing failure.
+- **A "message sent" check can pass against text that was never sent.** `ChatInput.handleSend`
+  silently ignores Enter while the previous turn streams, and a textarea's `value` setter writes
+  a real child text node — so `pageText` sees the typed probe in the composer and the check
+  passes while no request was ever made (row 22's probe failed exactly this way for three
+  runs: `seen:0, hits:0`, no error card). Probe sends now wait for the send button to be enabled
+  and accept only "composer emptied **and** message in the thread" as sent — and note the
+  fallback button click must be broken *alongside* Enter in a negative control, or it rescues
+  the send and the control passes.
 
 ---
 
@@ -796,16 +846,17 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 
 - [x] Stream renders **only** for the conversation that initiated it — never for the one you switched to. (`8aa44a6`) — `use-chat-turn` "scopes the stream to its conversation and clears it on reset"; `MessageList` "hides the stream, its text, and its placeholder when they belong to another conversation"
 - [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
-- [x] SSE fallback to non-streaming does **not** duplicate the response; partial accumulators are cleared first. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the non-streaming fallback"; `api-client` "fires onFallbackStart before replaying the regenerated text"
+- [x] SSE fallback uses a fresh **streamed** retry that does **not** duplicate the response; partial accumulators are cleared on the first retry chunk, not before. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the streamed retry" / "replaces the partial with the complete text when the retry delivers"; `api-client` "fires onFallbackStart before replaying the regenerated text"
 - [x] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`) — four `api-client` tests (retry / no retry on thinking / on error event / on tool result)
 - [x] A clean EOF after delivered content **without the server's `[DONE]` marker is a truncation, not a completion**, and replays exactly once; an EOF after the marker completes. A failed turn commits the partial text it had alongside the error, never `content: ""`, and a silent connection past 15s is cancelled into that same path. — finding 15: `sse-parser` `SSE_DONE` tests, `api-client` truncation / precedence / stall / visibility tests, `use-chat-turn` partial-preservation tests, `MessageList` partial-plus-card test, smoke 21
+- [x] The retry is **streamed** and judged on its own evidence: a cut retry or an empty retry commits an error (with the partial), never `onComplete` and never a third attempt — and a proxy's non-JSON error body surfaces as an HTTP error, not a JSON parse crash. — finding 16: `api-client` "uses the sanitized messages for the streamed retry too" / "retries with a fresh streamed request when nothing was delivered" / "reports an error when the retry is itself cut, without a third attempt" / "reports an error when the retry also delivers nothing" / "surfaces a plain-text proxy error instead of a JSON parse crash", `use-chat-turn` "stores an error placeholder when the response is empty", smoke 22
 - [x] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation: `use-chat-turn` "commits the final deltas even if a chunk has not re-rendered". Across turns: "sends the whole conversation, not just the newest message" asserts the second request's `messages` are `["first question", "ok", "and then?"]`
 - [x] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`) — conversations store "assigns messagesRef synchronously on creation" / "selects a conversation and syncs its messages"
 - [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`
 - [x] Stream errors are shown and reasoning/thinking survives into the next turn. (`6afb9c9`, `57ec86f`) — errors shown; thinking-only turn commits; `use-chat-turn` "carries a turn's reasoning into the next request" asserts `thinking` survives both the commit and the next request body
 - [x] `streamChatCompletion` is awaited by every caller. (`a957c70`) — `source-contracts.test.js` "finds no floating call" walks every source file and reports `file:line`. Negative-controlled by deleting an `await`: it fails and names `src/hooks/use-chat-turn.js:466`
 - [x] Scrolling stays possible **while** streaming. (`fa45ae0`) — `useThreadScroll` "stops following once the user scrolls away from the bottom" / "keeps following for a movement that stays within the threshold" / "hands scrolling back when a turn ends"; the container is also focusable and labelled
-- [x] Error placeholders are stripped from history sent to the model. (`be48b7f`) — `api-client` "strips error placeholders and empty assistant records from the POSTed messages" (and the non-streaming fallback variant)
+- [x] Error placeholders are stripped from history sent to the model. (`be48b7f`) — `api-client` "strips error placeholders and empty assistant records from the POSTed messages"
 
 ### Context usage & cost
 

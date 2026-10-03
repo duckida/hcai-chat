@@ -320,6 +320,39 @@ async function main() {
       })()`,
       );
 
+    // ChatInput's handleSend ignores Enter while a previous turn streams
+    // (isLoading), and a textarea's value setter writes a real text node —
+    // so pageText sees typed text that was never sent. Wait for the send
+    // button to come enabled before pressing Enter, and read "the composer
+    // emptied AND the message is in the thread" as the only real send proof.
+    const sendReady = () =>
+      evalJs(
+        `(() => {
+          const b = [...document.querySelectorAll('main button')].find(x =>
+            (x.getAttribute('aria-label')||'').match(/send/i) ||
+            x.querySelector('svg.lucide-send, svg.lucide-arrow-up'));
+          if (!b) return false;
+          return !(b.disabled || b.getAttribute('aria-disabled') === 'true' || b.hasAttribute('data-disabled'));
+        })()`,
+      );
+
+    const waitSendReady = async () => {
+      const start = Date.now();
+      while (Date.now() - start < 90000) {
+        try {
+          if (await sendReady()) return true;
+        } catch {}
+        await sleep(250);
+      }
+      return false;
+    };
+
+    const composerEmpty = () =>
+      evalJs(`(() => {
+        const el = document.querySelector('textarea');
+        return !el || el.value.trim() === '';
+      })()`);
+
     const pageText = () => evalJs(PAGE_TEXT);
 
     // On mobile the nav sheet is itself a [role="dialog"], so a bare
@@ -1311,39 +1344,58 @@ async function main() {
     // fetch in-page: the first *streamed* /api/chat carrying this probe
     // returns one delta and closes with no marker — exactly what a
     // connection cut mid-answer looks like on the wire. The client must
-    // detect it (the console warn) and complete through the replay, whose
-    // non-streaming request passes through to the real model. If the cut
-    // prefix is still on screen when the turn ends, detection failed.
-    const CUT_PREFIX = "the cut prefix ";
+    // detect it (the console warn) and complete through the retry, whose
+    // streamed request passes through to the real model (the latch has
+    // already fired). If the cut prefix is still on screen when the turn
+    // ends, detection failed.
+    // Matched without a trailing space: markdown rendering trims it, so a
+    // needle ending in " " can miss a prefix that did render.
+    const CUT_PREFIX = "the cut prefix";
     const probeArmed = await evalJs(`(() => {
       const realFetch = window.fetch.bind(window);
       let hit = false;
+      window.__smokeCutSeen = false;
+      window.__smokeCutHits = 0;
+      window.__smokeCutCalls = [];
       window.fetch = (input, init) => {
         const url = typeof input === 'string' ? input : (input && input.url) || '';
         const body = init && typeof init.body === 'string' ? init.body : '';
-        if (
-          !hit &&
-          url.includes('/api/chat') &&
-          body.includes('"stream":true') &&
-          body.includes('SMOKE_CUT_PROBE')
-        ) {
-          hit = true;
-          const enc = new TextEncoder();
-          const stream = new ReadableStream({
-            start(controller) {
-              controller.enqueue(enc.encode(
-                'data: {"choices":[{"delta":{"content":"the cut prefix "}}]}\\n\\n',
-              ));
-              controller.close();
-            },
-          });
-          return Promise.resolve(new Response(stream, {
-            status: 200,
-            headers: { 'Content-Type': 'text/event-stream' },
-          }));
+        if (url.includes('/api/chat')) {
+          const rec = {
+            probe: body.includes('SMOKE_CUT_PROBE'),
+            stream: body.includes('"stream":true'),
+          };
+          window.__smokeCutCalls.push(rec);
+          if (!hit && rec.probe && rec.stream) {
+            hit = true;
+            window.__smokeCutHits += 1;
+            const enc = new TextEncoder();
+            const stream = new ReadableStream({
+              start(controller) {
+                controller.enqueue(enc.encode(
+                  'data: {"choices":[{"delta":{"content":"the cut prefix "}}]}\\n\\n',
+                ));
+                controller.close();
+              },
+            });
+            return Promise.resolve(new Response(stream, {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            }));
+          }
         }
         return realFetch(input, init);
       };
+      // Latch the partial's first appearance at the DOM level: the streamed
+      // retry can replace the cut prefix within a second — faster than any
+      // text poll below can catch it — so polling alone races and loses.
+      new MutationObserver(() => {
+        if (document.documentElement.textContent.includes(${JSON.stringify(CUT_PREFIX)})) {
+          window.__smokeCutSeen = true;
+        }
+      }).observe(document.documentElement, {
+        childList: true, subtree: true, characterData: true,
+      });
       return true;
     })()`);
     check("truncation probe armed", probeArmed === true);
@@ -1352,9 +1404,15 @@ async function main() {
       "textarea",
       "SMOKE_CUT_PROBE Reply with exactly the word SMOKEREPLAYOK and nothing else.",
     );
+    // A previous turn still streaming swallows Enter silently — wait for the
+    // composer to be willing, then let an emptying composer plus the message
+    // appearing in the thread be the proof it actually sent.
+    await waitSendReady();
     await pressEnter("textarea");
     await sleep(1200);
-    let cutSent = (await pageText()).includes("SMOKE_CUT_PROBE");
+    const cutInThread = async () =>
+      (await composerEmpty()) && (await pageText()).includes("SMOKE_CUT_PROBE");
+    let cutSent = await cutInThread();
     if (!cutSent) {
       await evalJs(
         `(() => { const b = [...document.querySelectorAll('main button')].find(x =>
@@ -1363,7 +1421,7 @@ async function main() {
           if (b) { b.click(); return true; } return false; })()`,
       );
       await sleep(1200);
-      cutSent = (await pageText()).includes("SMOKE_CUT_PROBE");
+      cutSent = await cutInThread();
     }
     check("truncation probe message is sent", cutSent);
 
@@ -1380,11 +1438,12 @@ async function main() {
       const cutStarted = Date.now();
       while (Date.now() - cutStarted < 30000) {
         cutText = await pageText();
-        if (cutText.includes(CUT_PREFIX)) {
-          appeared = true;
-          break;
-        }
-        if (/API Error/.test(cutText)) break;
+        // Text polling OR the observer latch: the prefix can be replaced
+        // between two polls, and the latch is what proves it rendered.
+        appeared =
+          cutText.includes(CUT_PREFIX) ||
+          (await evalJs("window.__smokeCutSeen === true"));
+        if (appeared || /API Error/.test(cutText)) break;
         await sleep(500);
       }
       while (
@@ -1407,6 +1466,9 @@ async function main() {
           e.text.includes("EOF without the [DONE]"),
         );
         const noCutLeft = appeared && !cutText.includes(CUT_PREFIX);
+        const cutDiag = await evalJs(
+          "({ hits: window.__smokeCutHits, seen: window.__smokeCutSeen, calls: window.__smokeCutCalls })",
+        );
         check(
           "a stream cut before [DONE] is replayed, not committed",
           warned && noCutLeft,
@@ -1414,10 +1476,168 @@ async function main() {
             appeared,
             warned,
             noCutLeft,
+            cutDiag,
             tail: cutText.slice(-160),
           }),
         );
       }
+    }
+
+    // ---- 22. a proxy's plain-text 502 must surface as an HTTP error ----
+    // route.js only ever returns JSON, so a body of bare "Bad Gateway" is a
+    // proxy in front answering for a dead upstream (finding 16 — production
+    // actually saw this after an 8-minute generation). postChat used to
+    // response.json() that body, and the SyntaxError *became* the
+    // user-facing error. Patch every streamed probe request, retry included
+    // (no latch: a latch would let the retry through and hide the failure),
+    // and the error card must carry the status, not JSON garbage.
+    const GATE_PREFIX = "GATEWAY_PROBE";
+    const gateArmed = await evalJs(`(() => {
+      window.__smokeGateSeen = 0;
+      window.__smokeGateHits = 0;
+      window.__smokeGateAll = [];
+      window.__smokeGateEvictions = 0;
+      const makeGateFetch = (inner) => {
+        const wrapped = (input, init) => {
+          const url = typeof input === 'string' ? input : (input && input.url) || '';
+          const body = init && typeof init.body === 'string' ? init.body : '';
+          if (url.includes('/api/chat')) {
+            const rec = {
+              probe: body.includes('GATEWAY_PROBE'),
+              stream: body.includes('"stream":true'),
+            };
+            window.__smokeGateAll.push(rec);
+            if (rec.probe) {
+              window.__smokeGateSeen += 1;
+              if (rec.stream) {
+                window.__smokeGateHits += 1;
+                return Promise.resolve(new Response('Bad Gateway', {
+                  status: 502,
+                  statusText: 'Bad Gateway',
+                }));
+              }
+            }
+          }
+          return inner(input, init);
+        };
+        wrapped.__smokeGate = true;
+        return wrapped;
+      };
+      // Re-chain if anything replaced window.fetch since the last install:
+      // a foreign wrapper that captured the native fetch would make this
+      // probe blind, and the turn would look like it never happened.
+      window.__smokeGateInstall = () => {
+        if (window.fetch.__smokeGate) return false;
+        window.fetch = makeGateFetch(window.fetch.bind(window));
+        window.__smokeGateEvictions += 1;
+        return true;
+      };
+      window.fetch = makeGateFetch(window.fetch.bind(window));
+      // Smoke only subscribes to console calls — an exception thrown out of
+      // an event handler (a rejected send()) reaches neither the console
+      // entries nor an error card, so capture it in-page.
+      window.__smokeGateEx = [];
+      window.addEventListener('unhandledrejection', (e) => {
+        window.__smokeGateEx.push(
+          'rejection: ' + String(e.reason && (e.reason.stack || e.reason.message || e.reason)).slice(0, 300),
+        );
+      });
+      window.addEventListener('error', (e) => {
+        window.__smokeGateEx.push('error: ' + String(e.message).slice(0, 300));
+      });
+      return true;
+    })()`);
+    check("proxy-error probe armed", gateArmed === true);
+
+    await typeInto("textarea", "GATEWAY_PROBE Reply with one short sentence.");
+    // A previous turn still streaming swallows Enter silently (the text then
+    // sits in the textarea, whose value setter writes a real text node, so a
+    // naive text check passes for a message that was never sent). Wait for
+    // the composer to be willing, re-chain the patch right before the send,
+    // and accept only "composer emptied + message in thread" as sent.
+    await waitSendReady();
+    await evalJs(
+      "window.__smokeGatePreSend = (window.__smokeGateInstall ? window.__smokeGateInstall() : 'missing')",
+    );
+    await pressEnter("textarea");
+    await sleep(1200);
+    const gateInThread = async () =>
+      (await composerEmpty()) && (await pageText()).includes(GATE_PREFIX);
+    let gateSent = await gateInThread();
+    if (!gateSent) {
+      await evalJs(
+        `(() => { const b = [...document.querySelectorAll('main button')].find(x =>
+            (x.getAttribute('aria-label')||'').match(/send/i) ||
+            x.querySelector('svg.lucide-send, svg.lucide-arrow-up'));
+          if (b) { b.click(); return true; } return false; })()`,
+      );
+      await sleep(1200);
+      gateSent = await gateInThread();
+    }
+    check(
+      "proxy-error probe message is sent",
+      gateSent,
+      gateSent
+        ? ""
+        : JSON.stringify({
+            preSend: await evalJs("window.__smokeGatePreSend"),
+          }),
+    );
+
+    if (gateSent) {
+      let gateText = "";
+      const gateStarted = Date.now();
+      while (Date.now() - gateStarted < 30000) {
+        gateText = await pageText();
+        if (/API Error/.test(gateText)) break;
+        await sleep(500);
+      }
+      const gateErr = gateText.match(/API Error.{0,240}/s);
+      const shown = gateErr ? gateErr[0].replace(/\s+/g, " ") : "";
+      const gateCounts = await evalJs(`(() => {
+        const where = [];
+        const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        while (w.nextNode()) {
+          const n = w.currentNode;
+          if ((n.nodeValue || '').includes('GATEWAY_PROBE')) {
+            let el = n.parentElement;
+            const path = [];
+            while (el && path.length < 7) {
+              path.push(el.tagName + (el.className ? '.' + String(el.className).split(' ')[0] : ''));
+              el = el.parentElement;
+            }
+            where.push({ t: (n.nodeValue || '').slice(0, 60), p: path.join('<') });
+          }
+        }
+        return {
+          ours: Boolean(window.fetch && window.fetch.__smokeGate),
+          preSend: window.__smokeGatePreSend,
+          seen: window.__smokeGateSeen,
+          hits: window.__smokeGateHits,
+          evictions: window.__smokeGateEvictions,
+          all: window.__smokeGateAll,
+          ex: window.__smokeGateEx,
+          where,
+        };
+      })()`);
+      const gateErrs = consoleEntries
+        .filter((e) => e.level === "error")
+        .slice(-3)
+        .map((e) => e.text.slice(0, 200));
+      check(
+        "a proxy's plain-text 502 surfaces as an HTTP error, not a parse crash",
+        Boolean(gateErr) &&
+          /502/.test(shown) &&
+          /Bad Gateway/.test(shown) &&
+          !/Unexpected token/.test(shown) &&
+          !/not valid JSON/.test(shown),
+        shown ||
+          JSON.stringify({
+            gateCounts,
+            gateErrs,
+            tail: gateText.slice(-300),
+          }),
+      );
     }
   } catch (e) {
     check("smoke script ran to completion", false, e.message);

@@ -109,14 +109,23 @@ a store read, that is the leak the check exists to prevent.
 
 ### SSE resilience
 The Caddy proxy advertises HTTP/3 and can reset long-lived SSE streams
-mid-tool-execution. `api-client.js` retries **once** via the non-streaming path
-— on transport failure, on a clean EOF that delivered nothing at all, and on a
-clean EOF that delivered content **without the server's `data: [DONE]` marker**:
-the marker is the only proof the answer is whole, so content without it is a
-truncation, not a completion (finding 15 — this was the silent cutoff bug).
-Precedence: empty → retry; marker → complete; a delivered error frame or
-tool/search result → complete and never retried, because their work already
-happened server-side. A failed turn commits whatever partial text it has
+mid-tool-execution. `api-client.js` retries **once** with a fresh streamed
+request — on transport failure, on a clean EOF that delivered nothing at all,
+and on a clean EOF that delivered content **without the server's `data: [DONE]`
+marker**: the marker is the only proof the answer is whole, so content without
+it is a truncation, not a completion (finding 15 — this was the silent cutoff
+bug). The retry streams for a reason: a non-streaming request sends *zero
+bytes* for the whole regeneration, which is exactly what a proxy read-timeout
+kills — a long answer can finish at the provider, get billed, and still die on
+the way back (finding 16). It uses a fresh frame router so its ending is
+judged on its own evidence; a retry that is itself cut, or that delivers
+nothing, commits its partial alongside an error, and there is never a third
+attempt. Precedence: empty → retry; marker → complete; a delivered error frame
+or tool/search result → complete and never retried, because their work already
+happened server-side. Error bodies are not guaranteed to be JSON — a proxy
+answers a dead upstream with plain text, so `postChat` reads the body as text
+first and surfaces `Chat API Error (502) … — Bad Gateway` instead of a JSON
+parse crash (finding 16). A failed turn commits whatever partial text it has
 alongside the error instead of `content: ""`. A read silent for 15s (the
 server keepalives every 5s), or one that goes stale while its tab is
 backgrounded, is cancelled into that same EOF decision instead of hanging.
