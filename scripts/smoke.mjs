@@ -1344,16 +1344,19 @@ async function main() {
     // fetch in-page: the first *streamed* /api/chat carrying this probe
     // returns one delta and closes with no marker — exactly what a
     // connection cut mid-answer looks like on the wire. The client must
-    // detect it (the console warn) and complete through the retry, whose
-    // streamed request passes through to the real model (the latch has
-    // already fired). If the cut prefix is still on screen when the turn
-    // ends, detection failed.
+    // detect it (the console warn) and *continue* it: the second request
+    // carries the partial as the assistant's turn plus the continue
+    // instruction (both recorded per call below), and the page answers that
+    // one with the scripted SMOKEREPLAYOK. So the turn may only end with
+    // BOTH the cut prefix (kept, never regenerated) and the continuation
+    // appended — one without the other is either a silent commit or a
+    // replay that threw the partial away (finding 17).
     // Matched without a trailing space: markdown rendering trims it, so a
     // needle ending in " " can miss a prefix that did render.
     const CUT_PREFIX = "the cut prefix";
     const probeArmed = await evalJs(`(() => {
       const realFetch = window.fetch.bind(window);
-      let hit = false;
+      let probeCalls = 0;
       window.__smokeCutSeen = false;
       window.__smokeCutHits = 0;
       window.__smokeCutCalls = [];
@@ -1364,31 +1367,54 @@ async function main() {
           const rec = {
             probe: body.includes('SMOKE_CUT_PROBE'),
             stream: body.includes('"stream":true'),
+            assistant: body.includes('"role":"assistant"'),
+            cont: body.includes('Continue it exactly where it stopped'),
           };
           window.__smokeCutCalls.push(rec);
-          if (!hit && rec.probe && rec.stream) {
-            hit = true;
-            window.__smokeCutHits += 1;
+          if (rec.probe && rec.stream) {
+            probeCalls += 1;
             const enc = new TextEncoder();
-            const stream = new ReadableStream({
-              start(controller) {
-                controller.enqueue(enc.encode(
-                  'data: {"choices":[{"delta":{"content":"the cut prefix "}}]}\\n\\n',
-                ));
-                controller.close();
-              },
-            });
-            return Promise.resolve(new Response(stream, {
-              status: 200,
-              headers: { 'Content-Type': 'text/event-stream' },
-            }));
+            if (probeCalls === 1) {
+              // The cut: one delta, then close with no [DONE].
+              window.__smokeCutHits += 1;
+              const stream = new ReadableStream({
+                start(controller) {
+                  controller.enqueue(enc.encode(
+                    'data: {"choices":[{"delta":{"content":"the cut prefix "}}]}\\n\\n',
+                  ));
+                  controller.close();
+                },
+              });
+              return Promise.resolve(new Response(stream, {
+                status: 200,
+                headers: { 'Content-Type': 'text/event-stream' },
+              }));
+            }
+            if (probeCalls === 2) {
+              // The continuation the client must have sent (the probe text
+              // rides along in messages): script the rest of the answer, so
+              // the turn's end state needs no real model and cannot flake.
+              const stream = new ReadableStream({
+                start(controller) {
+                  controller.enqueue(enc.encode(
+                    'data: {"choices":[{"delta":{"content":"SMOKEREPLAYOK"}}]}\\n\\n',
+                  ));
+                  controller.enqueue(enc.encode('data: [DONE]\\n\\n'));
+                  controller.close();
+                },
+              });
+              return Promise.resolve(new Response(stream, {
+                status: 200,
+                headers: { 'Content-Type': 'text/event-stream' },
+              }));
+            }
           }
         }
         return realFetch(input, init);
       };
-      // Latch the partial's first appearance at the DOM level: the streamed
-      // retry can replace the cut prefix within a second — faster than any
-      // text poll below can catch it — so polling alone races and loses.
+      // Latch the partial's first appearance at the DOM level: the check
+      // below requires the prefix to still be on screen when the turn ends,
+      // and a latch that never fires means no real stream rendered at all.
       new MutationObserver(() => {
         if (document.documentElement.textContent.includes(${JSON.stringify(CUT_PREFIX)})) {
           window.__smokeCutSeen = true;
@@ -1426,20 +1452,20 @@ async function main() {
     check("truncation probe message is sent", cutSent);
 
     if (cutSent) {
-      // Two phases, anchored on the cut prefix itself — not on quiet/IDLE
-      // heuristics, which race the replay: the partial keeps text on screen,
-      // so the "still thinking" placeholder unmounts while the replay is
-      // still running and the turn can look idle for those seconds.
-      // 1) the truncated delta must land (a latch that missed means a real
-      //    stream, which must fail this check);
-      // 2) only the replay can take the prefix away.
+      // Two phases, anchored on the cut prefix itself. 1) the truncated
+      // delta must land (a latch that missed means no real stream rendered,
+      // which must fail this check). 2) the turn keeps running through the
+      // continuation and ends only when the composer comes back — the
+      // prefix stays on screen throughout, because a continuation appends
+      // and never clears. Polling for the prefix to *disappear* would wait
+      // forever against the fixed behavior.
       let cutText = "";
       let appeared = false;
       const cutStarted = Date.now();
       while (Date.now() - cutStarted < 30000) {
         cutText = await pageText();
-        // Text polling OR the observer latch: the prefix can be replaced
-        // between two polls, and the latch is what proves it rendered.
+        // Text polling OR the observer latch: the prefix can slip between
+        // two polls, and the latch is what proves it rendered.
         appeared =
           cutText.includes(CUT_PREFIX) ||
           (await evalJs("window.__smokeCutSeen === true"));
@@ -1449,33 +1475,45 @@ async function main() {
       while (
         appeared &&
         Date.now() - cutStarted < 120000 &&
-        cutText.includes(CUT_PREFIX) &&
+        !(await sendReady()) &&
         !/API Error/.test(cutText)
       ) {
         await sleep(1000);
         cutText = await pageText();
       }
+      cutText = await pageText();
       const cutErr = cutText.match(/API Error.{0,140}/s);
+      const checkName =
+        "a stream cut before [DONE] is continued, not committed";
       if (cutErr) {
-        skip(
-          "a stream cut before [DONE] is replayed, not committed",
+        // With both probe calls scripted, an error card here is the client
+        // failing, not a flaky model: fail, do not skip.
+        check(
+          checkName,
+          false,
           `assistant turn errored — ${cutErr[0].replace(/\s+/g, " ").trim()}`,
         );
       } else {
         const warned = consoleEntries.some((e) =>
           e.text.includes("EOF without the [DONE]"),
         );
-        const noCutLeft = appeared && !cutText.includes(CUT_PREFIX);
         const cutDiag = await evalJs(
           "({ hits: window.__smokeCutHits, seen: window.__smokeCutSeen, calls: window.__smokeCutCalls })",
         );
+        const continued = Array.isArray(cutDiag.calls)
+          ? cutDiag.calls.some((c) => c.cont && c.assistant)
+          : false;
+        const keptPrefix = cutText.includes(CUT_PREFIX);
+        const finished = cutText.includes("SMOKEREPLAYOK");
         check(
-          "a stream cut before [DONE] is replayed, not committed",
-          warned && noCutLeft,
+          checkName,
+          warned && appeared && continued && keptPrefix && finished,
           JSON.stringify({
             appeared,
             warned,
-            noCutLeft,
+            continued,
+            keptPrefix,
+            finished,
             cutDiag,
             tail: cutText.slice(-160),
           }),

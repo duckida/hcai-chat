@@ -118,19 +118,51 @@ bug). The retry streams for a reason: a non-streaming request sends *zero
 bytes* for the whole regeneration, which is exactly what a proxy read-timeout
 kills — a long answer can finish at the provider, get billed, and still die on
 the way back (finding 16). It uses a fresh frame router so its ending is
-judged on its own evidence; a retry that is itself cut, or that delivers
-nothing, commits its partial alongside an error, and there is never a third
-attempt. Precedence: empty → retry; marker → complete; a delivered error frame
-or tool/search result → complete and never retried, because their work already
-happened server-side. Error bodies are not guaranteed to be JSON — a proxy
-answers a dead upstream with plain text, so `postChat` reads the body as text
-first and surfaces `Chat API Error (502) … — Bad Gateway` instead of a JSON
-parse crash (finding 16). A failed turn commits whatever partial text it has
-alongside the error instead of `content: ""`. A read silent for 15s (the
-server keepalives every 5s), or one that goes stale while its tab is
-backgrounded, is cancelled into that same EOF decision instead of hanging.
-`sse-parser.js` holds the frame buffer; a partial frame waits for its boundary
-rather than being decoded early, and `[DONE]` dispatches as `SSE_DONE`.
+judged on its own evidence. Precedence: empty → replay; marker → complete; a
+delivered error frame → complete and already surfaced, never retried;
+content or a search/sandbox `serverEvent` without the marker → **continue**;
+thinking/tool-call only without the marker → replay. Error bodies are not
+guaranteed to be JSON — a proxy answers a dead upstream with plain text, so
+`postChat` reads the body as text first and surfaces `Chat API Error (502) …
+— Bad Gateway` instead of a JSON parse crash (finding 16). A failed turn
+commits whatever partial text it has alongside the error instead of
+`content: ""`. A read silent for 15s (the server keepalives every 5s), or one
+that goes stale while its tab is backgrounded, is cancelled into that same
+EOF decision instead of hanging. `sse-parser.js` holds the frame buffer; a
+partial frame waits for its boundary rather than being decoded early, and
+`[DONE]` dispatches as `SSE_DONE`.
+
+### Continue, don't regenerate (finding 17)
+A replay regenerates the *whole* answer, so under a deterministic killer in
+front of the app (a duration/size cap — production saw "retry failed" twice at
+the same spot) the replay reaches the same length and dies the same death.
+A cut that delivered text, a search result, or a sandbox result is therefore
+**continued**: a new streamed request whose body is the original messages plus
+the partial as an `assistant` turn plus a "continue exactly where it stopped"
+user message — only the remainder is generated. Continuations **append**;
+`onFallbackStart` (the replay's clear-on-first-chunk) never fires for them, so
+the partial and sources stay on screen, and because they never re-run search
+or tool work, a tool-result cut continues visibly instead of completing
+silently the way it did before. Mechanics to know before touching it:
+- The seam: a leg's first ~160 chars are held against the partial's last 240
+  and a matched overlap is trimmed once (`trimOverlap`, min 12 chars) — a
+  model that repeats the tail it was shown loses the repeat, not the answer.
+  Held bytes flush before the next leg and before an error commit, or text is
+  lost; flushing is idempotent.
+- Budgets: `MAX_CONTINUE_LEGS` (3) legs in total, `MAX_EMPTY_LEGS` (2)
+  consecutive legs that delivered nothing — an empty leg is *continued again*
+  (product decision), never spun on. Exhausted budgets reuse the replay's two
+  error texts, so the partial still commits alongside them; a leg that threw
+  surfaces its own message when its budget runs out.
+- The one replay still exists for endings with nothing to continue from
+  (empty, thinking-only), and a replay that is itself cut hands its partial to
+  the continuation — one replay, then bounded continuations, never a second
+  regeneration. Mirror caveat: the client mirrors delivered content for exactly
+  one purpose — the next leg's `assistant` turn — so keep every router fed
+  through `mirroredHandlers.onChunk`.
+- Known limitations: metrics reflect the last leg only (cut legs never
+  receive a `usage` frame), a client-side cut does not abort server-side
+  generation, and `finish_reason` is never forwarded.
 
 ### Storage and schema are contracts
 `contracts.test.js` pins the fourteen `localStorage` storage keys, the

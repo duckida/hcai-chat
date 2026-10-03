@@ -255,13 +255,13 @@ describe("streamChatCompletion", () => {
     expect(retryBody.stream).toBe(true);
   });
 
-  it("fires onFallbackStart before replaying the regenerated text", async () => {
+  it("continues from the partial after a mid-stream reset, with no replay clear", async () => {
     let streamedCalls = 0;
     const fetchMock = vi.fn().mockImplementation((url, opts) => {
       JSON.parse(opts.body);
       streamedCalls += 1;
       if (streamedCalls === 1) {
-        // A proxy mid-stream abort: the fetch "succeeds" but the body throws
+        // A proxy mid-stream reset: the fetch "succeeds" but the body throws
         // partway through, leaving the client with a partial answer.
         return Promise.resolve({
           ok: true,
@@ -300,30 +300,38 @@ describe("streamChatCompletion", () => {
 
     const onFallbackStart = vi.fn();
     const onChunk = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
     await streamChatCompletion({
       messages: [{ role: "user", content: "hi" }],
       model: TEST_MODEL,
       onChunk,
-      onError: vi.fn(),
+      onError,
+      onComplete,
       onFallbackStart,
     });
 
-    expect(onFallbackStart).toHaveBeenCalledTimes(1);
-    // The discard must happen before the regenerated text is replayed.
-    expect(onChunk.mock.invocationCallOrder[0]).toBeLessThan(
-      onChunk.mock.invocationCallOrder[1],
+    // The partial is what the next request continues, so it must stay on
+    // screen — a replay clear here would flash the answer away (finding 17).
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const legBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(legBody.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "Partial answer" },
+      {
+        role: "user",
+        content: expect.stringContaining("Continue it exactly where it stopped"),
+      },
+    ]);
+    expect(onChunk).toHaveBeenNthCalledWith(1, "Partial answer", "content");
+    expect(onChunk).toHaveBeenNthCalledWith(
+      2,
+      "Full answer, complete",
+      "content",
     );
-    const fallbackOrder = onFallbackStart.mock.invocationCallOrder[0];
-    const replayedAt =
-      onChunk.mock.invocationCallOrder.find(
-        (order) =>
-          onChunk.mock.calls[onChunk.mock.invocationCallOrder.indexOf(order)]?.[0] ===
-          "Full answer, complete",
-      );
-    expect(replayedAt).toBeGreaterThan(fallbackOrder);
-
-    expect(onChunk).toHaveBeenCalledWith("Partial answer", "content");
-    expect(onChunk).toHaveBeenCalledWith("Full answer, complete", "content");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("forwards content chunks via onChunk", async () => {
@@ -597,7 +605,7 @@ describe("streamChatCompletion", () => {
     expect(onComplete).toHaveBeenCalled();
   });
 
-  it("replays a stream that delivered content but never sent [DONE]", async () => {
+  it("continues a stream that delivered content but never sent [DONE]", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -608,7 +616,7 @@ describe("streamChatCompletion", () => {
       )
       .mockResolvedValueOnce(
         makeStreamResponse([
-          'data: {"choices":[{"delta":{"content":"the whole answer"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"wer, finished"}}]}\n\n',
           "data: [DONE]\n\n",
         ]),
       );
@@ -627,21 +635,40 @@ describe("streamChatCompletion", () => {
       onFallbackStart,
     });
 
+    // The continuation asks for the remainder — same history, the partial as
+    // the assistant's turn, and the continue instruction. The partial is
+    // never re-generated (a full replay under a deterministic cap dies at the
+    // same length again — finding 17), so nothing clears what's on screen.
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body).stream).toBe(true);
-    expect(onFallbackStart).toHaveBeenCalledTimes(1);
-    expect(onChunk).toHaveBeenCalledWith("the whole answer", "content");
+    const legBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(legBody.stream).toBe(true);
+    expect(legBody.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "half an ans" },
+      {
+        role: "user",
+        content: expect.stringContaining("Continue it exactly where it stopped"),
+      },
+    ]);
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    const contentCalls = onChunk.mock.calls.filter((c) => c[1] === "content");
+    expect(contentCalls).toEqual([
+      ["half an ans", "content"],
+      ["wer, finished", "content"],
+    ]);
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
   });
 
-  it("reports an error when the retry is itself cut, without a third attempt", async () => {
-    // Exactly one retry: a flaky network must not become a regeneration loop.
-    // The retry's partial is committed alongside the error by the caller.
+  it("keeps continuing a repeatedly cut stream only up to the leg budget", async () => {
+    // Every request delivers text and dies without [DONE], so every request
+    // looks recoverable. The budget is what stops that: one attempt plus
+    // MAX_CONTINUE_LEGS legs (4 calls), then an error card the caller
+    // commits the accumulated partial alongside.
     const fetchMock = vi.fn().mockImplementation(() =>
       makeStreamResponse([
         'data: {"choices":[{"delta":{"content":"chop"}}]}\n\n',
-        // Both attempts end with content and no [DONE].
+        // Every attempt ends with content and no [DONE].
       ]),
     );
     vi.stubGlobal("fetch", fetchMock);
@@ -656,7 +683,7 @@ describe("streamChatCompletion", () => {
       onComplete,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(onError).toHaveBeenCalledTimes(1);
     expect(onError.mock.calls[0][0].message).toContain("cut off");
     expect(onError.mock.calls[0][0].message).toContain(TEST_MODEL);
@@ -735,33 +762,279 @@ describe("streamChatCompletion", () => {
     expect(onError.mock.calls[0][0].message).toBe("Oops");
   });
 
-  it("does not replay after a tool result that arrived without [DONE]", async () => {
+  it("continues after a tool result that arrived without [DONE]", async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValue(
+      .mockResolvedValueOnce(
         makeStreamResponse([
           'data: {"type":"search_result","sources":["https://example.org/a"],"content":"found"}\n\n',
           // Connection dies after the tool result: no [DONE].
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"and here is the answer"}}]}\n\n',
+          "data: [DONE]\n\n",
         ]),
       );
     vi.stubGlobal("fetch", fetchMock);
 
     const onSearchResult = vi.fn();
+    const onFallbackStart = vi.fn();
+    const onChunk = vi.fn();
     const onComplete = vi.fn();
+    const onError = vi.fn();
     await streamChatCompletion({
       messages: [],
       model: TEST_MODEL,
-      onChunk: vi.fn(),
-      onError: vi.fn(),
+      onChunk,
+      onError,
       onSearchResult,
       onComplete,
+      onFallbackStart,
     });
 
-    // The search already ran and its result is on screen — replaying would
-    // re-run it, and the invariant says tool work is never re-done.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(onSearchResult).toHaveBeenCalled();
-    expect(onComplete).toHaveBeenCalled();
+    // The search already ran and its result is on screen. Continuing asks
+    // for the answer without re-running the tool — and without the replay
+    // clear that would have discarded the sources (finding 17: this turn
+    // used to complete silently with only the tool's own content).
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const legBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    // No content was delivered yet, so there is no partial to anchor to.
+    expect(legBody.messages).toEqual([
+      {
+        role: "user",
+        content: expect.stringContaining("Continue it exactly where it stopped"),
+      },
+    ]);
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    expect(onSearchResult).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith("and here is the answer", "content");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  // ---- continuation mechanics ---------------------------------------------
+
+  it("replays a stream that delivered only thinking without [DONE]", async () => {
+    // No content, so there is nothing a continuation could anchor to: this
+    // is the one cut ending that still gets a whole-answer replay.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"thinking":"hmm"}}]}\n\n',
+          // Cut after thinking, no [DONE].
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"regenerated"}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onFallbackStart = vi.fn();
+    const onChunk = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // The replay re-sends the original messages: no partial, no instruction.
+    const replayBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(replayBody.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(onFallbackStart).toHaveBeenCalledTimes(1);
+    expect(onChunk).toHaveBeenCalledWith("regenerated", "content");
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("continues an empty leg again, then reports no response", async () => {
+    // Product decision: a continuation that delivers nothing is continued
+    // again rather than failing outright — but only up to MAX_EMPTY_LEGS
+    // consecutive empties, so a dead endpoint cannot spin.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"starts the answer"}}]}\n\n',
+          // Cut after the first delta, no [DONE].
+        ]),
+      )
+      .mockResolvedValue(makeStreamResponse(["data: [DONE]\n\n"]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    const onFallbackStart = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    // One attempt + two legs that each end with a bare [DONE] (delivered
+    // nothing) — the second empty is the budget, not a third request.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError.mock.calls[0][0].message).toContain(
+      `No response received from model "${TEST_MODEL}"`,
+    );
+    // The partial survives to the error commit; it was never cleared.
+    expect(onChunk).toHaveBeenCalledWith("starts the answer", "content");
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it("continues again after a leg dies before delivering anything", async () => {
+    // A transport failure on a continuation is the same as an empty leg:
+    // keep going, and recover when a later leg works. The thrown error only
+    // surfaces if every leg that could have replaced it also fails.
+    let streamed = 0;
+    const fetchMock = vi.fn().mockImplementation(() => {
+      streamed += 1;
+      if (streamed === 1) {
+        return Promise.resolve(
+          makeStreamResponse([
+            'data: {"choices":[{"delta":{"content":"started"}}]}\n\n',
+            // Cut, no [DONE].
+          ]),
+        );
+      }
+      if (streamed === 2) {
+        return Promise.reject(new Error("proxy hiccup"));
+      }
+      return Promise.resolve(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":" and finished."}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onFallbackStart = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it("trims a tail the continuation repeats instead of showing it twice", async () => {
+    // A model that ignores the instruction and restarts from the sentence it
+    // was shown must lose the repetition, not the answer: the overlap
+    // against the partial is dropped once, at the seam.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"Answer: it is definitely fine. "}}]}\n\n',
+          // Cut, no [DONE].
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"definitely fine. And here is why."}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError: vi.fn(),
+      onComplete: vi.fn(),
+    });
+
+    const content = onChunk.mock.calls
+      .filter((c) => c[1] === "content")
+      .map((c) => c[0])
+      .join("");
+    expect(content).toBe("Answer: it is definitely fine. And here is why.");
+  });
+
+  it("continues from the replay's partial when the replay is cut", async () => {
+    // The first attempt delivered nothing, so it earns the one whole-answer
+    // replay. When that replay is cut too, regenerating a third time is
+    // exactly what finding 17 forbids — the replay's partial continues.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(makeStreamResponse(["data: [DONE]\n\n"]))
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":"the replay got this far"}}]}\n\n',
+          // Replay cut, no [DONE].
+        ]),
+      )
+      .mockResolvedValueOnce(
+        makeStreamResponse([
+          'data: {"choices":[{"delta":{"content":" and then continued."}}]}\n\n',
+          "data: [DONE]\n\n",
+        ]),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onChunk = vi.fn();
+    const onFallbackStart = vi.fn();
+    const onComplete = vi.fn();
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk,
+      onError,
+      onComplete,
+      onFallbackStart,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // Only the replay clears — the continuation appends over what it left.
+    expect(onFallbackStart).toHaveBeenCalledTimes(1);
+    const legBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(legBody.messages).toEqual([
+      { role: "user", content: "hi" },
+      { role: "assistant", content: "the replay got this far" },
+      {
+        role: "user",
+        content: expect.stringContaining("Continue it exactly where it stopped"),
+      },
+    ]);
+    const content = onChunk.mock.calls
+      .filter((c) => c[1] === "content")
+      .map((c) => c[0]);
+    expect(content).toEqual([
+      "the replay got this far",
+      " and then continued.",
+    ]);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(onError).not.toHaveBeenCalled();
   });
 
   it("cancels a stalled read after the silence timeout and replays", async () => {

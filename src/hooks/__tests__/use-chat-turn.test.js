@@ -316,10 +316,11 @@ describe("useChatTurn", () => {
     );
   });
 
-  it("replaces the partial with the complete text when the retry delivers", async () => {
-    // The stream dies after one delta with no [DONE]; the retry streams a
-    // regenerated answer. The partial must be swapped out, not appended to —
-    // a user must never see the response twice.
+  it("appends the continuation to the partial when the stream is cut", async () => {
+    // The stream dies after one delta with no [DONE]. The client continues
+    // from the partial instead of regenerating, so the second stream carries
+    // only the remainder — the message must come out as one seamless answer,
+    // never as the partial plus a whole new one (finding 17).
     let streamed = 0;
     vi.stubGlobal(
       "fetch",
@@ -332,7 +333,7 @@ describe("useChatTurn", () => {
         }
         return Promise.resolve(
           makeStreamResponse([
-            delta("The complete answer."),
+            delta("ished just fine."),
             "data: [DONE]\n\n",
           ]),
         );
@@ -345,31 +346,30 @@ describe("useChatTurn", () => {
     });
 
     const message = result.result.current.conversations.messages[1];
-    expect(message.content).toBe("The complete answer.");
+    expect(message.content).toBe("Half an answer that never finished just fine.");
     expect(message.error).toBeUndefined();
   });
 
-  it("keeps the partial text and thinking when the retry also fails", async () => {
-    // Both the stream and its retry are gone. Whatever arrived before the
-    // failure is all the user has of that answer — committing an empty box
-    // would destroy text they already read.
+  it("keeps the partial text and thinking when every continuation fails", async () => {
+    // The cut stream and the legs sent after it are all gone. Whatever
+    // arrived before the failure is all the user has of that answer —
+    // committing an empty box would destroy text they already read. An empty
+    // leg is continued again (once), so this takes three requests.
     let streamed = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation(() => {
-        streamed += 1;
-        if (streamed === 1) {
-          return Promise.resolve(
-            makeStreamResponse([
-              think("Considering it. "),
-              delta("Half an answer that never fin"),
-              // No [DONE]: the connection was cut mid-answer.
-            ]),
-          );
-        }
-        return Promise.reject(new Error("network is gone"));
-      }),
-    );
+    const fetchMock = vi.fn().mockImplementation(() => {
+      streamed += 1;
+      if (streamed === 1) {
+        return Promise.resolve(
+          makeStreamResponse([
+            think("Considering it. "),
+            delta("Half an answer that never fin"),
+            // No [DONE]: the connection was cut mid-answer.
+          ]),
+        );
+      }
+      return Promise.reject(new Error("network is gone"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const result = await setup();
 
     await act(async () => {
@@ -382,6 +382,9 @@ describe("useChatTurn", () => {
     expect(message.thinking).toBe("Considering it. ");
     expect(message.error).toBeTruthy();
     expect(message.error.details).toContain("network is gone");
+    // One attempt + two empty legs: emptyLegs is what stops the loop, and a
+    // thrown leg still surfaces its own error message rather than a generic.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
   it("commits a thinking-only turn without an error or a retry", async () => {
@@ -768,11 +771,11 @@ describe("useChatTurn", () => {
     });
   });
 
-  it("does not duplicate the response when a dropped stream triggers the streamed retry", async () => {
+  it("does not duplicate the response when a dropped stream continues", async () => {
     // The proxy can kill an SSE stream mid-response (QUIC reset). The client
-    // retries with a fresh streamed request, which regenerates the whole
-    // answer. That retry must replace the partial text, not append to it —
-    // otherwise the message contains the answer twice.
+    // continues from the partial instead of regenerating, so the second
+    // stream carries only the remainder — the message must contain the
+    // answer once, as one sentence, never a partial followed by a repeat.
     let streamed = 0;
     vi.stubGlobal(
       "fetch",
@@ -783,7 +786,7 @@ describe("useChatTurn", () => {
         }
         return Promise.resolve(
           makeStreamResponse([
-            delta("The whole answer, start to finish."),
+            delta(" — continued to the end."),
             "data: [DONE]\n\n",
           ]),
         );
@@ -799,8 +802,8 @@ describe("useChatTurn", () => {
       result.result.current.conversations.messages.find(
         (m) => m.role === "assistant",
       );
-    expect(assistant.content).toBe("The whole answer, start to finish.");
-    expect(assistant.content).not.toMatch(/Partial/);
+    expect(assistant.content).toBe("Partial — continued to the end.");
+    expect(assistant.content).not.toMatch(/Partial.*Partial/);
     expect(
       result.result.current.conversations.messages.filter((m) => m.role === "user"),
     ).toHaveLength(1);

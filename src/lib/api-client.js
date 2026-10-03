@@ -281,18 +281,50 @@ function createFrameRouter({
 const STALL_TIMEOUT_MS = 15_000;
 
 /**
+ * Decide what an ended (or thrown) request means, and finish it when the
+ * server vouched for it. Order matters. Nothing delivered is "empty" —
+ * checked before the marker, because a marker that carried no content is
+ * not an answer and has always been replayed. The `[DONE]` marker or an
+ * explicit error frame is "complete"; the error frame was already routed
+ * to onError, so it must never be replayed over. Content or a
+ * search/sandbox result without the marker is a connection that died
+ * mid-answer: "continue", because there is now a partial worth continuing
+ * — and continuing never re-runs the search or tool work, which is what
+ * used to force those turns to complete silently (finding 17). Thinking or
+ * tool-call frames without the marker leave nothing a continuation could
+ * anchor to, so they "retry" exactly as before.
+ *
+ * @returns {Promise<"empty" | "complete" | "continue" | "retry">}
+ */
+async function classifyEnding(router, onComplete) {
+  if (!router.anyDelivered()) return "empty";
+
+  if (router.wasCompleted()) {
+    await onComplete?.();
+    return "complete";
+  }
+
+  if (router.delivered.serverError) {
+    await onComplete?.();
+    return "complete";
+  }
+
+  console.warn(
+    "[stream] EOF without the [DONE] marker after delivered content — the response is truncated",
+  );
+  return router.delivered.content || router.delivered.serverEvent
+    ? "continue"
+    : "retry";
+}
+
+/**
  * Read the SSE body to its end and decide what its ending means. A partial
  * frame left in the buffer at EOF cannot be salvaged, so it is dispatched as
  * is and ignored if it does not parse — we complete the message with what we
  * have rather than hanging.
  *
- * Completion is what the server *said*, not what the bytes did: the `[DONE]`
- * marker. Content that arrived without it is a connection that died
- * mid-answer, and is reported upward for replay instead of being committed
- * as a finished response.
- *
- * @returns {Promise<boolean>} true when this attempt must be treated as
- *   failed — the first attempt replays over it, the retry reports an error
+ * @returns {Promise<"empty" | "complete" | "continue" | "retry">} the
+ *   ending's classification — see classifyEnding for the precedence
  */
 async function streamOnce(body, router, model, onComplete) {
   const response = await postChat(body, model);
@@ -343,42 +375,34 @@ async function streamOnce(body, router, model, onComplete) {
     document.removeEventListener("visibilitychange", onVisibility);
   }
 
-  // Order matters. Empty (with or without the marker) replays — an answer
-  // that arrived as nothing is the oldest retry invariant here. An explicit
-  // error frame or a delivered tool/search result never replays: their work
-  // already happened, and re-running it would duplicate side effects the
-  // client has already shown. Content without the marker is a truncation —
-  // the connection ended before the server said it was done — and goes
-  // through the same one-time replay as an empty stream.
-  if (!router.anyDelivered()) return true;
-
-  if (router.wasCompleted()) {
-    await onComplete?.();
-    return false;
-  }
-
-  if (router.delivered.serverEvent || router.delivered.serverError) {
-    await onComplete?.();
-    return false;
-  }
-
-  console.warn(
-    "[stream] EOF without the [DONE] marker after delivered content — the response is truncated",
-  );
-  return true;
+  // The ending's meaning comes from what was delivered, not from the bytes:
+  // see classifyEnding for the precedence and why it is ordered that way.
+  return await classifyEnding(router, onComplete);
 }
 
 /**
- * The one retry, and the last one. It streams like the first attempt, with a
- * fresh frame router so this attempt's ending is judged on its own evidence —
- * the first attempt's delivered record would call any empty ending a
- * truncation. Streaming is load-bearing, not stylistic: a non-streaming retry
- * holds the connection with *zero bytes* for the whole regeneration, which is
- * exactly what a proxy read-timeout kills, so a long answer can finish at the
- * provider and still die on the way back (finding 16 — it did, billed at
- * 44k tokens / 8m28s, while the client saw a plain-text 502).
+ * The one whole-answer replay, and the only one: it covers endings with
+ * nothing to continue — an empty stream, or thinking/tool-call frames with
+ * no text. It streams like the first attempt, with a fresh frame router so
+ * this attempt's ending is judged on its own evidence — the first attempt's
+ * delivered record would call any empty ending a truncation. Streaming is
+ * load-bearing, not stylistic: a non-streaming replay holds the connection
+ * with *zero bytes* for the whole regeneration, which is exactly what a
+ * proxy read-timeout kills, so a long answer can finish at the provider and
+ * still die on the way back (finding 16 — it did, billed at 44k tokens /
+ * 8m28s, while the client saw a plain-text 502). A replay that delivers
+ * text and is then cut hands its partial to `continuePartial` rather than
+ * regenerating a third time; a replay that delivers nothing reports the
+ * error, and the buffers keep their partial because `onFallbackStart` was
+ * never asked to discard it.
+ *
+ * @param {object} body the request, already sanitized by postChat
+ * @param {object} handlers onChunk / onError / onComplete / onFallbackStart
+ *   plus the chat's frame handlers (the router takes them directly)
+ * @param {{ content: string }} mirror this turn's delivered content, so a
+ *   continuation chained from here continues from the replay's partial
  */
-async function replayOnce(body, model, handlers) {
+async function replayOnce(body, model, handlers, mirror) {
   const {
     onChunk,
     onError,
@@ -401,26 +425,210 @@ async function replayOnce(body, model, handlers) {
   });
 
   try {
-    // The retry regenerates the whole answer, so callers must discard
-    // whatever the dead stream already accumulated — otherwise the retry
+    // The replay regenerates the whole answer, so callers must discard
+    // whatever the dead stream already accumulated — otherwise the replay
     // appends to it and the response appears twice. If no byte ever arrives,
     // the buffers keep their partial and the error below commits it.
     onFallbackStart?.();
-    const needsAnother = await streamOnce(body, retryRouter, model, onComplete);
-    if (needsAnother) {
-      // No third attempt: bounded retries, or a flaky network turns into a
-      // regeneration loop. The error commits whatever partial arrived.
-      onError(
-        new Error(
-          retryRouter.anyDelivered()
-            ? `Connection lost during the retry — the response for "${model}" was cut off before it finished.`
-            : `No response received from model "${model}". The model may be overloaded or unavailable.`,
-        ),
-      );
+    const outcome = await streamOnce(body, retryRouter, model, onComplete);
+    if (outcome === "complete") return;
+    if (outcome === "continue") {
+      // The replay delivered text and then died too. Its partial is now the
+      // thing to continue — one replay, then bounded continuations, never a
+      // second regeneration (finding 17).
+      return await continuePartial(body, model, handlers, mirror);
     }
+    // No second replay: a flaky network must not become a regeneration
+    // loop. The error commits whatever partial arrived.
+    onError(
+      new Error(
+        retryRouter.anyDelivered()
+          ? `Connection lost during the retry — the response for "${model}" was cut off before it finished.`
+          : `No response received from model "${model}". The model may be overloaded or unavailable.`,
+      ),
+    );
   } catch (error) {
     onError(error);
   }
+}
+
+/**
+ * The instruction appended when a stream dies mid-answer. The contract is
+ * narrow on purpose: start where it stopped, do not repeat — a model that
+ * restarts the answer is what the overlap filter below exists to absorb.
+ */
+const CONTINUE_PROMPT =
+  "Your previous response was cut off before it finished. Continue it exactly where it stopped — start with the very next word. Do not repeat, restart, summarize, or acknowledge this message.";
+
+/** Total continuation legs, counting legs that delivered nothing. */
+const MAX_CONTINUE_LEGS = 3;
+/** Consecutive continuation legs that may deliver nothing before giving up. */
+const MAX_EMPTY_LEGS = 2;
+
+/**
+ * A leg's first bytes are checked against this much of the partial's tail.
+ * MIN_TRIM_OVERLAP is the floor: at a few characters a match is as likely
+ * to be a legitimate word as a restart, and trimming a real word breaks the
+ * sentence the continuation exists to finish. CONTINUE_FLUSH_CHARS is how
+ * long the seam is held for inspection — long enough for a repeated tail to
+ * show itself whole — then everything streams through untouched.
+ */
+const CONTINUE_TRIM_WINDOW = 240;
+const CONTINUE_FLUSH_CHARS = 160;
+const MIN_TRIM_OVERLAP = 12;
+
+/**
+ * Find the longest prefix of the incoming text the partial already ends
+ * with and drop it: a model that ignores the instruction and repeats the
+ * tail it was shown loses the repetition, not the answer.
+ */
+function trimOverlap(tail, incoming) {
+  const window = tail.slice(-CONTINUE_TRIM_WINDOW);
+  const maxK = Math.min(window.length, incoming.length);
+  for (let k = maxK; k >= MIN_TRIM_OVERLAP; k--) {
+    if (window.endsWith(incoming.slice(0, k))) return incoming.slice(k);
+  }
+  return incoming;
+}
+
+/** Holds a leg's seam, trims it once when released, passes the rest through. */
+function createOverlapFilter(tail) {
+  let held = "";
+  let released = false;
+  return {
+    push(text) {
+      if (released) return text;
+      held += text;
+      if (held.length < CONTINUE_FLUSH_CHARS) return null;
+      released = true;
+      const out = trimOverlap(tail, held);
+      held = "";
+      return out;
+    },
+    flush() {
+      if (released) return "";
+      released = true;
+      const out = trimOverlap(tail, held);
+      held = "";
+      return out;
+    },
+  };
+}
+
+/**
+ * Ask for the rest of an answer whose connection died mid-generation.
+ *
+ * A full replay regenerates the entire response — exactly the wrong shape
+ * under a deterministic killer (a host or proxy cap that ends any request
+ * running longer than T): the replay is the same length as the original and
+ * dies at the same point, which is what "retry failed" looked like in
+ * production (finding 17). A continuation generates only the remainder,
+ * appends it to the partial already on screen, and re-runs no search or
+ * tool work — which is why search/sandbox cuts, forced to complete silently
+ * before, can come through here instead of duplicating their side effects.
+ *
+ * Two budgets bound the loop: MAX_CONTINUE_LEGS legs in total (each cut
+ * leg leaves a smaller remainder, so progress converges) and MAX_EMPTY_LEGS
+ * consecutive legs that deliver nothing (a dead endpoint must not spin; per
+ * the product decision, an empty leg is continued again rather than failing
+ * outright). An exhausted budget reports the same errors the replay path
+ * always did, so the partial commits alongside them.
+ *
+ * @param {{ content: string }} mirror this turn's delivered content — the
+ *   partial to continue from, and the tail the overlap filter guards
+ */
+async function continuePartial(body, model, handlers, mirror) {
+  const {
+    onChunk,
+    onError,
+    onToolCall,
+    onSearchResult,
+    onMetrics,
+    onSandboxResult,
+    onComplete,
+  } = handlers;
+
+  let legs = 0;
+  let emptyLegs = 0;
+  let lastError = null;
+  let lastLegThrew = false;
+  let lastLegDelivered = false;
+
+  while (legs < MAX_CONTINUE_LEGS && emptyLegs < MAX_EMPTY_LEGS) {
+    legs++;
+    lastLegThrew = false;
+
+    const partial = mirror.content;
+    const messages = [
+      ...body.messages,
+      ...(partial ? [{ role: "assistant", content: partial }] : []),
+      { role: "user", content: CONTINUE_PROMPT },
+    ];
+    // route.js rejects more than 200 messages; a history already at the cap
+    // must not turn the continuation into a 400.
+    if (messages.length > 200) messages.splice(0, messages.length - 200);
+
+    // Only the seam can repeat: hold the leg's first bytes until the trim
+    // window fills, trim against the partial, then stream untouched.
+    const filter = createOverlapFilter(partial.slice(-CONTINUE_TRIM_WINDOW));
+    const emit = (text) => {
+      // handlers.onChunk mirrors content into the partial, so the next leg
+      // continues from this leg's text too.
+      if (text) onChunk(text, "content");
+    };
+    const legRouter = createFrameRouter({
+      model,
+      onChunk: (chunk, type) => {
+        if (type !== "content") return onChunk(chunk, type);
+        emit(filter.push(chunk));
+      },
+      onError,
+      onToolCall,
+      onSearchResult,
+      onMetrics,
+      onSandboxResult,
+    });
+    const flush = () => emit(filter.flush());
+    const finish = async () => {
+      flush();
+      await onComplete?.();
+    };
+
+    let outcome;
+    try {
+      outcome = await streamOnce(
+        { ...body, messages },
+        legRouter,
+        model,
+        finish,
+      );
+    } catch (error) {
+      lastLegThrew = true;
+      lastError = error;
+      outcome = await classifyEnding(legRouter, finish);
+    } finally {
+      // Held bytes must land before the next leg — or before the error
+      // below commits — never after.
+      flush();
+    }
+    lastLegDelivered = legRouter.anyDelivered();
+
+    if (outcome === "complete") return;
+    if (outcome === "empty") emptyLegs++;
+    else emptyLegs = 0;
+  }
+
+  if (lastLegThrew && lastError) {
+    onError(lastError);
+    return;
+  }
+  onError(
+    new Error(
+      lastLegDelivered
+        ? `Connection lost during the retry — the response for "${model}" was cut off before it finished.`
+        : `No response received from model "${model}". The model may be overloaded or unavailable.`,
+    ),
+  );
 }
 
 /**
@@ -431,15 +639,23 @@ async function replayOnce(body, model, handlers) {
  * (bytes cut mid-JSON by a dropped connection) waits in the buffer for more
  * data instead of being silently dropped.
  *
- * If the SSE transport fails (e.g. the proxy's QUIC error), the stream ends
- * cleanly but delivered nothing at all, or content arrived without the
- * server's `[DONE]` marker (a connection cut mid-answer), the request is
- * retried **once** with a fresh streamed request whose frames run through the
- * same callbacks. It streams for the reason the first attempt does: the
- * server's keepalives and the deltas keep bytes flowing, so a proxy cannot
- * idle-timeout a long regeneration the way the old silent non-streaming retry
- * could (finding 16). A delivered error frame or tool result is never
- * replayed over, and there is no third attempt.
+ * An ending is judged by what the server actually delivered, not by the
+ * bytes (see classifyEnding). A turn that never started — no delta at all —
+ * gets exactly one whole-answer replay: there is nothing to continue from,
+ * and an empty ending is the oldest retry invariant here. The replay still
+ * streams for the reason the first attempt does: the server's keepalives
+ * and the deltas keep bytes flowing, so a proxy cannot idle-timeout a long
+ * regeneration the way a silent non-streaming request could (finding 16).
+ *
+ * A turn whose connection died after delivering text, a search result, or a
+ * sandbox result gets a **continuation** instead: the same request with the
+ * partial appended as the assistant's turn and a "continue where you
+ * stopped" instruction, so only the remainder is generated (finding 17 — a
+ * full replay under a deterministic cap dies at the same length it died the
+ * first time). Continuations append to what is on screen, never clear it,
+ * never re-run search or tool work, and are bounded by MAX_CONTINUE_LEGS /
+ * MAX_EMPTY_LEGS. A delivered error frame completes — already surfaced — and
+ * no path regenerates an answer that already has text.
  *
  * @param {object} options
  */
@@ -492,9 +708,30 @@ export const streamChatCompletion = async ({
     toolChoice,
   });
 
+  // The mirror is this turn's delivered content, for the one place that
+  // needs it: a continuation must send back the partial it is continuing.
+  // Every router is fed through the wrapper below, so the mirror stays in
+  // step with the text on screen — including across a replay, whose first
+  // chunk clears the store's partial (pendingReplayClear) while the mirror
+  // keeps accumulating.
+  const mirror = { content: "" };
+  const mirroredHandlers = {
+    onChunk: (chunk, type) => {
+      if (type === "content") mirror.content += chunk;
+      onChunk(chunk, type);
+    },
+    onError,
+    onToolCall,
+    onSearchResult,
+    onMetrics,
+    onSandboxResult,
+    onComplete,
+    onFallbackStart,
+  };
+
   const router = createFrameRouter({
     model,
-    onChunk,
+    onChunk: mirroredHandlers.onChunk,
     onError,
     onToolCall,
     onSearchResult,
@@ -502,28 +739,21 @@ export const streamChatCompletion = async ({
     onSandboxResult,
   });
 
-  let needsReplay = false;
+  let outcome;
   try {
-    needsReplay = await streamOnce(body, router, model, onComplete);
+    outcome = await streamOnce(body, router, model, onComplete);
   } catch (error) {
-    console.warn(
-      "[stream] Streaming failed, retrying with a fresh streamed request:",
-      error.message,
-    );
-    needsReplay = true;
+    // A reader that dies mid-stream lands here too — classify by what the
+    // attempt managed to deliver instead of blindly replaying over it.
+    console.warn("[stream] Streaming failed:", error.message);
+    outcome = await classifyEnding(router, onComplete);
   }
 
-  // Exactly one retry, whichever path asked for it.
-  if (needsReplay) {
-    await replayOnce(body, model, {
-      onChunk,
-      onError,
-      onToolCall,
-      onSearchResult,
-      onMetrics,
-      onComplete,
-      onSandboxResult,
-      onFallbackStart,
-    });
+  if (outcome === "empty" || outcome === "retry") {
+    // Nothing to continue from (or only thinking): one whole-answer replay.
+    await replayOnce(body, model, mirroredHandlers, mirror);
+  } else if (outcome === "continue") {
+    await continuePartial(body, model, mirroredHandlers, mirror);
   }
+  // "complete": streamOnce already ran onComplete.
 };

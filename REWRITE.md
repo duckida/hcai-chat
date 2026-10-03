@@ -7,7 +7,7 @@
 | **Phase** | **P10 complete** — `AGENTS.md` rewritten, storage contracts pinned, the last Radix import removed, the inert motion system fixed, all 30 invariants closed, anti-jank 5 done, title generation fixed. One item is unrecoverable rather than open: the CLS *baseline* was never captured at P0, so only current values can be measured. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 38 files / **522 tests passing** — lint, format and `next build` all clean · smoke **10/10** |
+| **Current test suite** | 45 files / **636 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -376,7 +376,10 @@ history.
       idle-timeout a long regeneration, and the `usage` frame arrives with the
       answer — the context ring heals instead of freezing. The retry keeps a
       fresh frame router so its ending is judged on its own evidence, and the
-      exactly-one-retry invariant is unchanged: never a third attempt. Outcome
+      exactly-one-retry invariant is unchanged: never a third attempt. (Finding
+      17 later replaced this replay *for cuts that delivered content* — those
+      continue instead — but the mapping below still governs the one replay of
+      an empty/thinking-only ending and its own failures.) Outcome
       mapping: delivered → the router's normal completion; cut again →
       `onError(… cut off before it finished)`; empty →
       `onError(No response received from model "…")` — never `onComplete`,
@@ -395,6 +398,65 @@ history.
       duplication tests red) — plus smoke 22, which patches `fetch` in-page so
       *both* streamed probe attempts answer with a plain-text `502` and asserts
       the error card carries `502 … Bad Gateway`, not `Unexpected token`.
+
+17. **A full replay reproduces the very cut that killed the answer.** Cut
+    symptoms kept arriving from production ("ends with a retry failed") on a
+    deployment running the latest build — so finding 16's streamed retry was
+    not the whole story. Two independent attempts dying at the same point in
+    the same answer is not flakiness: a deterministic killer in front of the
+    app (a duration/size cap, not the model) ends any request that outlives
+    it, and a replay that regenerates the identical answer reaches the
+    identical length and dies at the identical place. Search/sandbox turns had
+    the same cut arrive with nothing to retry *over* — a delivered
+    `serverEvent` forced a silent completion, truncating the answer invisibly
+    (the hole finding 15 had exempted for side-effect reasons).
+    - **Continue instead of regenerate.** On a cut that delivered content or a
+      tool/search result, `api-client` now sends a continuation: the same body
+      plus the partial as an `assistant` turn and a short "continue exactly
+      where it stopped" user message — only the remainder is generated, so
+      each leg is shorter than the original and a length cap cannot reproduce
+      the cut. The continuation appends through the same `onChunk` path (no
+      `onFallbackStart`, nothing cleared: sources and the partial stay put),
+      and because it never re-runs search or tool work, the duplication
+      concern behind finding 15's "never replay over a tool result" no longer
+      applies — a search cut now continues visibly instead of completing
+      silently. The replay still exists for endings with nothing to continue
+      from (empty or thinking-only: no partial to anchor to) and still streams
+      (finding 16), and a replay that is itself cut hands its own partial to
+      the continuation instead of regenerating a third time.
+    - **Seams and loops are bounded.** A model that ignores the instruction
+      and repeats the sentence it was shown loses the repeat: a leg's first
+      ~160 chars are held against the partial's last 240 and the matched
+      overlap is trimmed once at the seam (matches under 12 chars are left
+      alone — at that length a match is as likely to be a real word as a
+      restart). Budgets: `MAX_CONTINUE_LEGS` (3) legs in total and
+      `MAX_EMPTY_LEGS` (2) consecutive legs that deliver nothing — an empty
+      leg is continued again per the product decision, never spun on. An
+      exhausted budget maps to the replay's two error texts (cut off / no
+      response), so the partial still commits alongside them; a leg that
+      threw surfaces its own message when its budget runs out.
+    - **Known limitations:** turn metrics reflect the last leg only (no usage
+      frame ever arrives for a cut leg); a client-side cut still does not
+      abort the server-side generation; and `finish_reason` is never
+      forwarded, so a length-cap stop remains indistinguishable from a
+      natural stop.
+    - **Verified:** 636 unit tests — `api-client` at 49 (+5: continuation
+      body, leg budget, empty-continued-again budget, seam trim,
+      replay-chains-into-continue; four rewritten from replay semantics:
+      mid-stream reset, content cut, tool-result cut, repeatedly-cut budget;
+      plus a new thinking-only-dispatch pin) and three `use-chat-turn`
+      rewrites — against six negative controls, each break-verified by grep
+      first: dispatch `continue → retry` (the eight continue tests red), trim
+      neutered (only the trim test red), leg budget `99` (budget test red at
+      100 calls), `onFallbackStart` invoked on a continue (both files red),
+      empty budget `99` (both empty-budget tests red at 4 calls),
+      thinking-only dispatched to continue (only that test red) — plus smoke
+      21, which now scripts *both* probe requests: the first cuts after one
+      delta, and the second is only reached if the client's follow-up carries
+      the partial (`"role":"assistant"`) and the continue instruction, which
+      it answers with `SMOKEREPLAYOK`. The turn must end with the cut prefix
+      *kept* and the continuation appended — either half missing fails the
+      row, and an error card now fails it instead of skipping.
 
 ---
 
@@ -713,7 +775,7 @@ node scripts/smoke.mjs        # exits non-zero only on FAIL, never on SKIP
 | 18 | a conversation that ran commands opens the Cloud sandbox panel | a seeded `sandboxResults` conversation with no artifacts: one track, one resize handle, terminal painted at the `/workspace $` prompt with stdout and `exit 0`, `panelLeft === threadRight`. **P10 finding 12** |
 | 19 | a dismissed panel reopens from the Header | closes check 18's panel, then measures the reopen button: rect inside the viewport, `elementFromPoint` hits it, click restores track and terminal — the geometry unit tests structurally cannot see. **P10 finding 13** |
 | 20 | thinking chips render in order, as links, inside the reasoning | a seeded conversation with pinned offsets: expand Thinking, assert reasoning-before < `5 + 5` < reasoning-between < reasoning-after, the query pill replaced by two links labelled by domain but targeting the full result URL, no leftover query. **P10 finding 14** |
-| 21 | a stream cut before `[DONE]` is replayed, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer. Asserts the truncation console warn fired and the cut prefix is gone when the turn ends (the streamed retry passed through to the real model; the prefix's first render is latched by a `MutationObserver`, because the retry can replace it faster than any text poll). **Finding 15 — the silent-cutoff fix, hardened under finding 16's streamed retry** |
+| 21 | a stream cut before `[DONE]` is continued, not committed | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so the first *streamed* `/api/chat` carrying the probe returns one delta and closes with no marker — a connection cut mid-answer — and answers the *second* streamed probe call with a scripted `SMOKEREPLAYOK`. Every probe call's body is recorded, so the check asserts the follow-up carried the partial (`"role":"assistant"`) *and* the continue instruction, the truncation console warn fired, and the turn ended with the cut prefix **kept** and the continuation appended — one half missing is a silent commit or a replay that discarded the partial. The prefix's first render is latched by a `MutationObserver`; an error card fails the row instead of skipping it. **Finding 17 — the continue fix, over finding 15's detection** |
 | 22 | a proxy's plain-text `502` surfaces as an HTTP error, not a parse crash | two gating sub-checks (probe armed, probe message sent) then: patches `fetch` in-page so *every* streamed request carrying the probe — retry included, no latch — answers with a plain-text `502 Bad Gateway` (route.js only ever returns JSON, so this is a proxy answering for a dead upstream). Asserts the error card carries `502 … Bad Gateway` and never `Unexpected token` / `not valid JSON`. **Finding 16 — the production incident** |
 
 **Credentials.** Check 2 seeds the Hack Club key from `SMOKE_API_KEY` or the gitignored
@@ -846,10 +908,10 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 
 - [x] Stream renders **only** for the conversation that initiated it — never for the one you switched to. (`8aa44a6`) — `use-chat-turn` "scopes the stream to its conversation and clears it on reset"; `MessageList` "hides the stream, its text, and its placeholder when they belong to another conversation"
 - [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
-- [x] SSE fallback uses a fresh **streamed** retry that does **not** duplicate the response; partial accumulators are cleared on the first retry chunk, not before. (`74b8ad3`) — `use-chat-turn` "does not duplicate the response when a dropped stream triggers the streamed retry" / "replaces the partial with the complete text when the retry delivers"; `api-client` "fires onFallbackStart before replaying the regenerated text"
-- [x] A clean EOF that delivered nothing retries **exactly once**; server-side tool results and error frames count as delivered and never retry. (`74b8ad3`, `a957c70`) — four `api-client` tests (retry / no retry on thinking / on error event / on tool result)
-- [x] A clean EOF after delivered content **without the server's `[DONE]` marker is a truncation, not a completion**, and replays exactly once; an EOF after the marker completes. A failed turn commits the partial text it had alongside the error, never `content: ""`, and a silent connection past 15s is cancelled into that same path. — finding 15: `sse-parser` `SSE_DONE` tests, `api-client` truncation / precedence / stall / visibility tests, `use-chat-turn` partial-preservation tests, `MessageList` partial-plus-card test, smoke 21
-- [x] The retry is **streamed** and judged on its own evidence: a cut retry or an empty retry commits an error (with the partial), never `onComplete` and never a third attempt — and a proxy's non-JSON error body surfaces as an HTTP error, not a JSON parse crash. — finding 16: `api-client` "uses the sanitized messages for the streamed retry too" / "retries with a fresh streamed request when nothing was delivered" / "reports an error when the retry is itself cut, without a third attempt" / "reports an error when the retry also delivers nothing" / "surfaces a plain-text proxy error instead of a JSON parse crash", `use-chat-turn` "stores an error placeholder when the response is empty", smoke 22
+- [x] SSE fallback does **not** duplicate the response: the one whole-answer replay clears the partial accumulators on its first chunk, not before — and a continuation never clears at all, it appends to what it already sent. (`74b8ad3`, finding 17) — `use-chat-turn` "does not duplicate the response when a dropped stream continues" / "appends the continuation to the partial when the stream is cut"; `api-client` "continues from the partial after a mid-stream reset, with no replay clear"
+- [x] A clean EOF that delivered nothing replays **exactly once**; server-side tool results and error frames count as delivered and are never replayed over — a tool-result cut continues (the client never re-runs the tool), an error frame completes as already surfaced. (`74b8ad3`, `a957c70`, finding 17) — `api-client` "retries with a fresh streamed request when nothing was delivered" / "does not retry a stream that delivered thinking" / "does not retry after a server error event that arrived without [DONE]" / "continues after a tool result that arrived without [DONE]"
+- [x] A clean EOF after delivered content **without the server's `[DONE]` marker is a truncation, not a completion**, and continues under leg budgets — never completes silently, never regenerates the answer; an EOF after the marker completes. A failed turn commits the partial text it had alongside the error, never `content: ""`, and a silent connection past 15s is cancelled into that same path. — findings 15 + 17: `sse-parser` `SSE_DONE` tests, `api-client` truncation / precedence / stall / visibility / continuation tests, `use-chat-turn` partial-preservation tests, `MessageList` partial-plus-card test, smoke 21
+- [x] The one replay is **streamed** and judged on its own evidence; a cut that delivered text is **continued** instead (bounded legs, seam trim, empty-continued-again) — both endings commit an error with the partial, never `onComplete` for a truncated answer, never a regeneration loop — and a proxy's non-JSON error body surfaces as an HTTP error, not a JSON parse crash. — findings 16 + 17: `api-client` "uses the sanitized messages for the streamed retry too" / "retries with a fresh streamed request when nothing was delivered" / "keeps continuing a repeatedly cut stream only up to the leg budget" / "continues an empty leg again, then reports no response" / "surfaces a plain-text proxy error instead of a JSON parse crash", `use-chat-turn` "stores an error placeholder when the response is empty", smoke 22
 - [x] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation: `use-chat-turn` "commits the final deltas even if a chunk has not re-rendered". Across turns: "sends the whole conversation, not just the newest message" asserts the second request's `messages` are `["first question", "ok", "and then?"]`
 - [x] `messagesRef` is cleared when switching or creating a conversation. (`0abc78b`) — conversations store "assigns messagesRef synchronously on creation" / "selects a conversation and syncs its messages"
 - [x] Errors surface to the user — no silent swallow leaving a permanent "Running" state. (`dd0cc99`) — `use-chat-turn` "surfaces a server error event as an error message" / "stores an error placeholder when the response is empty"; `send()`'s `catch`/`finally` clears `isLoading`
