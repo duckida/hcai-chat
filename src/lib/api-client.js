@@ -138,13 +138,34 @@ async function postChat(body, model, stream) {
   });
 
   if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(
-      getErrorMessage(
-        errorData,
-        `Chat API Error (${response.status}) using model "${model}"`,
-      ),
-    );
+    // Error bodies are not guaranteed to be JSON. A proxy in front of the app
+    // answers a dead upstream with plain text ("Bad Gateway") or an HTML error
+    // page, and `response.json()` on that throws a SyntaxError whose message
+    // replaces the real failure with `Unexpected token '<'...` noise. Read the
+    // body as text and only treat it as JSON when it parses to an object.
+    const rawBody = await response.text().catch(() => "");
+    let errorData = null;
+    try {
+      const parsed = JSON.parse(rawBody);
+      if (parsed && typeof parsed === "object") {
+        errorData = parsed;
+      }
+    } catch {
+      // Plain-text proxy error — surfaced verbatim below.
+    }
+
+    const fallback = `Chat API Error (${response.status}) using model "${model}"`;
+    if (errorData) {
+      throw new Error(getErrorMessage(errorData, fallback));
+    }
+    // Prefer the body (HTTP/2 has no reason phrase, so statusText can be
+    // empty); skip it when it is an HTML error page and fall back to statusText.
+    const plain = rawBody.trim().replace(/\s+/g, " ");
+    const detail =
+      (plain && !plain.startsWith("<") ? plain.slice(0, 160) : "") ||
+      response.statusText ||
+      "";
+    throw new Error(detail ? `${fallback} — ${detail}` : fallback);
   }
 
   return response;

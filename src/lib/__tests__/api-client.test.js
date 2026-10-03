@@ -107,6 +107,54 @@ describe("streamChatCompletion", () => {
     expect(onError).toHaveBeenCalledWith(expect.any(Error));
   });
 
+  it("surfaces a plain-text proxy error instead of a JSON parse crash", async () => {
+    // route.js only ever returns JSON, so a body of bare "Bad Gateway" is a
+    // proxy in front of the app (finding 16). response.json() on it threw a
+    // SyntaxError, and that SyntaxError became the user-facing "API Error".
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 502,
+      statusText: "Bad Gateway",
+      text: async () => "Bad Gateway",
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+    });
+
+    // First attempt fails → one retry → fails the same way → the error.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const message = onError.mock.calls[0][0].message;
+    expect(message).toContain("502");
+    expect(message).toContain("Bad Gateway");
+    expect(message).not.toContain("Unexpected token");
+  });
+
+  it("unwraps a JSON error body from a failed request", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: "Bad Request",
+      text: async () => JSON.stringify({ error: "context too large" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const onError = vi.fn();
+    await streamChatCompletion({
+      messages: [{ role: "user", content: "hi" }],
+      model: TEST_MODEL,
+      onChunk: vi.fn(),
+      onError,
+    });
+
+    expect(onError.mock.calls[0][0].message).toBe("context too large");
+  });
+
   it("POSTs to /api/chat with the right body", async () => {
     const fetchMock = vi
       .fn()
@@ -172,6 +220,7 @@ describe("streamChatCompletion", () => {
       .mockResolvedValueOnce({
         ok: false,
         status: 500,
+        text: async () => JSON.stringify({ error: "stream failed" }),
         json: async () => ({ error: "stream failed" }),
       })
       .mockResolvedValueOnce({
