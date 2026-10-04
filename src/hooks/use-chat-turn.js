@@ -4,6 +4,7 @@ import { useCallback, useRef } from "react";
 import { toast } from "sonner";
 import {
   generateTitle,
+  getStoredApiKey,
   getStoredE2bApiKey,
   streamChatCompletion,
 } from "@/lib/api-client";
@@ -42,6 +43,89 @@ function createId() {
 
 function estimateOutputTokens(chars) {
   return Math.max(0, Math.round((chars || 0) / 4));
+}
+
+/**
+ * The route reports one usage frame per round now that the agent loop drives
+ * rounds client-side; the turn's metrics are the sum across rounds. Token
+ * counts and durations add, the rate is recomputed from the totals, and
+ * time-to-first-output is the first round's (the only one with a cold start).
+ */
+function sumMetricsFrames(a, b) {
+  const sum = (x, y) => (x || 0) + (y || 0);
+  const duration = sum(a.duration, b.duration);
+  const outputTokens = sum(a.outputTokens, b.outputTokens);
+  return {
+    ...a,
+    ...b,
+    inputTokens: sum(a.inputTokens, b.inputTokens),
+    outputTokens,
+    reasoningTokens: sum(a.reasoningTokens, b.reasoningTokens),
+    totalTokens: sum(a.totalTokens, b.totalTokens),
+    duration,
+    generationDuration: sum(a.generationDuration, b.generationDuration),
+    tokensPerSecond:
+      duration > 0 ? Math.round((outputTokens / duration) * 100) / 100 : 0,
+    timeToFirstOutputMs: a.timeToFirstOutputMs ?? b.timeToFirstOutputMs ?? null,
+    cost: sum(a.cost, b.cost),
+  };
+}
+
+/**
+ * Run one tool call from the agent loop against the on-demand endpoints.
+ * Sandbox tools go to /api/sandbox (E2B keys stay server-side); everything
+ * else to /api/tools. Returns { kind, data } on success or { error } — a
+ * failure is a tool error fed back to the model, never a lost stream.
+ */
+async function executeClientTool(
+  call,
+  { conversationId, e2bApiKey, sandboxId, apiKey },
+) {
+  let input;
+  try {
+    input = JSON.parse(call.arguments || "{}");
+  } catch (error) {
+    return { error: `Invalid tool arguments: ${error.message}` };
+  }
+
+  try {
+    if (SANDBOX_TOOL_NAMES.includes(call.name)) {
+      const action = call.name === "execute_code" ? "execute" : "run_command";
+      const res = await fetch("/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          conversationId,
+          e2bApiKey,
+          sandboxId,
+          ...(action === "execute"
+            ? { code: input.code }
+            : { command: input.command }),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return {
+          error: data.error || `Sandbox request failed (${res.status})`,
+        };
+      }
+      return { kind: "sandbox", data };
+    }
+
+    const res = await fetch("/api/tools", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool: call.name, parameters: input, apiKey }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return { error: data.error || `Tool request failed (${res.status})` };
+    }
+    return { kind: "tools", data };
+  } catch (error) {
+    return { error: error.message || "Tool execution failed" };
+  }
 }
 
 /**
@@ -223,9 +307,13 @@ export function useChatTurn({
 
       let sources = [];
       let metrics = null;
+      let totalMetrics = null;
       const sandboxResults = [];
       isStreamingComplete.current = false;
       pendingReplayClear.current = false;
+      // Per-round agent-loop state, reset at the top of every round.
+      let roundToolCalls = [];
+      let roundFailed = false;
 
       // The conversation may have been removed (deleted) or the user may
       // have started a new chat while this stream was still running. Apply
@@ -233,16 +321,22 @@ export function useChatTurn({
       // latest state instead of a stale render snapshot — and only touch
       // the visible message list when that conversation is still active, so
       // a late commit can never clobber the chat the user is looking at.
-      const commitMessages = (extraMessage) => {
-        const finalMessages = extraMessage
-          ? [...updatedMessages, extraMessage]
-          : updatedMessages;
+      // The agent loop appends rounds to this base as it goes, so an
+      // intermediate commit (a tool-call round) builds on the latest round's
+      // messages rather than the turn's original list. Callers pass the
+      // messages to append as an array.
+      let baseMessages = updatedMessages;
+      const commitMessages = (extraMessages) => {
+        const finalMessages = extraMessages
+          ? [...baseMessages, ...extraMessages]
+          : baseMessages;
         if (activeConversationRef.current === currentId) {
           conversationsActions.setMessages(finalMessages);
         }
         conversationsActions.patchConversation(currentId, {
           messages: finalMessages,
         });
+        baseMessages = finalMessages;
         return finalMessages;
       };
 
@@ -283,6 +377,7 @@ export function useChatTurn({
 
         const makeOnError = () => (error) => {
           isStreamingComplete.current = true;
+          roundFailed = true;
           snapToActualUsage();
           // Keep whatever arrived before the failure: text the user already
           // read must not vanish into an empty box. The commit carries both
@@ -304,12 +399,16 @@ export function useChatTurn({
             ...(partialThinking ? { thinking: partialThinking } : {}),
             error: { title: "API Error", details: error.message },
           };
-          commitMessages(errorMessage);
+          commitMessages([errorMessage]);
         };
 
         const makeOnComplete = (includeSources) => async () => {
           if (isStreamingComplete.current) return;
           isStreamingComplete.current = true;
+
+          // A round that ended with tool calls is committed by the agent loop
+          // with its tool_calls attached — committing here would drop them.
+          if (roundToolCalls.length > 0) return;
 
           // Use the live accumulators, not a render snapshot: the final
           // deltas must never be dropped just because the component has not
@@ -367,7 +466,7 @@ export function useChatTurn({
           };
 
           clearTurnDeltas({ isLoading: false });
-          const finalMessages = commitMessages(assistantMessage);
+          const finalMessages = commitMessages([assistantMessage]);
 
           const currentConversation = conversationsRef.current.find(
             (c) => c.id === currentId,
@@ -534,62 +633,198 @@ export function useChatTurn({
           });
         };
 
-        await streamChatCompletion({
-          messages: updatedMessages,
-          model: selectedModel,
-          onChunk,
-          onError: makeOnError(),
-          onComplete: makeOnComplete(needsWebSearch),
-          thinking: thinkingEnabled,
-          artifacts: artifactsEnabled,
-          tools,
-          toolChoice: "auto",
-          onToolCall,
-          onSearchResult: needsWebSearch
-            ? (searchSources) => {
-                sources = searchSources;
-                // The domains land on the chip pinned where the call
-                // happened; without this the pill would show the query
-                // forever.
-                fillLastSearchChip(searchSources);
+        const onSearchResult = needsWebSearch
+          ? (searchSources) => {
+              sources = searchSources;
+              // The domains land on the chip pinned where the call
+              // happened; without this the pill would show the query
+              // forever.
+              fillLastSearchChip(searchSources);
+            }
+          : null;
+
+        const runRound = async (roundMessages) => {
+          // Per-round resets. sources / sandboxResults / totalMetrics
+          // accumulate across rounds — the final message carries the turn's
+          // totals. beginTurn is deliberately NOT called here: it resets
+          // streamingSandboxTools and would wipe the terminal's run history.
+          isStreamingComplete.current = false;
+          pendingReplayClear.current = false;
+          roundToolCalls = [];
+          roundFailed = false;
+          clearTurnDeltas({ isLoading: true });
+
+          await streamChatCompletion({
+            messages: roundMessages,
+            model: selectedModel,
+            onChunk,
+            onError: makeOnError(),
+            onComplete: makeOnComplete(needsWebSearch),
+            thinking: thinkingEnabled,
+            artifacts: artifactsEnabled,
+            tools,
+            toolChoice: "auto",
+            onToolCall: (call) => {
+              onToolCall(call);
+              // Collect this round's completed tool calls. The complete frame
+              // carries the full normalized arguments, so no fragment
+              // accumulation is needed; dedupe by id in case a continuation
+              // re-delivers one.
+              if (call.complete && call.name) {
+                const known = roundToolCalls.some((c) => c.id === call.id);
+                if (!known) roundToolCalls.push(call);
               }
-            : null,
-          onMetrics: (metricsData) => {
-            metrics = metricsData;
-            if (!metricsData) return;
-            lastUsageRef.current = metricsData;
-            predictedOutputTokensRef.current = 0;
-            const total =
-              (metricsData.inputTokens || 0) + (metricsData.outputTokens || 0);
-            const usageFor = activeUsageConversationRef.current;
-            if (usageFor) {
-              conversationsActions.patchConversation(usageFor, {
-                contextUsage: total,
+            },
+            onSearchResult,
+            onMetrics: (metricsData) => {
+              if (!metricsData) return;
+              // Each round reports its own usage; the turn's metrics are the
+              // sum, and the running total is what the final message carries.
+              totalMetrics = totalMetrics
+                ? sumMetricsFrames(totalMetrics, metricsData)
+                : { ...metricsData };
+              metrics = totalMetrics;
+              lastUsageRef.current = totalMetrics;
+              predictedOutputTokensRef.current = 0;
+              const total =
+                (totalMetrics.inputTokens || 0) +
+                (totalMetrics.outputTokens || 0);
+              const usageFor = activeUsageConversationRef.current;
+              if (usageFor) {
+                conversationsActions.patchConversation(usageFor, {
+                  contextUsage: total,
+                });
+              }
+              if (usageFor === currentId) {
+                setContextUsage(total);
+              }
+            },
+            maxTokens,
+            agentMode: needsAgentMode,
+            conversationId: needsAgentMode ? currentId : null,
+            e2bApiKey: needsAgentMode ? e2bApiKey : null,
+            sandboxId: needsAgentMode ? sandboxId : null,
+            onSandboxResult: needsAgentMode ? onSandboxResult : null,
+            onFallbackStart: () => {
+              // The replay regenerates the whole answer, so the dead stream's
+              // partial must not double up underneath it — but do not drop it
+              // yet: if the replay fails too, that text is all the user has.
+              // Keep it on screen and swap it for the regenerated text on the
+              // first replay chunk (see onChunk).
+              sources = [];
+              metrics = null;
+              totalMetrics = null;
+              sandboxResults.length = 0;
+              isStreamingComplete.current = false;
+              pendingReplayClear.current = true;
+            },
+            singleRound: true,
+          });
+        };
+
+        // Client-side agent loop (Feature C): one short stream per model
+        // round. A round that ends with tool calls runs the calls here via
+        // the on-demand endpoints, then commits the assistant message (with
+        // its tool_calls and any chips the tools filled) together with the
+        // tool results — so no single connection spans the whole turn.
+        // Unlimited rounds by default (Libre's tool_max_iterations pattern);
+        // a settings cap plugs in here.
+        let roundMessages = updatedMessages;
+        while (true) {
+          await runRound(roundMessages);
+
+          if (roundFailed) break; // the error path already committed
+
+          if (roundToolCalls.length === 0) break; // final round: onComplete committed
+
+          // Run the tool calls first: a search fills its chip's sources, and
+          // the assistant message must carry those sources when it commits.
+          // Each call is its own short request — a failure is a tool error
+          // fed back to the model, never a lost stream.
+          const toolMessages = [];
+          for (const call of roundToolCalls) {
+            const result = await executeClientTool(call, {
+              conversationId: currentId,
+              e2bApiKey,
+              sandboxId,
+              apiKey: getStoredApiKey(),
+            });
+
+            if (result.error) {
+              toolMessages.push({
+                role: "tool",
+                content: `Error: ${result.error}`,
+                tool_call_id: call.id,
+              });
+              if (SANDBOX_TOOL_NAMES.includes(call.name)) {
+                updateSandboxTools((prev) =>
+                  prev.map((t) =>
+                    t.index === call.index
+                      ? { ...t, status: "complete", stderr: result.error }
+                      : t,
+                  ),
+                );
+              }
+              continue;
+            }
+
+            if (result.kind === "sandbox") {
+              onSandboxResult({
+                tool: call.name,
+                code: result.data.code || result.data.command || "",
+                stdout: result.data.stdout || "",
+                stderr: result.data.stderr || "",
+                exitCode: result.data.exitCode,
+                sandboxId: result.data.sandboxId,
+              });
+              toolMessages.push({
+                role: "tool",
+                content: JSON.stringify(result.data),
+                tool_call_id: call.id,
+              });
+            } else {
+              if (call.name === "web_search") {
+                onSearchResult?.(result.data.sources || []);
+              }
+              toolMessages.push({
+                role: "tool",
+                content: JSON.stringify(result.data.rawResult),
+                tool_call_id: call.id,
               });
             }
-            if (usageFor === currentId) {
-              setContextUsage(total);
-            }
-          },
-          maxTokens,
-          agentMode: needsAgentMode,
-          conversationId: needsAgentMode ? currentId : null,
-          e2bApiKey: needsAgentMode ? e2bApiKey : null,
-          sandboxId: needsAgentMode ? sandboxId : null,
-          onSandboxResult: needsAgentMode ? onSandboxResult : null,
-          onFallbackStart: () => {
-            // The replay regenerates the whole answer, so the dead stream's
-            // partial must not double up underneath it — but do not drop it
-            // yet: if the replay fails too, that text is all the user has.
-            // Keep it on screen and swap it for the regenerated text on the
-            // first replay chunk (see onChunk).
-            sources = [];
-            metrics = null;
-            sandboxResults.length = 0;
-            isStreamingComplete.current = false;
-            pendingReplayClear.current = true;
-          },
-        });
+          }
+
+          // Commit the assistant message (chips now filled) and the tool
+          // messages together.
+          const { content: roundContent, thinking: roundThinking } =
+            readTurnDeltas();
+          const roundChips = readTurnChips();
+          const assistantMessage = {
+            role: "assistant",
+            content: roundContent,
+            thinking: roundThinking || undefined,
+            ...(roundChips.length > 0
+              ? {
+                  thinkingChips: roundChips.map((chip) => ({
+                    tool: chip.tool,
+                    at: chip.at,
+                    label: chip.label,
+                    sources: chip.sources,
+                  })),
+                }
+              : {}),
+            tool_calls: roundToolCalls.map((call) => ({
+              id: call.id,
+              type: "function",
+              function: {
+                name: call.name,
+                arguments: call.arguments,
+              },
+            })),
+          };
+          roundMessages = commitMessages([assistantMessage, ...toolMessages]);
+          clearTurnDeltas({ isLoading: false });
+        }
       } catch (error) {
         isStreamingComplete.current = true;
         const { content: partialContent, thinking: partialThinking } =
@@ -611,7 +846,7 @@ export function useChatTurn({
             details: error.message || "An unexpected error occurred.",
           },
         };
-        commitMessages(errorMessage);
+        commitMessages([errorMessage]);
       } finally {
         isSubmittingRef.current = false;
       }

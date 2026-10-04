@@ -104,6 +104,7 @@ function buildRequestBody({
   sandboxId,
   tools,
   toolChoice,
+  singleRound = false,
 }) {
   const body = {
     model,
@@ -126,6 +127,10 @@ function buildRequestBody({
     body.tools = tools;
     body.tool_choice = toolChoice;
   }
+
+  // Client-side agent loop: one step per request, tools never executed
+  // server-side — the round ends with tool calls handed back.
+  if (singleRound) body.singleRound = true;
 
   return body;
 }
@@ -679,6 +684,7 @@ export const streamChatCompletion = async ({
   sandboxId = null,
   onSandboxResult = null,
   onFallbackStart = null,
+  singleRound = false,
 }) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -706,6 +712,7 @@ export const streamChatCompletion = async ({
     sandboxId,
     tools,
     toolChoice,
+    singleRound,
   });
 
   // The mirror is this turn's delivered content, for the one place that

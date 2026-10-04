@@ -48,29 +48,52 @@ const delta = (content) =>
   `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`;
 
 // The thinking/tool frames, in the shapes src/app/api/chat/route.js emits:
-// a start carries the name and an id (api-client reads the id as "complete"),
-// argument deltas carry only the index and a fragment, the final tool-call
-// carries only index and id.
+// a complete tool-call frame carries the index, the id (api-client reads the
+// id as "complete"), the name, and the full normalized arguments.
 const think = (text) =>
   `data: ${JSON.stringify({ choices: [{ delta: { thinking: text } }] })}\n\n`;
 
-const toolStart = (index, id, name) =>
+const toolCall = (index, id, name, args) =>
   `data: ${JSON.stringify({
     choices: [
       {
         delta: {
-          tool_calls: [{ index, id, function: { name, arguments: "" } }],
+          tool_calls: [{ index, id, function: { name, arguments: args } }],
         },
       },
     ],
   })}\n\n`;
 
-const toolArgs = (index, fragment) =>
+const usageFrame = (inputTokens, outputTokens) =>
   `data: ${JSON.stringify({
-    choices: [
-      { delta: { tool_calls: [{ index, function: { arguments: fragment } }] } },
-    ],
+    type: "usage",
+    usage: {
+      model: "xiaomi/mimo-v2.5",
+      inputTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      duration: 0.5,
+      tokensPerSecond: 10,
+      cost: 0,
+    },
   })}\n\n`;
+
+// Routes the agent loop's fetches: queued /api/chat rounds (one stream per
+// round), then the on-demand tool endpoints. Returns the mock so tests can
+// inspect the calls.
+const mockLoopFetch = ({ chatRounds, toolsResponse, sandboxResponse }) => {
+  const pendingRounds = [...chatRounds];
+  return vi.fn().mockImplementation(async (url) => {
+    if (url === "/api/chat") {
+      const round = pendingRounds.shift();
+      if (!round) throw new Error("unexpected /api/chat call");
+      return makeStreamResponse(round);
+    }
+    if (url === "/api/tools") return toolsResponse;
+    if (url === "/api/sandbox") return sandboxResponse;
+    throw new Error(`unexpected fetch: ${url}`);
+  });
+};
 
 const searchResult = (sources) =>
   `data: ${JSON.stringify({ type: "search_result", sources, content: "ok" })}\n\n`;
@@ -419,57 +442,86 @@ describe("useChatTurn", () => {
 
     it("commits a calculator chip pinned where the reasoning was interrupted", async () => {
       const prefix = "I should check this. ";
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() =>
-          makeStreamResponse([
+      const fetchMock = mockLoopFetch({
+        chatRounds: [
+          // Round 1: the model reaches for the calculator mid-reasoning.
+          [
             think(prefix),
-            toolStart(0, "call_1", "javascript_calculator"),
-            toolArgs(0, '{"expression":"5 + 5"}'),
+            toolCall(0, "call_1", "javascript_calculator", '{"expression":"5 + 5"}'),
+            "data: [DONE]\n\n",
+          ],
+          // Round 2: after the tool result, the model finishes.
+          [
             think("The sum is straightforward."),
             delta("The answer is 10."),
+            usageFrame(50, 7),
             "data: [DONE]\n\n",
-          ]),
-        ),
-      );
+          ],
+        ],
+        toolsResponse: Response.json({
+          tool: "javascript_calculator",
+          result: "10",
+          rawResult: 10,
+          sources: [],
+          metadata: { expression: "5 + 5", success: true },
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
       const result = await setup();
 
       await act(async () => {
         await result.result.current.stream.send("whats 5+5", []);
       });
 
-      const assistant = assistantOf(result);
-      expect(assistant.thinking).toBe(
-        `${prefix}The sum is straightforward.`,
-      );
-      expect(assistant.thinkingChips).toEqual([
+      // The chip is pinned to the intermediate round's reasoning, at the
+      // moment the model reached for the tool.
+      const round = assistantOf(result);
+      expect(round.thinking).toBe(prefix);
+      expect(round.thinkingChips).toEqual([
         // `at` is the prefix's length, not the whole reasoning: the chip
         // belongs *inside* the thinking at the moment the model reached for
         // the tool, and the text that arrived afterwards must not drag it.
         { tool: "javascript_calculator", at: prefix.length, label: "5 + 5" },
       ]);
+      expect(round.tool_calls).toHaveLength(1);
+
+      // The final answer is the second round's commit.
+      expect(
+        result.result.current.conversations.messages.at(-1).content,
+      ).toBe("The answer is 10.");
     });
 
     it("fills a search chip with domains once the results arrive", async () => {
       const prefix = "Let me look that up. ";
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() =>
-          makeStreamResponse([
+      const fetchMock = mockLoopFetch({
+        chatRounds: [
+          [
             think(prefix),
-            toolStart(0, "call_1", "web_search"),
-            toolArgs(0, '{"query":"opencode vs claude"}'),
-            searchResult([
-              "https://www.reddit.com/r/ai",
-              "txt.com",
-              "just some words",
-            ]),
+            toolCall(0, "call_1", "web_search", '{"query":"opencode vs claude"}'),
+            "data: [DONE]\n\n",
+          ],
+          [
             think("Now I can answer."),
             delta("Here it is."),
+            usageFrame(50, 7),
             "data: [DONE]\n\n",
-          ]),
-        ),
-      );
+          ],
+        ],
+        toolsResponse: Response.json({
+          tool: "web_search",
+          result: "opencode and claude are both AI tools.",
+          rawResult: {
+            answer: "opencode and claude are both AI tools.",
+            citations: [
+              { title: "reddit", url: "https://www.reddit.com/r/ai" },
+              { title: "txt", url: "https://txt.com/" },
+            ],
+          },
+          sources: ["https://www.reddit.com/r/ai", "https://txt.com/"],
+          metadata: { query: "opencode vs claude", numResults: 5, success: true },
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
       const result = await setup({ webSearchEnabled: true });
 
       await act(async () => {
@@ -490,27 +542,45 @@ describe("useChatTurn", () => {
     });
 
     it("never chips a sandbox tool — its commands belong to the side panel", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(() =>
-          makeStreamResponse([
+      const fetchMock = mockLoopFetch({
+        chatRounds: [
+          [
             think("Let me run the code. "),
-            toolStart(0, "call_1", "execute_code"),
-            toolArgs(0, '{"code":"print(1)"}'),
-            delta("It printed."),
+            toolCall(0, "call_1", "execute_code", '{"code":"print(1)"}'),
             "data: [DONE]\n\n",
-          ]),
-        ),
-      );
-      const result = await setup();
+          ],
+          [delta("It printed."), usageFrame(60, 9), "data: [DONE]\n\n"],
+        ],
+        sandboxResponse: Response.json({
+          stdout: "1\n",
+          stderr: "",
+          exitCode: 0,
+          sandboxId: "sbx-1",
+          action: "execute",
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: true });
 
       await act(async () => {
         await result.result.current.stream.send("run it", []);
       });
 
-      const assistant = assistantOf(result);
-      expect(assistant.thinking).toBe("Let me run the code. ");
-      expect(assistant.thinkingChips).toBeUndefined();
+      const round = assistantOf(result);
+      expect(round.thinking).toBe("Let me run the code. ");
+      expect(round.thinkingChips).toBeUndefined();
+      // The run landed in the side panel, not the thread.
+      expect(result.result.current.stream.streamingSandboxTools).toHaveLength(1);
+      expect(
+        result.result.current.stream.streamingSandboxTools[0],
+      ).toMatchObject({
+        tool: "execute_code",
+        status: "complete",
+        stdout: "1\n",
+      });
+      expect(
+        result.result.current.conversations.messages.at(-1).content,
+      ).toBe("It printed.");
     });
   });
 
@@ -894,5 +964,210 @@ describe("useChatTurn", () => {
     const carried = followUp.messages.find((m) => m.role === "assistant");
     expect(carried.content).toBe("One.");
     expect(carried.thinking).toBe("I should count to three.");
+  });
+
+  it("feeds the tool result back in the next round's request", async () => {
+    const fetchMock = mockLoopFetch({
+      chatRounds: [
+        [
+          toolCall(0, "call_1", "javascript_calculator", '{"expression":"2+2"}'),
+          "data: [DONE]\n\n",
+        ],
+        [delta("The answer is 4."), usageFrame(50, 7), "data: [DONE]\n\n"],
+      ],
+      toolsResponse: Response.json({
+        tool: "javascript_calculator",
+        result: "42",
+        rawResult: 42,
+        sources: [],
+        metadata: { expression: "2+2", success: true },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("what is 2+2?", []);
+    });
+
+    // Two rounds + one tool execution.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/chat");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/tools");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/chat");
+
+    // The tool endpoint got the parsed arguments.
+    const toolBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(toolBody).toMatchObject({
+      tool: "javascript_calculator",
+      parameters: { expression: "2+2" },
+    });
+
+    // The second round's request carries the assistant tool_calls message and
+    // the tool result, and every round is singleRound.
+    const secondRound = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(secondRound.singleRound).toBe(true);
+    expect(secondRound.messages).toHaveLength(3);
+    expect(secondRound.messages[1]).toMatchObject({
+      role: "assistant",
+      tool_calls: [
+        {
+          id: "call_1",
+          type: "function",
+          function: {
+            name: "javascript_calculator",
+            arguments: '{"expression":"2+2"}',
+          },
+        },
+      ],
+    });
+    expect(secondRound.messages[2]).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "42",
+    });
+
+    // The thread commits the intermediate round and the final answer.
+    const messages = result.result.current.conversations.messages;
+    expect(messages).toHaveLength(4);
+    expect(messages[1].tool_calls).toHaveLength(1);
+    expect(messages[3].content).toBe("The answer is 4.");
+  });
+
+  it("feeds a tool error back to the model instead of failing the turn", async () => {
+    const fetchMock = mockLoopFetch({
+      chatRounds: [
+        [
+          toolCall(0, "call_1", "javascript_calculator", '{"expression":"2+2"}'),
+          "data: [DONE]\n\n",
+        ],
+        [delta("Could not compute."), usageFrame(50, 3), "data: [DONE]\n\n"],
+      ],
+      toolsResponse: Response.json({ error: "boom" }, { status: 500 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("what is 2+2?", []);
+    });
+
+    // The error is a tool message, and the loop still runs the next round.
+    const secondRound = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(secondRound.messages[2]).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "Error: boom",
+    });
+    expect(
+      result.result.current.conversations.messages.at(-1).content,
+    ).toBe("Could not compute.");
+    expect(result.result.current.stream.streamingError).toBeNull();
+  });
+
+  it("runs sandbox tools via /api/sandbox and synthesizes the result frame", async () => {
+    const fetchMock = mockLoopFetch({
+      chatRounds: [
+        [
+          toolCall(0, "call_1", "execute_code", '{"code":"console.log(1)"}'),
+          "data: [DONE]\n\n",
+        ],
+        [delta("It printed 1."), usageFrame(60, 9), "data: [DONE]\n\n"],
+      ],
+      sandboxResponse: Response.json({
+        stdout: "1\n",
+        stderr: "",
+        exitCode: 0,
+        sandboxId: "sbx-1",
+        action: "execute",
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup({ agentModeEnabled: true });
+
+    await act(async () => {
+      await result.result.current.stream.send("run it", []);
+    });
+
+    // The sandbox endpoint got the code and the server-side E2B key.
+    const sandboxBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(sandboxBody).toMatchObject({
+      action: "execute",
+      code: "console.log(1)",
+      e2bApiKey: "e2b-test-key",
+    });
+
+    // The tool message carries the raw result.
+    const secondRound = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(secondRound.messages[2].content).toBe(
+      JSON.stringify({
+        stdout: "1\n",
+        stderr: "",
+        exitCode: 0,
+        sandboxId: "sbx-1",
+        action: "execute",
+      }),
+    );
+
+    // The synthesized sandbox_result frame reached the turn store and the
+    // final message, and the conversation's sandboxId was patched.
+    expect(result.result.current.stream.streamingSandboxTools).toHaveLength(1);
+    expect(
+      result.result.current.stream.streamingSandboxTools[0],
+    ).toMatchObject({
+      tool: "execute_code",
+      status: "complete",
+      stdout: "1\n",
+      sandboxId: "sbx-1",
+    });
+    const finalMessage =
+      result.result.current.conversations.messages.at(-1);
+    expect(finalMessage.sandboxResults).toHaveLength(1);
+    expect(finalMessage.sandboxResults[0]).toMatchObject({
+      tool: "execute_code",
+      exitCode: 0,
+    });
+    const conv = result.result.current.conversations.conversations.find(
+      (c) => c.id === result.result.current.conversations.activeConversation,
+    );
+    expect(conv.sandboxId).toBe("sbx-1");
+  });
+
+  it("sums usage across rounds into the final message", async () => {
+    const fetchMock = mockLoopFetch({
+      chatRounds: [
+        [
+          toolCall(0, "call_1", "javascript_calculator", '{"expression":"1+1"}'),
+          usageFrame(100, 5),
+          "data: [DONE]\n\n",
+        ],
+        [delta("Two."), usageFrame(50, 7), "data: [DONE]\n\n"],
+      ],
+      toolsResponse: Response.json({
+        tool: "javascript_calculator",
+        result: "2",
+        rawResult: 2,
+        sources: [],
+        metadata: {},
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup();
+
+    await act(async () => {
+      await result.result.current.stream.send("what is 1+1?", []);
+    });
+
+    const finalMessage =
+      result.result.current.conversations.messages.at(-1);
+    expect(finalMessage.metrics.inputTokens).toBe(150);
+    expect(finalMessage.metrics.outputTokens).toBe(12);
+    expect(finalMessage.metrics.totalTokens).toBe(162);
+
+    // The conversation's context usage is the summed total too.
+    const conv = result.result.current.conversations.conversations.find(
+      (c) => c.id === result.result.current.conversations.activeConversation,
+    );
+    expect(conv.contextUsage).toBe(162);
   });
 });

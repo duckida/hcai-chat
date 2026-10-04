@@ -7,7 +7,7 @@
 | **Phase** | **P10 complete** — `AGENTS.md` rewritten, storage contracts pinned, the last Radix import removed, the inert motion system fixed, all 30 invariants closed, anti-jank 5 done, title generation fixed. One item is unrecoverable rather than open: the CLS *baseline* was never captured at P0, so only current values can be measured. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 45 files / **640 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
+| **Current test suite** | 45 files / **644 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -30,9 +30,17 @@ moves to the existing on-demand endpoints (`/api/tools`, `/api/sandbox`) in C2.
 Also landed: `[stream start]` / `[stream end]` terminal logging (finishReason,
 duration, steps, usage) to correlate with the client's markerless-EOF warning.
 
-**Next:** C2 client orchestrator (round loop, iteration cap, Stop aborts tool
-calls), C3 sandbox tools via `/api/sandbox`, C4 usage aggregation moves
-client-side, C5 tests/smoke/docs.
+**C2 — landed:** the client-side agent loop in `use-chat-turn.js`. Each round
+streams with `singleRound: true`; a round ending in tool calls runs the calls
+via `executeClientTool` (`/api/sandbox` for E2B, `/api/tools` otherwise —
+keys stay server-side), then commits the assistant message (with `tool_calls`
+and any chips the tools filled) together with the tool-result messages, and
+sends the next round. Tools run *before* the commit so a search's chip
+carries its sources. Usage is summed across rounds (`sumMetricsFrames`) into
+the final message. Unlimited rounds by default (Libre's `tool_max_iterations`
+pattern). The three existing tool-call tests were updated to the two-round
+flow; four new tests cover the wire protocol, tool errors, sandbox synthesis,
+and usage summing.
 
 ## P2 decomposition — where everything lives now
 
