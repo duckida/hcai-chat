@@ -861,3 +861,63 @@ describe("singleRound mode (client-side agent loop)", () => {
     expect(toolValues[0].execute).toBeDefined();
   });
 });
+
+describe("finishReason=other cut detection", () => {
+  const readOutput = async (res) => {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let out = "";
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value);
+    }
+    return out;
+  };
+
+  it("closes markerless when finishReason is other (suspected cut)", async () => {
+    await setupStreamText({
+      chunk: [{ type: "text-delta", text: "half an answer" }],
+      end: [{ finishReason: "other" }],
+    });
+
+    const res = await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+      }),
+    );
+    const out = await readOutput(res);
+    // The content frame is delivered, but no [DONE] — the client's continue
+    // logic must resume this rather than committing a truncation.
+    expect(out).toContain("half an answer");
+    expect(out).not.toContain("[DONE]");
+  });
+
+  it("writes [DONE] when finishReason is stop (normal end)", async () => {
+    await setupStreamText({
+      chunk: [{ type: "text-delta", text: "a complete answer" }],
+      end: [
+        {
+          finishReason: "stop",
+          usage: { inputTokens: 5, outputTokens: 7 },
+          finalStep: { providerMetadata: {} },
+          steps: [],
+        },
+      ],
+    });
+
+    const res = await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+      }),
+    );
+    const out = await readOutput(res);
+    expect(out).toContain("a complete answer");
+    expect(out).toContain("[DONE]");
+  });
+});

@@ -489,7 +489,19 @@ export async function POST(req) {
               },
             });
 
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            // A clean upstream cut mid-answer ends with finishReason "other" —
+            // no upstream finish_reason ever arrived (probed: a normal end is
+            // stop/length/tool-calls). Writing [DONE] here would let the client
+            // commit the truncation as a complete answer: the one blind spot
+            // Libre has too. Close markerless instead so the client's continue
+            // logic resumes the answer (or replays it when nothing arrived).
+            if (event.finishReason === "other") {
+              console.warn(
+                `[stream end] finishReason=other after ${totalDuration}s — closing markerless so the client continues`,
+              );
+            } else {
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+            }
             clearInterval(keepalive);
             try {
               controller.close();

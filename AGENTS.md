@@ -132,6 +132,27 @@ EOF decision instead of hanging. `sse-parser.js` holds the frame buffer; a
 partial frame waits for its boundary rather than being decoded early, and
 `[DONE]` dispatches as `SSE_DONE`.
 
+The one blind spot that remained — a clean upstream cut mid-answer — is closed
+on the server: `streamText` ends such a cut with `finishReason: "other"` (a
+normal end is `stop`/`length`/`tool-calls`; probed), and the route then closes
+**markerless** instead of writing `[DONE]`, so the client's continue logic
+resumes the answer rather than committing the truncation. The `[stream start]`
+/ `[stream end]` logs (finishReason, duration, steps, usage) correlate with the
+client's markerless-EOF warning to identify which leg a cut happens on.
+
+### The agent loop is client-side
+The browser drives the loop: each round is one short `singleRound` stream (the
+route runs schema-only tools with `stopWhen: stepCountIs(1)`, so the round ends
+at the first tool call with `finishReason: "tool-calls"`), the calls run via the
+on-demand endpoints (`/api/sandbox` for E2B, `/api/tools` for search/calculator
+— keys stay server-side), and the assistant message (with `tool_calls`) commits
+together with the tool-result messages before the next round. Tools run
+*before* the commit so a search's chip carries its sources. No single
+connection spans the turn — during E2B execution the chat connection is closed,
+which is what keeps long agent turns off the duration cap that cut them.
+Usage is summed across rounds into the final message. Rounds are unlimited by
+default (Libre's `tool_max_iterations` pattern).
+
 ### Continue, don't regenerate (finding 17)
 A replay regenerates the *whole* answer, so under a deterministic killer in
 front of the app (a duration/size cap — production saw "retry failed" twice at

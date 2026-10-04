@@ -7,7 +7,7 @@
 | **Phase** | **P10 complete** — `AGENTS.md` rewritten, storage contracts pinned, the last Radix import removed, the inert motion system fixed, all 30 invariants closed, anti-jank 5 done, title generation fixed. One item is unrecoverable rather than open: the CLS *baseline* was never captured at P0, so only current values can be measured. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 45 files / **644 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
+| **Current test suite** | 45 files / **646 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
 
@@ -41,6 +41,12 @@ the final message. Unlimited rounds by default (Libre's `tool_max_iterations`
 pattern). The three existing tool-call tests were updated to the two-round
 flow; four new tests cover the wire protocol, tool errors, sandbox synthesis,
 and usage summing.
+
+**Cut detection — landed:** the route's `onEnd` closes **markerless** when
+`finishReason === "other"` (a clean upstream cut — no upstream finish_reason
+ever arrived; probed) instead of writing `[DONE]`, so the client's continue
+logic resumes the answer rather than committing the truncation. This closes
+the one blind spot Libre has too. Two new tests, negative-controlled.
 
 ## P2 decomposition — where everything lives now
 
