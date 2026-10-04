@@ -779,3 +779,85 @@ describe("/api/chat POST", () => {
     expect(out).toContain('"title":"src"');
   });
 });
+
+describe("singleRound mode (client-side agent loop)", () => {
+  const singleRoundBody = (extra = {}) => ({
+    model: TEST_MODEL,
+    messages: [{ role: "user", content: "hi" }],
+    apiKey: "k",
+    singleRound: true,
+    ...extra,
+  });
+
+  it("stops after one step via stepCountIs(1)", async () => {
+    const { stepCountIs } = await import("ai");
+    await setupStreamText({ end: [{}] });
+    await POST(makeReq(singleRoundBody()));
+    expect(stepCountIs).toHaveBeenCalledWith(1);
+  });
+
+  it("still uses stepCountIs(100) when singleRound is absent", async () => {
+    const { stepCountIs } = await import("ai");
+    await setupStreamText({ end: [{}] });
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+      }),
+    );
+    expect(stepCountIs).toHaveBeenCalledWith(100);
+  });
+
+  it("attaches no execute closure to tools in singleRound mode", async () => {
+    const { streamText } = await import("ai");
+    await setupStreamText({ end: [{}] });
+    await POST(
+      makeReq(
+        singleRoundBody({
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "demo",
+                description: "d",
+                parameters: { type: "object" },
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    const call = streamText.mock.calls[0][0];
+    const toolValues = Object.values(call.tools);
+    expect(toolValues).toHaveLength(1);
+    expect(toolValues[0].description).toBe("d");
+    expect(toolValues[0].execute).toBeUndefined();
+  });
+
+  it("still attaches execute closures when singleRound is absent", async () => {
+    const { streamText } = await import("ai");
+    await setupStreamText({ end: [{}] });
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "demo",
+              description: "d",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+      }),
+    );
+    const call = streamText.mock.calls[0][0];
+    const toolValues = Object.values(call.tools);
+    expect(toolValues).toHaveLength(1);
+    expect(toolValues[0].execute).toBeDefined();
+  });
+});

@@ -24,7 +24,14 @@ IMPORTANT RULES:
 - execute_code has a 30-second timeout; run_command has a 120-second timeout (enough for npm install).
 - Install packages with 'npm install <package>' via run_command first, then import them in execute_code.`;
 
-function toSdkTools(clientTools, apiKey, conversationId, e2bApiKey, sandboxId) {
+function toSdkTools(
+  clientTools,
+  apiKey,
+  conversationId,
+  e2bApiKey,
+  sandboxId,
+  { withExecute = true } = {},
+) {
   if (!Array.isArray(clientTools) || clientTools.length === 0) {
     return undefined;
   }
@@ -45,33 +52,42 @@ function toSdkTools(clientTools, apiKey, conversationId, e2bApiKey, sandboxId) {
             inputSchema: jsonSchema(
               toolDef.function.parameters || { type: "object" },
             ),
-            execute: async (args) => {
-              if (isSandboxTool) {
-                if (!conversationId) {
-                  throw new Error(
-                    "conversationId is required for sandbox tools",
-                  );
+            // singleRound mode (client-side agent loop): the schema goes on
+            // the wire but no execute closure is attached, so the round ends
+            // with the tool calls handed back to the client instead of run
+            // here. Attaching execute anyway would run the tool inside the
+            // step — stepCountIs(1) does not prevent that (probed).
+            ...(withExecute
+              ? {
+                  execute: async (args) => {
+                    if (isSandboxTool) {
+                      if (!conversationId) {
+                        throw new Error(
+                          "conversationId is required for sandbox tools",
+                        );
+                      }
+                      const { executeCodeInSandbox, executeCommandInSandbox } =
+                        await import("@/lib/sandbox-executor");
+                      const sandboxOptions = { apiKey: e2bApiKey, sandboxId };
+                      if (toolName === "execute_code") {
+                        return executeCodeInSandbox(
+                          args?.code,
+                          conversationId,
+                          sandboxOptions,
+                        );
+                      }
+                      if (toolName === "run_command") {
+                        return executeCommandInSandbox(
+                          args?.command,
+                          conversationId,
+                          sandboxOptions,
+                        );
+                      }
+                    }
+                    return executeTool(toolName, args || {}, apiKey);
+                  },
                 }
-                const { executeCodeInSandbox, executeCommandInSandbox } =
-                  await import("@/lib/sandbox-executor");
-                const sandboxOptions = { apiKey: e2bApiKey, sandboxId };
-                if (toolName === "execute_code") {
-                  return executeCodeInSandbox(
-                    args?.code,
-                    conversationId,
-                    sandboxOptions,
-                  );
-                }
-                if (toolName === "run_command") {
-                  return executeCommandInSandbox(
-                    args?.command,
-                    conversationId,
-                    sandboxOptions,
-                  );
-                }
-              }
-              return executeTool(toolName, args || {}, apiKey);
-            },
+              : {}),
           }),
         ];
       }),
@@ -134,6 +150,7 @@ export async function POST(req) {
       conversationId,
       e2bApiKey,
       sandboxId,
+      singleRound,
     } = body;
 
     const now = new Date();
@@ -202,6 +219,9 @@ export async function POST(req) {
       conversationId,
       agentMode ? e2bApiKey : null,
       agentMode ? sandboxId : null,
+      // singleRound (client-side agent loop): schemas only, no execute — the
+      // round must end with tool calls handed back, not run here.
+      { withExecute: !singleRound },
     );
 
     const openrouter = createOpenRouter({
@@ -417,6 +437,13 @@ export async function POST(req) {
             const endTime = Date.now();
             const totalDuration = (endTime - startTime) / 1000;
 
+            // Terminal instrumentation: the client warns on a markerless EOF,
+            // so correlating these fields with that warning is how the leg a
+            // cut happens on gets identified (duration cap vs stall vs other).
+            console.log(
+              `[stream end] model=${model} finishReason=${event.finishReason} durationMs=${Math.round(totalDuration * 1000)} steps=${event.steps?.length ?? "?"} usage=${usage ? "yes" : "no"} singleRound=${singleRound === true}`,
+            );
+
             if (usage) {
               totalUsage.inputTokens += usage.inputTokens || 0;
               totalUsage.outputTokens += usage.outputTokens || 0;
@@ -469,12 +496,18 @@ export async function POST(req) {
             } catch {}
           };
 
+          console.log(
+            `[stream start] model=${model} messages=${currentMessages.length} tools=${availableTools ? Object.keys(availableTools).length : 0} singleRound=${singleRound === true}`,
+          );
           const result = streamText({
             model: openrouter.chat(model),
             instructions: systemPrompt,
             messages: currentMessages,
             tools: availableTools,
-            stopWhen: stepCountIs(100),
+            // singleRound (client-side agent loop): exactly one step, so the
+            // round ends at the first tool call / completion instead of
+            // running tools here and continuing server-side.
+            stopWhen: singleRound ? stepCountIs(1) : stepCountIs(100),
             ...(max_tokens ? { maxOutputTokens: max_tokens } : {}),
             providerOptions: {
               openrouter: providerOpts,

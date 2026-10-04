@@ -7,9 +7,32 @@
 | **Phase** | **P10 complete** — `AGENTS.md` rewritten, storage contracts pinned, the last Radix import removed, the inert motion system fixed, all 30 invariants closed, anti-jank 5 done, title generation fixed. One item is unrecoverable rather than open: the CLS *baseline* was never captured at P0, so only current values can be measured. |
 | **Baseline commit** | `8aa44a6` fix(chat): scope stream rendering per conversation and drop stale UI state |
 | **Baseline test suite** | 29 files / **385 tests passing**, 22.1s (`npm test`) |
-| **Current test suite** | 45 files / **636 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
+| **Current test suite** | 45 files / **640 tests passing** — lint, format and `next build` all clean · smoke **29/29** |
 | **Origin sync SHA** | `8aa44a6` — every phase starts with a sync against this |
 | **Stack** | Next.js App Router · React · Tailwind v4 (existing tokens/themes unchanged) · React Aria Components · Vitest + RTL |
+
+## Feature C — client-side agent loop (Libre-style short streams)
+
+**Why:** production cutoffs are markerless EOFs at the browser. Probes proved the
+server→upstream leg cannot produce one — every upstream failure ends in `[DONE]`
+or an error frame — so the cut is on the browser↔Next leg, and our chat
+connection spans the *whole* turn (`stepCountIs(100)` + in-stream E2B/search,
+measured 8m28s). Libre-Assistant's streams survive because its agent loop runs
+client-side: one short request per model round, tools (a browser Web Worker
+sandbox, not cloud) executed *between* requests. Connection lifetime ∝ one
+round, not the whole turn.
+
+**C1 — landed:** `singleRound` mode in `src/app/api/chat/route.js`. Schema-only
+tools (no `execute` closure — `stepCountIs(1)` alone does *not* prevent
+execution, probed) + `stopWhen: stepCountIs(1)`; the round ends with
+`finishReason=tool-calls` and the existing `tool_calls` frames. Tool execution
+moves to the existing on-demand endpoints (`/api/tools`, `/api/sandbox`) in C2.
+Also landed: `[stream start]` / `[stream end]` terminal logging (finishReason,
+duration, steps, usage) to correlate with the client's markerless-EOF warning.
+
+**Next:** C2 client orchestrator (round loop, iteration cap, Stop aborts tool
+calls), C3 sandbox tools via `/api/sandbox`, C4 usage aggregation moves
+client-side, C5 tests/smoke/docs.
 
 ## P2 decomposition — where everything lives now
 
