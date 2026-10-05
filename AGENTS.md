@@ -129,7 +129,7 @@ guaranteed to be JSON — a proxy answers a dead upstream with plain text, so
 `postChat` reads the body as text first and surfaces `Chat API Error (502) …
 — Bad Gateway` instead of a JSON parse crash (finding 16). A failed turn
 commits whatever partial text it has alongside the error instead of
-`content: ""`. A read silent for 15s (the server keepalives every 5s), or one
+`content: ""`. A read silent for 60s (the server keepalives every 5s), or one
 that goes stale while its tab is backgrounded, is cancelled into that same
 EOF decision instead of hanging. `sse-parser.js` holds the frame buffer; a
 partial frame waits for its boundary rather than being decoded early, and

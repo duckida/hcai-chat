@@ -279,11 +279,11 @@ function createFrameRouter({
 
 /**
  * How long the read loop tolerates a silent connection. The server writes a
- * keepalive comment every 5s, so 15s without a byte means the connection is
+ * keepalive comment every 5s, so 60s without a byte means the connection is
  * wedged (a throttled background tab, a dead proxy) — not that the model is
- * still thinking.
+ * still thinking. Matches Libre's 60s tolerance.
  */
-const STALL_TIMEOUT_MS = 15_000;
+const STALL_TIMEOUT_MS = 60_000;
 
 /**
  * Decide what an ended (or thrown) request means, and finish it when the

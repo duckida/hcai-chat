@@ -1102,9 +1102,9 @@ describe("streamChatCompletion", () => {
         onComplete: vi.fn(),
       });
 
-      // The server keepalives every 5s, so silence past the 15s tolerance is
+      // The server keepalives every 5s, so silence past the 60s tolerance is
       // a dead connection, not a slow model.
-      await vi.advanceTimersByTimeAsync(15_000);
+      await vi.advanceTimersByTimeAsync(60_000);
       await promise;
 
       expect(cancel).toHaveBeenCalled();
@@ -1175,7 +1175,9 @@ describe("streamChatCompletion", () => {
       // second (hanging) read before the tab "returns".
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      vi.setSystemTime(Date.now() + 16_000);
+      // Advance past the 60s stall tolerance to simulate a tab that was
+      // backgrounded long enough that the connection is considered stale.
+      vi.setSystemTime(Date.now() + 61_000);
       document.dispatchEvent(new Event("visibilitychange"));
       await promise;
 
