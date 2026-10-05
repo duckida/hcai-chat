@@ -14,12 +14,10 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
-    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@streamdown/cjk": "^1.0.3",
     "@streamdown/code": "^1.1.1",
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
-    "ai": "^7.0.106",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "e2b": "2.37.0",
@@ -27,6 +25,7 @@
     "lucide-react": "^1.14.0",
     "next": "^16.2.6",
     "next-themes": "^0.4.6",
+    "openai": "^7.28.0",
     "react": "19.2.4",
     "react-aria-components": "^1.21.1",
     "react-dom": "19.2.4",

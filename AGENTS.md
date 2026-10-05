@@ -141,17 +141,19 @@ resumes the answer rather than committing the truncation. The `[stream start]`
 client's markerless-EOF warning to identify which leg a cut happens on.
 
 ### The agent loop is client-side
-The browser drives the loop: each round is one short `singleRound` stream (the
-route runs schema-only tools with `stopWhen: stepCountIs(1)`, so the round ends
-at the first tool call with `finishReason: "tool-calls"`), the calls run via the
-on-demand endpoints (`/api/sandbox` for E2B, `/api/tools` for search/calculator
-— keys stay server-side), and the assistant message (with `tool_calls`) commits
-together with the tool-result messages before the next round. Tools run
-*before* the commit so a search's chip carries its sources. No single
-connection spans the turn — during E2B execution the chat connection is closed,
-which is what keeps long agent turns off the duration cap that cut them.
-Usage is summed across rounds into the final message. Rounds are unlimited by
-default (Libre's `tool_max_iterations` pattern).
+The browser drives the loop: each round is one short stream, the route opens a
+single `client.chat.completions.create` round (the official OpenAI SDK against
+`https://ai.hackclub.com/proxy/v1`) and emits the upstream deltas in the
+wire-shape the client already parses (`content`, `thinking` from
+`delta.reasoning`/`reasoning_details`, `tool_calls`), and tool execution
+itself happens on the client via the on-demand endpoints (`/api/sandbox` for
+E2B, `/api/tools` for search/calculator — keys stay server-side). The round
+ends at the first assistant completion, no matter whether it is text or a
+`finish_reason: "tool_calls"`. No single connection spans the turn — during
+E2B execution the chat connection is closed, which is what keeps long agent
+turns off the duration cap that cut them. Usage is summed across rounds into
+the final message. Rounds are unlimited by default (Libre's
+`tool_max_iterations` pattern).
 
 ### Continue, don't regenerate (finding 17)
 A replay regenerates the *whole* answer, so under a deterministic killer in

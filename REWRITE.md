@@ -30,17 +30,27 @@ moves to the existing on-demand endpoints (`/api/tools`, `/api/sandbox`) in C2.
 Also landed: `[stream start]` / `[stream end]` terminal logging (finishReason,
 duration, steps, usage) to correlate with the client's markerless-EOF warning.
 
-**C2 — landed:** the client-side agent loop in `use-chat-turn.js`. Each round
-streams with `singleRound: true`; a round ending in tool calls runs the calls
-via `executeClientTool` (`/api/sandbox` for E2B, `/api/tools` otherwise —
-keys stay server-side), then commits the assistant message (with `tool_calls`
-and any chips the tools filled) together with the tool-result messages, and
-sends the next round. Tools run *before* the commit so a search's chip
-carries its sources. Usage is summed across rounds (`sumMetricsFrames`) into
-the final message. Unlimited rounds by default (Libre's `tool_max_iterations`
-pattern). The three existing tool-call tests were updated to the two-round
-flow; four new tests cover the wire protocol, tool errors, sandbox synthesis,
-and usage summing.
+**C2 — landed:** the client-side agent loop in `use-chat-turn.js`. A round that
+streams `tool_calls` frames has them executed via `executeClientTool`
+(`/api/sandbox` for E2B, `/api/tools` otherwise — keys stay server-side), the
+assistant entry and tool result messages are appended to the *local* round
+history, and the next round re-uses that history. The persisted conversation
+stays a single merged assistant message perturn — no agent bubble per round.
+Usage is summed across rounds into the final message. Unlimited rounds by
+default (Libre's `tool_max_iterations` pattern).
+
+**C3 — landed:** route.js moved from the AI SDK provider
+(`@openrouter/ai-sdk-provider` + `streamText`/`generateText` + stopWhen) to the
+official OpenAI client (`openai` npm package) as a directly awaited
+`client.chat.completions.create` round. The route is now purely transport: it
+normalizes the client's OpenAI-shape messages/tools (dropping the persisted
+`thinking` from wire history, mapping client-only part shapes to OpenAI content
+parts), forwards the upstream deltas in the existing client-visible frame
+shapes, emits one usage frame per round, and closes markerless when no
+`finish_reason` was ever delivered (a cut, per finding 17). The cut
+detection test from C1 stays meaningful in this form; the schema-conversion
+(ModelMessage) dance lives no more. Client sends `singleRound` for backwards
+compatibility but the route ignores it.
 
 **Cut detection — landed:** the route's `onEnd` closes **markerless** when
 `finishReason === "other"` (a clean upstream cut — no upstream finish_reason

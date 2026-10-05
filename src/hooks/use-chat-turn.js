@@ -314,6 +314,14 @@ export function useChatTurn({
       // Per-round agent-loop state, reset at the top of every round.
       let roundToolCalls = [];
       let roundFailed = false;
+      // Argument-fragment accumulator for the live round. Each round's tool
+      // calls arrive as a start frame (name + id, empty args) followed by
+      // argument-fragment deltas, so they have to be assembled by index.
+      const toolCallAccs = new Map();
+      // UI-side sandbox entries are keyed by tool index, so offset the
+      // per-round indices before handing them to the store; the streaming
+      // store persists across rounds and each round restarts from 0.
+      let toolIndexBase = 0;
 
       // The conversation may have been removed (deleted) or the user may
       // have started a new chat while this stream was still running. Apply
@@ -406,9 +414,11 @@ export function useChatTurn({
           if (isStreamingComplete.current) return;
           isStreamingComplete.current = true;
 
-          // A round that ended with tool calls is committed by the agent loop
-          // with its tool_calls attached — committing here would drop them.
-          if (roundToolCalls.length > 0) return;
+          // A round that streamed tool calls is relit by the agent loop and
+          // never becomes the final message.  Accumulated calls are keyed in
+          // toolCallAccs, which is already populated by the onToolCall
+          // handler before this callback runs.
+          if (toolCallAccs.size > 0) return;
 
           // Use the live accumulators, not a render snapshot: the final
           // deltas must never be dropped just because the component has not
@@ -433,7 +443,7 @@ export function useChatTurn({
               content: "",
               error: errorMsg,
             };
-            commitMessages(errorMessage);
+            commitMessages([errorMessage]);
             return;
           }
 
@@ -652,7 +662,7 @@ export function useChatTurn({
           pendingReplayClear.current = false;
           roundToolCalls = [];
           roundFailed = false;
-          clearTurnDeltas({ isLoading: true });
+          toolCallAccs.clear();
 
           await streamChatCompletion({
             messages: roundMessages,
@@ -665,15 +675,20 @@ export function useChatTurn({
             tools,
             toolChoice: "auto",
             onToolCall: (call) => {
-              onToolCall(call);
-              // Collect this round's completed tool calls. The complete frame
-              // carries the full normalized arguments, so no fragment
-              // accumulation is needed; dedupe by id in case a continuation
-              // re-delivers one.
-              if (call.complete && call.name) {
-                const known = roundToolCalls.some((c) => c.id === call.id);
-                if (!known) roundToolCalls.push(call);
-              }
+              // Visible call details are offset so round B can't disturb
+              // round A's entries in the persisted streaming store.
+              onToolCall({ ...call, index: call.index + toolIndexBase });
+              // Assemble argument fragments by tool_call index.
+              const acc = toolCallAccs.get(call.index) ?? {
+                index: call.index,
+                id: "",
+                name: "",
+                arguments: "",
+              };
+              if (call.id) acc.id = call.id;
+              if (call.name) acc.name = call.name;
+              if (call.arguments) acc.arguments += call.arguments;
+              toolCallAccs.set(call.index, acc);
             },
             onSearchResult,
             onMetrics: (metricsData) => {
@@ -720,6 +735,18 @@ export function useChatTurn({
             },
             singleRound: true,
           });
+          // Every call's argument-fragment deltas are complete now; fold them
+          // into calls with the offset indices the UI already used.
+          roundToolCalls = [...toolCallAccs.values()]
+            .filter((acc) => acc.id !== "" && acc.name !== "")
+            .map((acc) => ({
+              index: acc.index + toolIndexBase,
+              id: acc.id,
+              name: acc.name,
+              arguments: acc.arguments,
+              complete: true,
+            }));
+          toolIndexBase += toolCallAccs.size;
         };
 
         // Client-side agent loop (Feature C): one short stream per model
@@ -730,6 +757,10 @@ export function useChatTurn({
         // Unlimited rounds by default (Libre's tool_max_iterations pattern);
         // a settings cap plugs in here.
         let roundMessages = updatedMessages;
+        // The buffers hold cumulative assistant deltas since the last
+        // commit, so the per-round slice for the next request is the
+        // difference between what was in the store before and after the round.
+        let prevCum = readTurnDeltas();
         while (true) {
           await runRound(roundMessages);
 
@@ -794,36 +825,34 @@ export function useChatTurn({
             }
           }
 
-          // Commit the assistant message (chips now filled) and the tool
-          // messages together.
-          const { content: roundContent, thinking: roundThinking } =
-            readTurnDeltas();
-          const roundChips = readTurnChips();
-          const assistantMessage = {
-            role: "assistant",
-            content: roundContent,
-            thinking: roundThinking || undefined,
-            ...(roundChips.length > 0
-              ? {
-                  thinkingChips: roundChips.map((chip) => ({
-                    tool: chip.tool,
-                    at: chip.at,
-                    label: chip.label,
-                    sources: chip.sources,
-                  })),
-                }
-              : {}),
-            tool_calls: roundToolCalls.map((call) => ({
-              id: call.id,
-              type: "function",
-              function: {
-                name: call.name,
-                arguments: call.arguments,
-              },
-            })),
-          };
-          roundMessages = commitMessages([assistantMessage, ...toolMessages]);
-          clearTurnDeltas({ isLoading: false });
+          // Advance the local history with this round's assistant text and
+          // the tool results: this drives round N+1's /api/chat request. No
+          // intermediate commit happens — the streaming stores flow through
+          // into a single merged commit once the model finishes without tool
+          // calls, avoiding one agent bubble per round.
+          const cum = readTurnDeltas();
+          const roundContent = cum.content.slice(prevCum.content.length);
+          const roundThinking = (cum.thinking ?? "").slice(
+            (prevCum.thinking ?? "").length,
+          );
+          prevCum = cum;
+          roundMessages = [
+            ...roundMessages,
+            {
+              role: "assistant",
+              content: roundContent,
+              ...(roundThinking ? { thinking: roundThinking } : {}),
+              tool_calls: roundToolCalls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: {
+                  name: call.name,
+                  arguments: call.arguments,
+                },
+              })),
+            },
+            ...toolMessages,
+          ];
         }
       } catch (error) {
         isStreamingComplete.current = true;

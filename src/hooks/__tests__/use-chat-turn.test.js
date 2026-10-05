@@ -473,19 +473,21 @@ describe("useChatTurn", () => {
         await result.result.current.stream.send("whats 5+5", []);
       });
 
-      // The chip is pinned to the intermediate round's reasoning, at the
-      // moment the model reached for the tool.
+      // The cache of rounds merges into one assistant message at the end.
+      // The chip stays pinned to the point in the thinking where the model
+      // reached for the tool, and the thinking text is appended across rounds.
       const round = assistantOf(result);
-      expect(round.thinking).toBe(prefix);
+      expect(round.thinking).toBe(
+        `${prefix}The sum is straightforward.`,
+      );
       expect(round.thinkingChips).toEqual([
         // `at` is the prefix's length, not the whole reasoning: the chip
         // belongs *inside* the thinking at the moment the model reached for
         // the tool, and the text that arrived afterwards must not drag it.
         { tool: "javascript_calculator", at: prefix.length, label: "5 + 5" },
       ]);
-      expect(round.tool_calls).toHaveLength(1);
+      expect(round).not.toHaveProperty("tool_calls");
 
-      // The final answer is the second round's commit.
       expect(
         result.result.current.conversations.messages.at(-1).content,
       ).toBe("The answer is 10.");
@@ -1027,11 +1029,12 @@ describe("useChatTurn", () => {
       content: "42",
     });
 
-    // The thread commits the intermediate round and the final answer.
+    // The persisted thread has one merged assistant row at the end: the tool
+    // round records live only in the request history the loop sent upstream.
     const messages = result.result.current.conversations.messages;
-    expect(messages).toHaveLength(4);
-    expect(messages[1].tool_calls).toHaveLength(1);
-    expect(messages[3].content).toBe("The answer is 4.");
+    expect(messages).toHaveLength(2);
+    expect(messages[1].content).toBe("The answer is 4.");
+    expect(messages[1]).not.toHaveProperty("tool_calls");
   });
 
   it("feeds a tool error back to the model instead of failing the turn", async () => {

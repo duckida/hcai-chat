@@ -1,13 +1,10 @@
-import { createOpenRouter } from "@openrouter/ai-sdk-provider";
-import { generateText, jsonSchema, stepCountIs, streamText, tool } from "ai";
+import OpenAI from "openai";
 import {
   ARTIFACT_AGENT_MODE_INSTRUCTIONS,
   ARTIFACT_INSTRUCTIONS,
 } from "@/lib/artifacts";
 import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
-import { getToolOutput } from "@/lib/tool-stream.mjs";
-import { executeTool, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 
 const AGENT_MODE_PROMPT = `
 
@@ -25,115 +22,118 @@ IMPORTANT RULES:
 - Install packages with 'npm install <package>' via run_command first, then import them in execute_code.`;
 
 /**
- * The client sends tool-call arguments as a JSON string on the wire; AI SDK's
- * ToolCallPart wants a parsed object. Fall back to {} so a malformed payload
- * surfaces as a tool error downstream rather than a schema crash.
+ * The client speaks the OpenAI wire shape for messages and tool specs. The
+ * only thing we still own here is: fold `thinking` out of the conversation
+ * (it was persisted for the UI, but providers only see the final text),
+ * normalize the few attachment shapes the client uses into OpenAI content
+ * parts, and bound validate max_tokens.
  */
-function parseToolCallInput(argumentsJson) {
-  if (argumentsJson == null) return {};
-  if (typeof argumentsJson === "object") return argumentsJson;
-  try {
-    return JSON.parse(argumentsJson);
-  } catch {
-    return {};
-  }
+function toOpenAiContentParts(content) {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (!part || typeof part !== "object") return null;
+      if (part.type === "text") return { type: "text", text: part.text ?? "" };
+      if (part.type === "image") {
+        const url = part.image ?? part.url;
+        if (!url) return null;
+        return { type: "image_url", image_url: { url } };
+      }
+      if (part.type === "file") {
+        const data = part.data ?? part.url;
+        if (!data) return null;
+        return {
+          type: "file",
+          file: {
+            filename: part.filename ?? "attachment",
+            file_data: data,
+          },
+        };
+      }
+      return null;
+    })
+    .filter((p) => p != null);
 }
 
-function toSdkTools(
-  clientTools,
-  apiKey,
-  conversationId,
-  e2bApiKey,
-  sandboxId,
-  { withExecute = true } = {},
-) {
-  if (!Array.isArray(clientTools) || clientTools.length === 0) {
-    return undefined;
+const toOpenAiMessage = (msg) => {
+  if (!msg || typeof msg !== "object") return null;
+  if (msg.role === "system") return null; // hoisted into instructions above
+  if (msg.role === "tool") {
+    return {
+      role: "tool",
+      tool_call_id: msg.tool_call_id ?? "",
+      content:
+        typeof msg.content === "string"
+          ? msg.content
+          : getMessageText(msg.content),
+    };
   }
+  if (msg.role === "assistant") {
+    const hasToolCalls =
+      Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+    const contentText =
+      typeof msg.content === "string"
+        ? msg.content
+        : getMessageText(msg.content);
+    return {
+      role: "assistant",
+      content: contentText && contentText.trim() !== "" ? contentText : null,
+      ...(hasToolCalls ? { tool_calls: msg.tool_calls } : {}),
+    };
+  }
+  // user
+  const rawContent = msg.content;
+  return {
+    role: "user",
+    content: toOpenAiContentParts(rawContent),
+  };
+};
 
-  return Object.fromEntries(
-    clientTools
+const toOpenAiTools = (clientTools) => {
+  if (!Array.isArray(clientTools)) return undefined;
+  const tools = clientTools
+    .filter((t) => t?.type === "function" && t.function?.name)
+    .map((t) => ({
+      type: "function",
+      function: {
+        name: t.function.name,
+        description: t.function.description ?? "",
+        parameters: t.function.parameters ?? { type: "object" },
+      },
+    }));
+  return tools.length > 0 ? tools : undefined;
+};
+
+const THINKING_DELTA_KEYS = (delta) => {
+  if (!delta || typeof delta !== "object") return "";
+  if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) {
+    return delta.reasoning;
+  }
+  if (
+    typeof delta.reasoning_content === "string" &&
+    delta.reasoning_content.length > 0
+  ) {
+    return delta.reasoning_content;
+  }
+  if (
+    Array.isArray(delta.reasoning_details) &&
+    delta.reasoning_details.length > 0
+  ) {
+    return delta.reasoning_details
       .filter(
-        (toolDef) => toolDef?.type === "function" && toolDef.function?.name,
+        (d) =>
+          d &&
+          typeof d === "object" &&
+          d.type === "reasoning.text" &&
+          typeof d.text === "string",
       )
-      .map((toolDef) => {
-        const toolName = toolDef.function.name;
-        const isSandboxTool = SANDBOX_TOOL_NAMES.includes(toolName);
-
-        return [
-          toolName,
-          tool({
-            description: toolDef.function.description,
-            inputSchema: jsonSchema(
-              toolDef.function.parameters || { type: "object" },
-            ),
-            // singleRound mode (client-side agent loop): the schema goes on
-            // the wire but no execute closure is attached, so the round ends
-            // with the tool calls handed back to the client instead of run
-            // here. Attaching execute anyway would run the tool inside the
-            // step — stepCountIs(1) does not prevent that (probed).
-            ...(withExecute
-              ? {
-                  execute: async (args) => {
-                    if (isSandboxTool) {
-                      if (!conversationId) {
-                        throw new Error(
-                          "conversationId is required for sandbox tools",
-                        );
-                      }
-                      const { executeCodeInSandbox, executeCommandInSandbox } =
-                        await import("@/lib/sandbox-executor");
-                      const sandboxOptions = { apiKey: e2bApiKey, sandboxId };
-                      if (toolName === "execute_code") {
-                        return executeCodeInSandbox(
-                          args?.code,
-                          conversationId,
-                          sandboxOptions,
-                        );
-                      }
-                      if (toolName === "run_command") {
-                        return executeCommandInSandbox(
-                          args?.command,
-                          conversationId,
-                          sandboxOptions,
-                        );
-                      }
-                    }
-                    return executeTool(toolName, args || {}, apiKey);
-                  },
-                }
-              : {}),
-          }),
-        ];
-      }),
-  );
-}
-
-async function handleToolResults(toolResults, send) {
-  for (const toolResult of toolResults) {
-    const output = getToolOutput(toolResult);
-    if (!output) continue;
-
-    if (toolResult.toolName === "web_search") {
-      send({
-        type: "search_result",
-        sources: output.citations || [],
-        content: output.answer || "",
-      });
-    }
-    if (SANDBOX_TOOL_NAMES.includes(toolResult.toolName) && output) {
-      send({
-        type: "sandbox_result",
-        tool: toolResult.toolName,
-        code: output.code || output.command || "",
-        stdout: output.stdout || "",
-        stderr: output.stderr || "",
-        exitCode: output.exitCode,
-        sandboxId: output.sandboxId || null,
-      });
-    }
+      .map((d) => d.text)
+      .join("");
   }
-}
+  return "";
+};
 
 export async function POST(req) {
   let body;
@@ -162,10 +162,6 @@ export async function POST(req) {
       think,
       max_tokens,
       agentMode,
-      conversationId,
-      e2bApiKey,
-      sandboxId,
-      singleRound,
     } = body;
 
     const now = new Date();
@@ -185,15 +181,10 @@ export async function POST(req) {
     let systemPrompt = `Current date: ${dateStr}. Current time: ${timeStr} UTC.`;
     const sanitizedMessages = sanitizeMessages(messages);
 
-    /**
-     * A system-role message is a legitimate thing for a client to send — the
-     * title generator sends one on every conversation — but the model SDK
-     * rejects it outright with `AI_InvalidPromptError: System messages are not
-     * allowed in the prompt or messages fields`, which surfaced as a 500 and a
-     * conversation titled "how do I reverse a lis...". The route is where the
-     * SDK's constraint is known, so the hoisting happens here rather than
-     * forcing every caller to fold its instructions into a user turn.
-     */
+    // A system-role message is a legitimate thing for a client to send — the
+    // title generator sends one on every conversation — but the prompts field
+    // wants instructions folded in. Hoist them here where the constraint is
+    // known, not in every caller.
     const systemInstructions = sanitizedMessages
       .filter((msg) => msg.role === "system")
       .map((msg) => getMessageText(msg.content))
@@ -202,79 +193,10 @@ export async function POST(req) {
       systemPrompt += `\n\n${systemInstructions.join("\n\n")}`;
     }
 
-    // AI SDK v7's ModelMessage is part-based: an assistant turn's tool calls
-    // are ToolCallPart entries in its content array, and a tool result is a
-    // ToolModelMessage whose content is an array of ToolResultPart. The client
-    // sends the OpenAI wire shape (assistant `tool_calls`, `role:"tool"` with
-    // `tool_call_id`), so the route converts here. Before the client-side
-    // agent loop, no tool messages ever reached the route, which is why the
-    // gap went unnoticed until singleRound rounds started carrying them.
-    const toolNameById = new Map();
-    for (const msg of sanitizedMessages) {
-      if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
-        for (const toolCall of msg.tool_calls) {
-          if (toolCall?.id && toolCall?.function?.name) {
-            toolNameById.set(toolCall.id, toolCall.function.name);
-          }
-        }
-      }
-    }
-
-    const processedMessages = sanitizedMessages
+    const wireMessages = sanitizedMessages
       .filter((msg) => msg.role !== "system")
-      .map((msg) => {
-        if (msg.role === "tool") {
-          return {
-            role: "tool",
-            content: [
-              {
-                type: "tool-result",
-                toolCallId: msg.tool_call_id,
-                toolName: toolNameById.get(msg.tool_call_id) ?? "unknown",
-                output: {
-                  type: "text",
-                  value:
-                    typeof msg.content === "string"
-                      ? msg.content
-                      : JSON.stringify(msg.content ?? ""),
-                },
-              },
-            ],
-          };
-        }
-
-        if (msg.role === "assistant") {
-          const hasThinking =
-            typeof msg.thinking === "string" && msg.thinking.trim() !== "";
-          const hasToolCalls =
-            Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
-
-          // Fast path: a plain assistant text turn with no thinking — the SDK
-          // accepts it as-is, unchanged from before.
-          if (!hasToolCalls && !hasThinking) return msg;
-
-          const parts = [];
-          if (hasThinking) {
-            parts.push({ type: "reasoning", text: msg.thinking });
-          }
-          if (typeof msg.content === "string" && msg.content.trim() !== "") {
-            parts.push({ type: "text", text: msg.content });
-          } else if (Array.isArray(msg.content)) {
-            parts.push(...msg.content);
-          }
-          for (const toolCall of msg.tool_calls ?? []) {
-            parts.push({
-              type: "tool-call",
-              toolCallId: toolCall.id,
-              toolName: toolCall.function?.name ?? "",
-              input: parseToolCallInput(toolCall.function?.arguments),
-            });
-          }
-          return { role: "assistant", content: parts };
-        }
-
-        return msg;
-      });
+      .map(toOpenAiMessage)
+      .filter((m) => m != null);
 
     if (artifacts) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;
@@ -287,63 +209,35 @@ export async function POST(req) {
       }
     }
 
-    const availableTools = toSdkTools(
-      clientTools,
-      apiKey,
-      conversationId,
-      agentMode ? e2bApiKey : null,
-      agentMode ? sandboxId : null,
-      // singleRound (client-side agent loop): schemas only, no execute — the
-      // round must end with tool calls handed back, not run here.
-      { withExecute: !singleRound },
-    );
+    const openAiTools = toOpenAiTools(clientTools);
 
-    const openrouter = createOpenRouter({
-      apiKey: apiKey,
+    const completionParams = {
+      model,
+      messages: [{ role: "system", content: systemPrompt }, ...wireMessages],
+      ...(openAiTools ? { tools: openAiTools, tool_choice: "auto" } : {}),
+      ...(max_tokens ? { max_tokens } : {}),
+      // Same OpenRouter reasoning/usage opt-ins the AI SDK provider turned
+      // providerOptions into wire fields: spread straight into the body.
+      ...(think === true
+        ? { include_reasoning: true, reasoning: { exclude: false } }
+        : { include_reasoning: false, reasoning: { exclude: true } }),
+    };
+
+    const client = new OpenAI({
+      apiKey,
       baseURL: "https://ai.hackclub.com/proxy/v1",
     });
 
-    const reasoningOpts =
-      think === true
-        ? { include_reasoning: true, reasoning: { exclude: false } }
-        : { include_reasoning: false, reasoning: { exclude: true } };
-
-    const providerOpts = {
-      ...reasoningOpts,
-    };
-
     if (stream === false) {
-      const result = await generateText({
-        model: openrouter.chat(model),
-        instructions: systemPrompt,
-        messages: processedMessages,
-        tools: availableTools,
-        ...(max_tokens ? { maxOutputTokens: max_tokens } : {}),
-        providerOptions: {
-          openrouter: providerOpts,
-        },
+      const result = await client.chat.completions.create({
+        ...completionParams,
+        stream: false,
       });
 
-      const sandboxResults = (result.toolResults || [])
-        .filter(
-          (toolResult) =>
-            SANDBOX_TOOL_NAMES.includes(toolResult.toolName) &&
-            toolResult.output,
-        )
-        .map((toolResult) => ({
-          type: "sandbox_result",
-          tool: toolResult.toolName,
-          code: toolResult.input?.code || toolResult.input?.command || "",
-          stdout: toolResult.output?.stdout || "",
-          stderr: toolResult.output?.stderr || "",
-          exitCode: toolResult.output?.exitCode,
-          sandboxId: toolResult.output?.sandboxId || null,
-        }));
-
+      const choice = result.choices?.[0];
       return Response.json({
-        text: result.text,
-        finishReason: result.finishReason,
-        ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
+        text: choice?.message?.content ?? "",
+        finishReason: choice?.finish_reason ?? null,
       });
     }
 
@@ -351,9 +245,6 @@ export async function POST(req) {
 
     const streamResponse = new ReadableStream({
       async start(controller) {
-        const toolCallIndexes = new Map();
-        const nextToolIndexRef = { current: 0 };
-
         const send = (payload) => {
           if (controller.desiredSize === null) return;
           controller.enqueue(
@@ -369,263 +260,142 @@ export async function POST(req) {
           }
         }, 5_000);
 
+        const startedAt = Date.now();
+        let firstOutputAt = null;
+        let generationStartAt = null;
+        let lastOutputAt = null;
+        let finishReason = null;
+        let usageObj = null;
+
         try {
-          const currentMessages = [...processedMessages];
-          const totalUsage = {
-            inputTokens: 0,
-            outputTokens: 0,
-            reasoningTokens: 0,
-          };
-          const startTime = Date.now();
-          const generationTiming = { startTime: null, endTime: null };
-          const onChunk = (event) => {
-            const chunk = event.chunk;
-
-            if (chunk.type === "text-delta") {
-              const now = Date.now();
-              if (generationTiming.startTime == null) {
-                generationTiming.startTime = now;
-              }
-              generationTiming.endTime = now;
-              send({
-                choices: [{ delta: { content: chunk.text } }],
-              });
-            } else if (chunk.type === "reasoning-delta") {
-              const now = Date.now();
-              if (generationTiming.startTime == null) {
-                generationTiming.startTime = now;
-              }
-              generationTiming.endTime = now;
-              send({
-                choices: [{ delta: { thinking: chunk.text } }],
-              });
-            } else if (chunk.type === "tool-input-start") {
-              const index = nextToolIndexRef.current;
-              nextToolIndexRef.current += 1;
-              toolCallIndexes.set(chunk.id, index);
-              send({
-                choices: [
-                  {
-                    delta: {
-                      tool_calls: [
-                        {
-                          index,
-                          id: chunk.id,
-                          function: {
-                            name: chunk.toolName,
-                            arguments: "",
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              });
-            } else if (chunk.type === "tool-input-delta") {
-              const index = toolCallIndexes.get(chunk.id);
-              if (index == null) return;
-              send({
-                choices: [
-                  {
-                    delta: {
-                      tool_calls: [
-                        {
-                          index,
-                          function: {
-                            arguments: chunk.delta,
-                          },
-                        },
-                      ],
-                    },
-                  },
-                ],
-              });
-            } else if (chunk.type === "tool-call") {
-              const hasExistingToolInput = toolCallIndexes.has(
-                chunk.toolCallId,
-              );
-              let index = toolCallIndexes.get(chunk.toolCallId);
-              if (index == null) {
-                index = nextToolIndexRef.current;
-                nextToolIndexRef.current += 1;
-                toolCallIndexes.set(chunk.toolCallId, index);
-              }
-
-              const toolCallPayload = hasExistingToolInput
-                ? {
-                    index,
-                    id: chunk.toolCallId,
-                  }
-                : {
-                    index,
-                    id: chunk.toolCallId,
-                    function: {
-                      name: chunk.toolName,
-                      arguments: JSON.stringify(chunk.input ?? {}),
-                    },
-                  };
-
-              send({
-                choices: [
-                  {
-                    delta: {
-                      tool_calls: [toolCallPayload],
-                    },
-                  },
-                ],
-              });
-            } else if (chunk.type === "error") {
-              send({
-                type: "error",
-                error:
-                  typeof chunk.error === "string"
-                    ? chunk.error
-                    : chunk.error?.message || "Stream error",
-              });
-            }
-          };
-
-          const onError = (error) => {
-            console.error(`[streamText onError] model=${model}:`, error);
-            send({
-              type: "error",
-              error: error?.message || "Stream error",
-            });
-          };
-
-          const onStepEnd = async (event) => {
-            await handleToolResults(event.toolResults || [], send);
-          };
-
-          const onEnd = async (event) => {
-            const usage = event.usage;
-            const cost =
-              event.finalStep?.providerMetadata?.openrouter?.usage?.cost ??
-              null;
-
-            const tokensPerSecond =
-              event.finalStep?.performance?.outputTokensPerSecond ?? 0;
-            const timeToFirstOutputMs =
-              event.finalStep?.performance?.timeToFirstOutputMs ?? null;
-
-            const endTime = Date.now();
-            const totalDuration = (endTime - startTime) / 1000;
-
-            // Terminal instrumentation: the client warns on a markerless EOF,
-            // so correlating these fields with that warning is how the leg a
-            // cut happens on gets identified (duration cap vs stall vs other).
-            console.log(
-              `[stream end] model=${model} finishReason=${event.finishReason} durationMs=${Math.round(totalDuration * 1000)} steps=${event.steps?.length ?? "?"} usage=${usage ? "yes" : "no"} singleRound=${singleRound === true}`,
-            );
-
-            if (usage) {
-              totalUsage.inputTokens += usage.inputTokens || 0;
-              totalUsage.outputTokens += usage.outputTokens || 0;
-              totalUsage.reasoningTokens +=
-                usage.outputTokenDetails?.reasoningTokens ||
-                usage.reasoningTokens ||
-                0;
-            }
-
-            const generationDurationMs =
-              generationTiming.startTime != null &&
-              generationTiming.endTime != null
-                ? generationTiming.endTime - generationTiming.startTime
-                : 0;
-            const generationDuration = generationDurationMs / 1000;
-
-            let finalCost = cost;
-            if (finalCost == null) {
-              const pricingMap = await getModelPricingMap();
-              const pricing = pricingMap[model];
-              if (pricing) {
-                finalCost = calcApiCost(
-                  pricing,
-                  totalUsage.inputTokens,
-                  totalUsage.outputTokens,
-                );
-              }
-            }
-
-            send({
-              type: "usage",
-              usage: {
-                model,
-                inputTokens: totalUsage.inputTokens,
-                outputTokens: totalUsage.outputTokens,
-                reasoningTokens: totalUsage.reasoningTokens,
-                totalTokens: totalUsage.inputTokens + totalUsage.outputTokens,
-                duration: totalDuration,
-                generationDuration,
-                tokensPerSecond: Math.round(tokensPerSecond * 100) / 100,
-                ...(timeToFirstOutputMs != null ? { timeToFirstOutputMs } : {}),
-                cost: finalCost,
-              },
-            });
-
-            // A clean upstream cut mid-answer ends with finishReason "other" —
-            // no upstream finish_reason ever arrived (probed: a normal end is
-            // stop/length/tool-calls). Writing [DONE] here would let the client
-            // commit the truncation as a complete answer: the one blind spot
-            // Libre has too. Close markerless instead so the client's continue
-            // logic resumes the answer (or replays it when nothing arrived).
-            if (event.finishReason === "other") {
-              console.warn(
-                `[stream end] finishReason=other after ${totalDuration}s — closing markerless so the client continues`,
-              );
-            } else {
-              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            }
-            clearInterval(keepalive);
-            try {
-              controller.close();
-            } catch {}
-          };
-
-          console.log(
-            `[stream start] model=${model} messages=${currentMessages.length} tools=${availableTools ? Object.keys(availableTools).length : 0} singleRound=${singleRound === true}`,
-          );
-          const result = streamText({
-            model: openrouter.chat(model),
-            instructions: systemPrompt,
-            messages: currentMessages,
-            tools: availableTools,
-            // singleRound (client-side agent loop): exactly one step, so the
-            // round ends at the first tool call / completion instead of
-            // running tools here and continuing server-side.
-            stopWhen: singleRound ? stepCountIs(1) : stepCountIs(100),
-            ...(max_tokens ? { maxOutputTokens: max_tokens } : {}),
-            providerOptions: {
-              openrouter: providerOpts,
-            },
-            allowSystemInMessages: true,
-            onChunk,
-            onStepEnd,
-            onEnd,
-            onError,
+          const stream = await client.chat.completions.create({
+            ...completionParams,
+            stream: true,
+            stream_options: { include_usage: true },
           });
 
-          await result.consumeStream();
+          for await (const chunk of stream) {
+            const choice = chunk.choices?.[0];
+            if (chunk.usage) usageObj = chunk.usage;
+            if (choice?.finish_reason != null)
+              finishReason = choice.finish_reason;
 
-          clearInterval(keepalive);
-          try {
-            controller.close();
-          } catch (_e4) {}
+            const delta = choice?.delta;
+            if (!delta) continue;
+
+            const text = typeof delta.content === "string" ? delta.content : "";
+            if (text && text.length > 0) {
+              if (generationStartAt == null) generationStartAt = Date.now();
+              lastOutputAt = Date.now();
+              firstOutputAt ??= Date.now();
+              send({ choices: [{ delta: { content: text } }] });
+            }
+
+            const thinking = THINKING_DELTA_KEYS(delta);
+            if (thinking) {
+              if (generationStartAt == null) generationStartAt = Date.now();
+              lastOutputAt = Date.now();
+              firstOutputAt ??= Date.now();
+              send({ choices: [{ delta: { thinking } }] });
+            }
+
+            if (
+              Array.isArray(delta.tool_calls) &&
+              delta.tool_calls.length > 0
+            ) {
+              if (generationStartAt == null) generationStartAt = Date.now();
+              lastOutputAt = Date.now();
+              firstOutputAt ??= Date.now();
+              send({ choices: [{ delta: { tool_calls: delta.tool_calls } }] });
+            }
+          }
         } catch (error) {
-          console.error(`[start error] model=${model}:`, error);
-          try {
-            send({
-              type: "error",
-              error:
-                error.message ||
-                `Stream failed for model "${model}" with ${messages.length} messages`,
-            });
-          } catch {}
+          console.error(`[stream] model=${model}:`, error);
+          send({
+            type: "error",
+            error:
+              typeof error?.message === "string"
+                ? error.message
+                : "Stream error",
+          });
           clearInterval(keepalive);
           try {
             controller.close();
           } catch {}
+          return;
         }
+
+        const endTime = Date.now();
+        const totalDuration = (endTime - startedAt) / 1000;
+        const generationDurationMs =
+          generationStartAt != null && lastOutputAt != null
+            ? Math.max(lastOutputAt - generationStartAt, 0)
+            : 0;
+        const generationDuration = generationDurationMs / 1000;
+        const outputTokens =
+          typeof usageObj?.completion_tokens === "number"
+            ? usageObj.completion_tokens
+            : 0;
+
+        console.log(
+          `[stream end] model=${model} finishReason=${finishReason ?? "none"} durationMs=${Math.round(totalDuration * 1000)} usage=${usageObj ? "yes" : "no"}`,
+        );
+
+        if (usageObj || finishReason != null) {
+          const cost =
+            typeof usageObj?.cost === "number" ? usageObj.cost : null;
+          let finalCost = cost;
+          if (finalCost == null) {
+            const pricingMap = await getModelPricingMap();
+            const pricing = pricingMap[model];
+            if (pricing) {
+              finalCost = calcApiCost(
+                pricing,
+                usageObj?.prompt_tokens ?? 0,
+                outputTokens,
+              );
+            }
+          }
+          send({
+            type: "usage",
+            usage: {
+              model,
+              inputTokens: usageObj?.prompt_tokens ?? 0,
+              outputTokens,
+              reasoningTokens:
+                usageObj?.completion_tokens_details?.reasoning_tokens ?? 0,
+              totalTokens:
+                usageObj?.total_tokens ??
+                (usageObj?.prompt_tokens ?? 0) +
+                  (usageObj?.completion_tokens ?? 0),
+              duration: totalDuration,
+              generationDuration,
+              tokensPerSecond:
+                generationDuration > 0
+                  ? Math.round((outputTokens / generationDuration) * 100) / 100
+                  : 0,
+              ...(firstOutputAt != null
+                ? { timeToFirstOutputMs: firstOutputAt - startedAt }
+                : {}),
+              cost: finalCost,
+            },
+          });
+        }
+
+        if (finishReason == null) {
+          // Upstream closed without ever stating a finish reason: a cut, not
+          // a completion. Trace, then close markerless so the client
+          // continue-logic owns the retry semantics guaranteed by finding 17.
+          console.warn(
+            `[stream end] no finish_reason after ${Math.round(totalDuration * 1000)}ms — closing markerless so the client continues`,
+          );
+        } else {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        }
+        clearInterval(keepalive);
+        try {
+          controller.close();
+        } catch {}
       },
     });
 
