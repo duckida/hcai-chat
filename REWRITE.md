@@ -35,9 +35,13 @@ streams `tool_calls` frames has them executed via `executeClientTool`
 (`/api/sandbox` for E2B, `/api/tools` otherwise — keys stay server-side), the
 assistant entry and tool result messages are appended to the *local* round
 history, and the next round re-uses that history. The persisted conversation
-stays a single merged assistant message perturn — no agent bubble per round.
-Usage is summed across rounds into the final message. Unlimited rounds by
-default (Libre's `tool_max_iterations` pattern).
+stays a single merged assistant message per turn — no agent bubble per round —
+but that message carries the turn's `tool_calls`, and the tool records are
+committed right after it, so the **next** turn's request carries the search
+and sandbox output the model actually worked from. Tool records are invisible
+in the thread (`hasRenderableContent` filters `role:"tool"`), so the merge is
+cosmetic-free. Usage is summed across rounds into the final message. Unlimited
+rounds by default (Libre's `tool_max_iterations` pattern).
 
 **C3 — landed:** route.js moved from the AI SDK provider
 (`@openrouter/ai-sdk-provider` + `streamText`/`generateText` + stopWhen) to the

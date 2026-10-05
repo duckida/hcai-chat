@@ -309,6 +309,13 @@ export function useChatTurn({
       let metrics = null;
       let totalMetrics = null;
       const sandboxResults = [];
+      // Every round's tool calls and results, committed alongside the merged
+      // assistant message so the *next* turn's request carries the search and
+      // sandbox context the model actually saw this turn. Tool records are
+      // invisible in the thread (messages.js filters role:"tool"), so the turn
+      // still reads as one agent message.
+      const turnToolCalls = [];
+      const turnToolMessages = [];
       isStreamingComplete.current = false;
       pendingReplayClear.current = false;
       // Per-round agent-loop state, reset at the top of every round.
@@ -472,11 +479,19 @@ export function useChatTurn({
                 }
               : {}),
             ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
+            // The merged message keeps the turn's tool calls so the tool
+            // records committed with it stay a valid pair on the wire — the
+            // next turn's request then carries the search/sandbox output the
+            // model actually worked from, not just this text.
+            ...(turnToolCalls.length > 0 ? { tool_calls: turnToolCalls } : {}),
             metrics,
           };
 
           clearTurnDeltas({ isLoading: false });
-          const finalMessages = commitMessages([assistantMessage]);
+          const finalMessages = commitMessages([
+            assistantMessage,
+            ...turnToolMessages,
+          ]);
 
           const currentConversation = conversationsRef.current.find(
             (c) => c.id === currentId,
@@ -836,20 +851,28 @@ export function useChatTurn({
             (prevCum.thinking ?? "").length,
           );
           prevCum = cum;
+          const roundToolCallsWire = roundToolCalls.map((call) => ({
+            id: call.id,
+            type: "function",
+            function: {
+              name: call.name,
+              arguments: call.arguments,
+            },
+          }));
+          // Keep the exchange for the commit: the loop's local history is
+          // discarded once the turn ends, and without this the next turn's
+          // request would carry the answer text but none of the tool output
+          // behind it.
+          turnToolCalls.push(...roundToolCallsWire);
+          turnToolMessages.push(...toolMessages);
+
           roundMessages = [
             ...roundMessages,
             {
               role: "assistant",
               content: roundContent,
               ...(roundThinking ? { thinking: roundThinking } : {}),
-              tool_calls: roundToolCalls.map((call) => ({
-                id: call.id,
-                type: "function",
-                function: {
-                  name: call.name,
-                  arguments: call.arguments,
-                },
-              })),
+              tool_calls: roundToolCallsWire,
             },
             ...toolMessages,
           ];

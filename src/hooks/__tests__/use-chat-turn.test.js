@@ -123,6 +123,17 @@ function makeAbortableStreamResponse(partialText, deltaCount) {
   };
 }
 
+// A tool turn commits one merged assistant message followed by the tool
+// records it kept for context (invisible in the thread), so the answer is the
+// LAST assistant — not the last message.
+const finalAssistantOf = (result) =>
+  result.result.current.conversations.messages
+    .filter((m) => m.role === "assistant")
+    .at(-1);
+
+const toolRecordsOf = (result) =>
+  result.result.current.conversations.messages.filter((m) => m.role === "tool");
+
 // Conversation state lives in the conversations store and turn state in the
 // turn store, so the two hooks observe the same modules even though they are
 // separate callers.
@@ -486,11 +497,22 @@ describe("useChatTurn", () => {
         // the tool, and the text that arrived afterwards must not drag it.
         { tool: "javascript_calculator", at: prefix.length, label: "5 + 5" },
       ]);
-      expect(round).not.toHaveProperty("tool_calls");
+      // The merged message keeps the turn's tool_calls so the tool record
+      // committed after it stays a valid pair for the next request.
+      expect(round.tool_calls).toEqual([
+        {
+          id: "call_1",
+          type: "function",
+          function: {
+            name: "javascript_calculator",
+            arguments: '{"expression":"5 + 5"}',
+          },
+        },
+      ]);
 
-      expect(
-        result.result.current.conversations.messages.at(-1).content,
-      ).toBe("The answer is 10.");
+      expect(finalAssistantOf(result).content).toBe("The answer is 10.");
+      // The tool result is kept as context, not as its own bubble.
+      expect(toolRecordsOf(result)).toHaveLength(1);
     });
 
     it("fills a search chip with domains once the results arrive", async () => {
@@ -580,9 +602,9 @@ describe("useChatTurn", () => {
         status: "complete",
         stdout: "1\n",
       });
-      expect(
-        result.result.current.conversations.messages.at(-1).content,
-      ).toBe("It printed.");
+      expect(finalAssistantOf(result).content).toBe("It printed.");
+      // The sandbox output is kept as context on the turn, invisibly.
+      expect(toolRecordsOf(result)).toHaveLength(1);
     });
   });
 
@@ -1029,12 +1051,26 @@ describe("useChatTurn", () => {
       content: "42",
     });
 
-    // The persisted thread has one merged assistant row at the end: the tool
-    // round records live only in the request history the loop sent upstream.
+    // The persisted thread has one merged assistant row plus the tool record it
+    // kept for context (invisible in the thread).
     const messages = result.result.current.conversations.messages;
-    expect(messages).toHaveLength(2);
+    expect(messages).toHaveLength(3);
     expect(messages[1].content).toBe("The answer is 4.");
-    expect(messages[1]).not.toHaveProperty("tool_calls");
+    expect(messages[1].tool_calls).toEqual([
+      {
+        id: "call_1",
+        type: "function",
+        function: {
+          name: "javascript_calculator",
+          arguments: '{"expression":"2+2"}',
+        },
+      },
+    ]);
+    expect(messages[2]).toMatchObject({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "42",
+    });
   });
 
   it("feeds a tool error back to the model instead of failing the turn", async () => {
@@ -1062,9 +1098,7 @@ describe("useChatTurn", () => {
       tool_call_id: "call_1",
       content: "Error: boom",
     });
-    expect(
-      result.result.current.conversations.messages.at(-1).content,
-    ).toBe("Could not compute.");
+    expect(finalAssistantOf(result).content).toBe("Could not compute.");
     expect(result.result.current.stream.streamingError).toBeNull();
   });
 
@@ -1123,11 +1157,17 @@ describe("useChatTurn", () => {
       stdout: "1\n",
       sandboxId: "sbx-1",
     });
-    const finalMessage =
-      result.result.current.conversations.messages.at(-1);
+    const finalMessage = finalAssistantOf(result);
     expect(finalMessage.sandboxResults).toHaveLength(1);
     expect(finalMessage.sandboxResults[0]).toMatchObject({
       tool: "execute_code",
+      exitCode: 0,
+    });
+    // The sandbox output is committed as a tool record too, so the next
+    // turn's request carries it.
+    expect(toolRecordsOf(result)).toHaveLength(1);
+    expect(JSON.parse(toolRecordsOf(result)[0].content)).toMatchObject({
+      stdout: "1\n",
       exitCode: 0,
     });
     const conv = result.result.current.conversations.conversations.find(
@@ -1161,8 +1201,7 @@ describe("useChatTurn", () => {
       await result.result.current.stream.send("what is 1+1?", []);
     });
 
-    const finalMessage =
-      result.result.current.conversations.messages.at(-1);
+    const finalMessage = finalAssistantOf(result);
     expect(finalMessage.metrics.inputTokens).toBe(150);
     expect(finalMessage.metrics.outputTokens).toBe(12);
     expect(finalMessage.metrics.totalTokens).toBe(162);
@@ -1172,5 +1211,65 @@ describe("useChatTurn", () => {
       (c) => c.id === result.result.current.conversations.activeConversation,
     );
     expect(conv.contextUsage).toBe(162);
+  });
+
+  it("carries the search context into the NEXT turn's request", async () => {
+    // The point of keeping tool records on the merged message: a follow-up
+    // question must be answered from what the model actually read, not from
+    // an answer paragraph that may have summarized it away.
+    const fetchMock = mockLoopFetch({
+      chatRounds: [
+        [
+          toolCall(0, "call_1", "web_search", '{"query":"libre office"}'),
+          "data: [DONE]\n\n",
+        ],
+        [delta("Libre is free software."), usageFrame(50, 7), "data: [DONE]\n\n"],
+        // The follow-up turn is a plain stream with no tool call.
+        [delta("It ships under the MPL."), usageFrame(20, 4), "data: [DONE]\n\n"],
+      ],
+      toolsResponse: Response.json({
+        tool: "web_search",
+        result: "LibreOffice is a free and open-source office suite.",
+        rawResult: {
+          answer: "LibreOffice is a free and open-source office suite.",
+          citations: [{ title: "libre", url: "https://libreoffice.org" }],
+        },
+        sources: ["https://libreoffice.org"],
+        metadata: { query: "libre office", success: true },
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await setup({ webSearchEnabled: true });
+
+    await act(async () => {
+      await result.result.current.stream.send("what is libre office?", []);
+    });
+
+    await act(async () => {
+      await result.result.current.stream.send("and what license?", []);
+    });
+
+    // The last /api/chat request is the follow-up turn's: it must carry the
+    // assistant tool_calls AND the search result it produced.
+    const followUp = JSON.parse(
+      fetchMock.mock.calls.at(-1)[1].body,
+    ).messages;
+    const assistantTurn = followUp.find(
+      (m) => m.role === "assistant" && m.tool_calls,
+    );
+    expect(assistantTurn).toBeDefined();
+    expect(assistantTurn.tool_calls[0].function.name).toBe("web_search");
+
+    const toolTurn = followUp.find((m) => m.role === "tool");
+    expect(toolTurn).toBeDefined();
+    expect(toolTurn.tool_call_id).toBe("call_1");
+    // The search content itself — not just the answer sentence.
+    expect(toolTurn.content).toContain("free and open-source office suite");
+
+    // The tool message must follow the assistant that called it, or the
+    // provider rejects the history.
+    expect(
+      followUp.indexOf(toolTurn),
+    ).toBeGreaterThan(followUp.indexOf(assistantTurn));
   });
 });
