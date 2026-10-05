@@ -857,6 +857,10 @@ describe("streamChatCompletion", () => {
     expect(continueBody.messages).toHaveLength(3);
     expect(continueBody.messages[0]).toEqual({ role: "user", content: "hi" });
     expect(continueBody.messages[1]).toMatchObject({ role: "assistant" });
+    // `thinking` is what keeps messages.js's sanitizer from dropping this
+    // turn server-side, leaving the model with the continue instruction and
+    // no previous content — the "I have no actual previous content" reply.
+    expect(continueBody.messages[1].thinking).toBe("hmm");
     expect(continueBody.messages[1].reasoning_details).toEqual([
       { type: "reasoning.text", text: "hmm" },
     ]);

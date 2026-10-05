@@ -577,8 +577,15 @@ async function continuePartial(body, model, handlers, mirror) {
             {
               role: "assistant",
               content: partial || "",
+              // `thinking` is what messages.js's sanitizer recognizes as
+              // sendable content. Without it a thinking-only continuation
+              // turn is DROPPED server-side, and the model receives the
+              // continue instruction with no turn to continue — the "I have
+              // no actual previous content" reply. `reasoning_details` is
+              // what goes on the wire so the model resumes the reasoning.
               ...(thinkingPartial
                 ? {
+                    thinking: thinkingPartial,
                     reasoning_details: [
                       { type: "reasoning.text", text: thinkingPartial },
                     ],

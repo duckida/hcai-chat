@@ -122,9 +122,12 @@ judged on its own evidence. Precedence: empty → replay; marker → complete; a
 delivered error frame → complete and already surfaced, never retried;
 content or a search/sandbox `serverEvent` without the marker → **continue**;
 thinking-only without the marker → **continue** too (the assistant turn is sent
-back with `reasoning_details` attached so the model resumes its reasoning, not
-restarts it); tool-call-only without the marker → replay (nothing a text
-continuation could anchor to). Error bodies are not
+back with BOTH `thinking` and `reasoning_details` attached: `thinking` is what
+`messages.js`'s sanitizer recognizes, so without it the route drops the very
+turn being continued and the model replies "I have no actual previous
+content"; `reasoning_details` is what resumes the reasoning). Tool-call-only
+without the marker → replay (nothing a text continuation could anchor to).
+Error bodies are not
 guaranteed to be JSON — a proxy answers a dead upstream with plain text, so
 `postChat` reads the body as text first and surfaces `Chat API Error (502) …
 — Bad Gateway` instead of a JSON parse crash (finding 16). A failed turn
