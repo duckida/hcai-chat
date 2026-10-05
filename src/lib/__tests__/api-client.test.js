@@ -816,9 +816,10 @@ describe("streamChatCompletion", () => {
 
   // ---- continuation mechanics ---------------------------------------------
 
-  it("replays a stream that delivered only thinking without [DONE]", async () => {
-    // No content, so there is nothing a continuation could anchor to: this
-    // is the one cut ending that still gets a whole-answer replay.
+  it("continues a thinking-only stream with its reasoning attached", async () => {
+    // Thinking without the [DONE] marker is still a partial: the continuation
+    // sends the interrupted reasoning back so the model resumes where it
+    // stopped thinking rather than restarting the turn.
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -829,7 +830,8 @@ describe("streamChatCompletion", () => {
       )
       .mockResolvedValueOnce(
         makeStreamResponse([
-          'data: {"choices":[{"delta":{"content":"regenerated"}}]}\n\n',
+          'data: {"choices":[{"delta":{"thinking":"still thinking"}}]}\n\n',
+          'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
           "data: [DONE]\n\n",
         ]),
       );
@@ -849,11 +851,20 @@ describe("streamChatCompletion", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    // The replay re-sends the original messages: no partial, no instruction.
-    const replayBody = JSON.parse(fetchMock.mock.calls[1][1].body);
-    expect(replayBody.messages).toEqual([{ role: "user", content: "hi" }]);
-    expect(onFallbackStart).toHaveBeenCalledTimes(1);
-    expect(onChunk).toHaveBeenCalledWith("regenerated", "content");
+    const continueBody = JSON.parse(fetchMock.mock.calls[1][1].body);
+    // The continuation replays original messages + the interrupted assistant
+    // turn carrying its reasoning_details, not a fresh replay.
+    expect(continueBody.messages).toHaveLength(3);
+    expect(continueBody.messages[0]).toEqual({ role: "user", content: "hi" });
+    expect(continueBody.messages[1]).toMatchObject({ role: "assistant" });
+    expect(continueBody.messages[1].reasoning_details).toEqual([
+      { type: "reasoning.text", text: "hmm" },
+    ]);
+    expect(continueBody.messages[2].role).toBe("user");
+    expect(onFallbackStart).not.toHaveBeenCalled();
+    expect(onChunk).toHaveBeenCalledWith("hmm", "thinking");
+    expect(onChunk).toHaveBeenCalledWith("still thinking", "thinking");
+    expect(onChunk).toHaveBeenCalledWith("answer", "content");
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
   });

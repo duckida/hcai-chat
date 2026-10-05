@@ -77,10 +77,18 @@ const toOpenAiMessage = (msg) => {
       typeof msg.content === "string"
         ? msg.content
         : getMessageText(msg.content);
+    const hasReasoningDetails =
+      Array.isArray(msg.reasoning_details) && msg.reasoning_details.length > 0;
     return {
       role: "assistant",
       content: contentText && contentText.trim() !== "" ? contentText : null,
       ...(hasToolCalls ? { tool_calls: msg.tool_calls } : {}),
+      // Continuations send the interrupted partial back with its reasoning
+      // attached so the model resumes from where its thinking stopped rather
+      // than restarting it.
+      ...(hasReasoningDetails
+        ? { reasoning_details: msg.reasoning_details }
+        : {}),
     };
   }
   // user

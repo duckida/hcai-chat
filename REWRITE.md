@@ -426,7 +426,7 @@ history.
       exactly-one-retry invariant is unchanged: never a third attempt. (Finding
       17 later replaced this replay *for cuts that delivered content* — those
       continue instead — but the mapping below still governs the one replay of
-      an empty/thinking-only ending and its own failures.) Outcome
+      an empty ending and its own failures.) Outcome
       mapping: delivered → the router's normal completion; cut again →
       `onError(… cut off before it finished)`; empty →
       `onError(No response received from model "…")` — never `onComplete`,
@@ -468,9 +468,12 @@ history.
       concern behind finding 15's "never replay over a tool result" no longer
       applies — a search cut now continues visibly instead of completing
       silently. The replay still exists for endings with nothing to continue
-      from (empty or thinking-only: no partial to anchor to) and still streams
+      from (empty: no partial to anchor to) and still streams
       (finding 16), and a replay that is itself cut hands its own partial to
-      the continuation instead of regenerating a third time.
+      the continuation instead of regenerating a third time. A thinking-only
+      cut now continues as well: the assistant turn goes back with
+      `reasoning_details` attached so the model resumes its reasoning rather
+      than restarting it.
     - **Seams and loops are bounded.** A model that ignores the instruction
       and repeats the sentence it was shown loses the repeat: a leg's first
       ~160 chars are held against the partial's last 240 and the matched
@@ -491,7 +494,8 @@ history.
       body, leg budget, empty-continued-again budget, seam trim,
       replay-chains-into-continue; four rewritten from replay semantics:
       mid-stream reset, content cut, tool-result cut, repeatedly-cut budget;
-      plus a new thinking-only-dispatch pin) and three `use-chat-turn`
+      the thinking-only cut rewritten from replay to continue-with-
+      reasoning_details) and three `use-chat-turn`
       rewrites — against six negative controls, each break-verified by grep
       first: dispatch `continue → retry` (the eight continue tests red), trim
       neutered (only the trim test red), leg budget `99` (budget test red at
@@ -956,7 +960,7 @@ Mined from `git log`. Every row must have a test or an explicit acceptance check
 - [x] Stream renders **only** for the conversation that initiated it — never for the one you switched to. (`8aa44a6`) — `use-chat-turn` "scopes the stream to its conversation and clears it on reset"; `MessageList` "hides the stream, its text, and its placeholder when they belong to another conversation"
 - [x] No stale streaming tail after the assistant message persists, or after an error. (`8aa44a6`) — `MessageList` "does not render a stale streaming tail once the turn is persisted" / "...beside an error card"; turn store "cancels the pending frame when the turn is cleared"
 - [x] SSE fallback does **not** duplicate the response: the one whole-answer replay clears the partial accumulators on its first chunk, not before — and a continuation never clears at all, it appends to what it already sent. (`74b8ad3`, finding 17) — `use-chat-turn` "does not duplicate the response when a dropped stream continues" / "appends the continuation to the partial when the stream is cut"; `api-client` "continues from the partial after a mid-stream reset, with no replay clear"
-- [x] A clean EOF that delivered nothing replays **exactly once**; server-side tool results and error frames count as delivered and are never replayed over — a tool-result cut continues (the client never re-runs the tool), an error frame completes as already surfaced. (`74b8ad3`, `a957c70`, finding 17) — `api-client` "retries with a fresh streamed request when nothing was delivered" / "does not retry a stream that delivered thinking" / "does not retry after a server error event that arrived without [DONE]" / "continues after a tool result that arrived without [DONE]"
+- [x] A clean EOF that delivered nothing replays **exactly once**; server-side tool results and error frames count as delivered and are never replayed over — a tool-result cut continues (the client never re-runs the tool), an error frame completes as already surfaced, and a thinking-only cut continues with its `reasoning_details` attached so the model resumes reasoning. (`74b8ad3`, `a957c70`, finding 17) — `api-client` "retries with a fresh streamed request when nothing was delivered" / "does not retry a stream that delivered thinking" / "continues a thinking-only stream with its reasoning attached" / "does not retry after a server error event that arrived without [DONE]" / "continues after a tool result that arrived without [DONE]"
 - [x] A clean EOF after delivered content **without the server's `[DONE]` marker is a truncation, not a completion**, and continues under leg budgets — never completes silently, never regenerates the answer; an EOF after the marker completes. A failed turn commits the partial text it had alongside the error, never `content: ""`, and a silent connection past 15s is cancelled into that same path. — findings 15 + 17: `sse-parser` `SSE_DONE` tests, `api-client` truncation / precedence / stall / visibility / continuation tests, `use-chat-turn` partial-preservation tests, `MessageList` partial-plus-card test, smoke 21
 - [x] The one replay is **streamed** and judged on its own evidence; a cut that delivered text is **continued** instead (bounded legs, seam trim, empty-continued-again) — both endings commit an error with the partial, never `onComplete` for a truncated answer, never a regeneration loop — and a proxy's non-JSON error body surfaces as an HTTP error, not a JSON parse crash. — findings 16 + 17: `api-client` "uses the sanitized messages for the streamed retry too" / "retries with a fresh streamed request when nothing was delivered" / "keeps continuing a repeatedly cut stream only up to the leg budget" / "continues an empty leg again, then reports no response" / "surfaces a plain-text proxy error instead of a JSON parse crash", `use-chat-turn` "stores an error placeholder when the response is empty", smoke 22
 - [x] The response is not truncated and prior conversation context is not lost across turns. (`970d4da`) — truncation: `use-chat-turn` "commits the final deltas even if a chunk has not re-rendered". Across turns: "sends the whole conversation, not just the newest message" asserts the second request's `messages` are `["first question", "ok", "and then?"]`

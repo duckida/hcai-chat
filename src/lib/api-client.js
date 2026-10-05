@@ -295,9 +295,11 @@ const STALL_TIMEOUT_MS = 15_000;
  * search/sandbox result without the marker is a connection that died
  * mid-answer: "continue", because there is now a partial worth continuing
  * — and continuing never re-runs the search or tool work, which is what
- * used to force those turns to complete silently (finding 17). Thinking or
- * tool-call frames without the marker leave nothing a continuation could
- * anchor to, so they "retry" exactly as before.
+ * used to force those turns to complete silently (finding 17). A thinking-only
+ * tail is now also "continue": the assistant turn sent back with its
+ * reasoning_details attached lets the model resume thinking where the cut
+ * happened; only a tool-call-only ending (nothing that could anchor a text
+ * continuation) still falls back to "retry".
  *
  * @returns {Promise<"empty" | "complete" | "continue" | "retry">}
  */
@@ -317,7 +319,9 @@ async function classifyEnding(router, onComplete) {
   console.warn(
     "[stream] EOF without the [DONE] marker after delivered content — the response is truncated",
   );
-  return router.delivered.content || router.delivered.serverEvent
+  return router.delivered.content ||
+    router.delivered.serverEvent ||
+    router.delivered.thinking
     ? "continue"
     : "retry";
 }
@@ -539,8 +543,9 @@ function createOverlapFilter(tail) {
  * outright). An exhausted budget reports the same errors the replay path
  * always did, so the partial commits alongside them.
  *
- * @param {{ content: string }} mirror this turn's delivered content — the
- *   partial to continue from, and the tail the overlap filter guards
+ * @param {{ content: string; thinking: string }} mirror this turn's delivered
+ *   content and thinking — the partial to continue from, and the tails the
+ *   overlap filters guard
  */
 async function continuePartial(body, model, handlers, mirror) {
   const {
@@ -564,9 +569,24 @@ async function continuePartial(body, model, handlers, mirror) {
     lastLegThrew = false;
 
     const partial = mirror.content;
+    const thinkingPartial = mirror.thinking;
     const messages = [
       ...body.messages,
-      ...(partial ? [{ role: "assistant", content: partial }] : []),
+      ...(partial || thinkingPartial
+        ? [
+            {
+              role: "assistant",
+              content: partial || "",
+              ...(thinkingPartial
+                ? {
+                    reasoning_details: [
+                      { type: "reasoning.text", text: thinkingPartial },
+                    ],
+                  }
+                : {}),
+            },
+          ]
+        : []),
       { role: "user", content: CONTINUE_PROMPT },
     ];
     // route.js rejects more than 200 messages; a history already at the cap
@@ -575,17 +595,27 @@ async function continuePartial(body, model, handlers, mirror) {
 
     // Only the seam can repeat: hold the leg's first bytes until the trim
     // window fills, trim against the partial, then stream untouched.
+    // Both content and reasoning get their own filters so a thinking-only
+    // interruption continues the reasoning, not just the prose.
     const filter = createOverlapFilter(partial.slice(-CONTINUE_TRIM_WINDOW));
+    const thinkingFilter = createOverlapFilter(
+      thinkingPartial.slice(-CONTINUE_TRIM_WINDOW),
+    );
     const emit = (text) => {
       // handlers.onChunk mirrors content into the partial, so the next leg
       // continues from this leg's text too.
       if (text) onChunk(text, "content");
     };
+    const emitThinking = (text) => {
+      if (text) onChunk(text, "thinking");
+    };
     const legRouter = createFrameRouter({
       model,
       onChunk: (chunk, type) => {
-        if (type !== "content") return onChunk(chunk, type);
-        emit(filter.push(chunk));
+        if (type === "content") return emit(filter.push(chunk));
+        if (type === "thinking")
+          return emitThinking(thinkingFilter.push(chunk));
+        return onChunk(chunk, type);
       },
       onError,
       onToolCall,
@@ -596,6 +626,7 @@ async function continuePartial(body, model, handlers, mirror) {
     const flush = () => emit(filter.flush());
     const finish = async () => {
       flush();
+      emitThinking(thinkingFilter.flush());
       await onComplete?.();
     };
 
@@ -615,6 +646,7 @@ async function continuePartial(body, model, handlers, mirror) {
       // Held bytes must land before the next leg — or before the error
       // below commits — never after.
       flush();
+      emitThinking(thinkingFilter.flush());
     }
     lastLegDelivered = legRouter.anyDelivered();
 
@@ -715,16 +747,17 @@ export const streamChatCompletion = async ({
     singleRound,
   });
 
-  // The mirror is this turn's delivered content, for the one place that
-  // needs it: a continuation must send back the partial it is continuing.
-  // Every router is fed through the wrapper below, so the mirror stays in
-  // step with the text on screen — including across a replay, whose first
-  // chunk clears the store's partial (pendingReplayClear) while the mirror
-  // keeps accumulating.
-  const mirror = { content: "" };
+  // The mirror is this turn's delivered content and thinking, for the one
+  // place that needs them: a continuation must send back the partial it is
+  // continuing. Every router is fed through the wrapper below, so the mirror
+  // stays in step with what is on screen — including across a replay, whose
+  // first chunk clears the store's partial (pendingReplayClear) while the
+  // mirror keeps accumulating.
+  const mirror = { content: "", thinking: "" };
   const mirroredHandlers = {
     onChunk: (chunk, type) => {
       if (type === "content") mirror.content += chunk;
+      if (type === "thinking") mirror.thinking += chunk;
       onChunk(chunk, type);
     },
     onError,
