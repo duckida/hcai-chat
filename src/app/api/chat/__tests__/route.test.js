@@ -921,3 +921,70 @@ describe("finishReason=other cut detection", () => {
     expect(out).toContain("[DONE]");
   });
 });
+
+describe("tool message conversion (client-side agent loop)", () => {
+  it("converts OpenAI tool messages to AI SDK ModelMessage parts the schema accepts", async () => {
+    const { streamText } = await import("ai");
+    // The test mocks "ai", so reach for the real schema via importActual.
+    const { modelMessageSchema } = await vi.importActual("ai");
+    await setupStreamText({ end: [{}] });
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [
+          { role: "user", content: "what is 2+2?" },
+          {
+            role: "assistant",
+            content: "",
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: {
+                  name: "javascript_calculator",
+                  arguments: '{"expression":"2+2"}',
+                },
+              },
+            ],
+          },
+          { role: "tool", content: "42", tool_call_id: "call_1" },
+        ],
+        apiKey: "k",
+        singleRound: true,
+      }),
+    );
+    const call = streamText.mock.calls[0][0];
+    const msgs = call.messages;
+
+    // assistant: tool_calls becomes ToolCallPart entries in content
+    expect(msgs[1].role).toBe("assistant");
+    expect(msgs[1].content).toEqual([
+      {
+        type: "tool-call",
+        toolCallId: "call_1",
+        toolName: "javascript_calculator",
+        input: { expression: "2+2" },
+      },
+    ]);
+
+    // tool: wrapped into a ToolResultPart with the name looked up by id
+    expect(msgs[2].role).toBe("tool");
+    expect(msgs[2].content).toEqual([
+      {
+        type: "tool-result",
+        toolCallId: "call_1",
+        toolName: "javascript_calculator",
+        output: { type: "text", value: "42" },
+      },
+    ]);
+
+    // The converted messages pass the real AI SDK ModelMessage schema — this
+    // is the exact validation that rejected the OpenAI-shaped messages with
+    // "Invalid prompt: The messages do not match the ModelMessage[] schema."
+    // (Per-message safeParse: the SDK's schema is zod v4, so we cannot wrap it
+    // in a v3 z.array here.)
+    for (const msg of msgs) {
+      expect(modelMessageSchema.safeParse(msg).success).toBe(true);
+    }
+  });
+});

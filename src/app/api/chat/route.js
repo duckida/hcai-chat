@@ -24,6 +24,21 @@ IMPORTANT RULES:
 - execute_code has a 30-second timeout; run_command has a 120-second timeout (enough for npm install).
 - Install packages with 'npm install <package>' via run_command first, then import them in execute_code.`;
 
+/**
+ * The client sends tool-call arguments as a JSON string on the wire; AI SDK's
+ * ToolCallPart wants a parsed object. Fall back to {} so a malformed payload
+ * surfaces as a tool error downstream rather than a schema crash.
+ */
+function parseToolCallInput(argumentsJson) {
+  if (argumentsJson == null) return {};
+  if (typeof argumentsJson === "object") return argumentsJson;
+  try {
+    return JSON.parse(argumentsJson);
+  } catch {
+    return {};
+  }
+}
+
 function toSdkTools(
   clientTools,
   apiKey,
@@ -187,18 +202,77 @@ export async function POST(req) {
       systemPrompt += `\n\n${systemInstructions.join("\n\n")}`;
     }
 
+    // AI SDK v7's ModelMessage is part-based: an assistant turn's tool calls
+    // are ToolCallPart entries in its content array, and a tool result is a
+    // ToolModelMessage whose content is an array of ToolResultPart. The client
+    // sends the OpenAI wire shape (assistant `tool_calls`, `role:"tool"` with
+    // `tool_call_id`), so the route converts here. Before the client-side
+    // agent loop, no tool messages ever reached the route, which is why the
+    // gap went unnoticed until singleRound rounds started carrying them.
+    const toolNameById = new Map();
+    for (const msg of sanitizedMessages) {
+      if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+        for (const toolCall of msg.tool_calls) {
+          if (toolCall?.id && toolCall?.function?.name) {
+            toolNameById.set(toolCall.id, toolCall.function.name);
+          }
+        }
+      }
+    }
+
     const processedMessages = sanitizedMessages
       .filter((msg) => msg.role !== "system")
       .map((msg) => {
-        if (msg.role === "assistant" && msg.thinking) {
+        if (msg.role === "tool") {
           return {
-            ...msg,
+            role: "tool",
             content: [
-              { type: "reasoning", text: msg.thinking },
-              { type: "text", text: msg.content || "" },
+              {
+                type: "tool-result",
+                toolCallId: msg.tool_call_id,
+                toolName: toolNameById.get(msg.tool_call_id) ?? "unknown",
+                output: {
+                  type: "text",
+                  value:
+                    typeof msg.content === "string"
+                      ? msg.content
+                      : JSON.stringify(msg.content ?? ""),
+                },
+              },
             ],
           };
         }
+
+        if (msg.role === "assistant") {
+          const hasThinking =
+            typeof msg.thinking === "string" && msg.thinking.trim() !== "";
+          const hasToolCalls =
+            Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
+
+          // Fast path: a plain assistant text turn with no thinking — the SDK
+          // accepts it as-is, unchanged from before.
+          if (!hasToolCalls && !hasThinking) return msg;
+
+          const parts = [];
+          if (hasThinking) {
+            parts.push({ type: "reasoning", text: msg.thinking });
+          }
+          if (typeof msg.content === "string" && msg.content.trim() !== "") {
+            parts.push({ type: "text", text: msg.content });
+          } else if (Array.isArray(msg.content)) {
+            parts.push(...msg.content);
+          }
+          for (const toolCall of msg.tool_calls ?? []) {
+            parts.push({
+              type: "tool-call",
+              toolCallId: toolCall.id,
+              toolName: toolCall.function?.name ?? "",
+              input: parseToolCallInput(toolCall.function?.arguments),
+            });
+          }
+          return { role: "assistant", content: parts };
+        }
+
         return msg;
       });
 
