@@ -327,6 +327,7 @@ export default function ChatLayout({
           mobileSheetOpen={mobileSheetOpen}
           onMobileSheetOpenChange={setMobileSheetOpen}
           sidebarContent={sidebarContent}
+          onNewChat={onNewChat}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
           thinkingEnabled={thinkingEnabled}

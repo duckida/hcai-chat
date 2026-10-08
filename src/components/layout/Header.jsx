@@ -8,6 +8,7 @@ import {
   Globe,
   Menu,
   PanelRightOpen,
+  Plus,
   Puzzle,
 } from "lucide-react";
 import ContextUsage from "@/components/chat/ContextUsage";
@@ -55,6 +56,7 @@ export default function Header({
   mobileSheetOpen,
   onMobileSheetOpenChange,
   sidebarContent,
+  onNewChat,
   selectedModel,
   onModelChange,
   thinkingEnabled,
@@ -94,7 +96,7 @@ export default function Header({
             )}
           </Button>
         )}
-        <div className="md:hidden">
+        <div className="md:hidden flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -103,6 +105,15 @@ export default function Header({
             onClick={() => onMobileSheetOpenChange(true)}
           >
             <Menu className="w-5 h-5 text-muted-foreground" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            aria-label="New Chat"
+            onClick={onNewChat}
+          >
+            <Plus className="w-4 h-4 text-muted-foreground" />
           </Button>
           <Sheet
             open={mobileSheetOpen}
