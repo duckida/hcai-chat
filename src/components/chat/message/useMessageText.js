@@ -7,9 +7,9 @@ import { normalizeLatexDelimiters } from "@/lib/latex";
 /**
  * Turn a message's raw text into what actually gets rendered.
  *
- * HTML fences become artifacts only when artifacts mode is on — otherwise they
- * are ordinary chat text and stay on screen. LaTeX delimiters are normalised
- * either way.
+ * Artifact blocks become rendered previews only when artifacts mode is on —
+ * otherwise they are ordinary chat text and stay on screen. LaTeX delimiters
+ * are normalised either way.
  *
  * The streaming row and the committed row both go through here so they cannot
  * disagree: an answer that reinterprets its own math or hides its fences at

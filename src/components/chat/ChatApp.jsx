@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
+import ArtifactGallery from "@/components/chat/ArtifactGallery";
 import ArtifactPanel from "@/components/chat/ArtifactPanel";
 import ChatInput from "@/components/chat/ChatInput";
 import ChatLayout from "@/components/chat/ChatLayout";
@@ -53,6 +54,7 @@ export default function ChatApp({
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [hasE2bKey, setHasE2bKey] = useState(false);
+  const [isArtifactGalleryOpen, setIsArtifactGalleryOpen] = useState(false);
 
   // Whether the panel has been dismissed on this visit to the conversation on
   // screen. Deliberately not stored on the conversation: returning to a chat
@@ -140,6 +142,19 @@ export default function ChatApp({
     }
     return allArtifacts;
   }, [conversations.messages]);
+
+  const galleryArtifacts = useMemo(() => {
+    const allArtifacts = [];
+    for (const conversation of conversations.conversations) {
+      for (const msg of conversation.messages || []) {
+        if (msg.role !== "assistant") continue;
+        allArtifacts.push(
+          ...extractHtmlArtifacts(getMessageText(msg.content)).artifacts,
+        );
+      }
+    }
+    return allArtifacts;
+  }, [conversations.conversations]);
 
   // The toggle still governs whether a thread *produces* artifacts: with it off,
   // a fresh chat streams nothing into the panel and HTML lands as plain chat
@@ -316,6 +331,8 @@ export default function ChatApp({
         agentModeEnabled={settings.agentModeEnabled}
         onAgentModeChange={(v) => setSetting("agentModeEnabled", v)}
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
+        onSettingsClick={() => setIsApiKeyModalOpen(true)}
+        onArtifactGalleryClick={() => setIsArtifactGalleryOpen(true)}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         panelOpen={panelOpen}
@@ -353,6 +370,12 @@ export default function ChatApp({
           <ChatInput onSend={stream.send} isLoading={stream.isLoading} />
         </div>
       </ChatLayout>
+
+      <ArtifactGallery
+        artifacts={galleryArtifacts}
+        open={isArtifactGalleryOpen}
+        onOpenChange={setIsArtifactGalleryOpen}
+      />
 
       <SettingsModal
         isOpen={isApiKeyModalOpen}

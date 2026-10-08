@@ -1,53 +1,64 @@
 /**
- * Extracts HTML code blocks from text content.
+ * Extracts <artifact> blocks and legacy HTML code blocks from text content.
  * Returns the list of HTML artifacts and the text with those blocks removed.
  *
- * During streaming, if a ```html fence is opened but not yet closed,
- * the partial content is returned as `streamingArtifact` and the fence
+ * During streaming, if an <artifact> tag is opened but not yet closed,
+ * the partial content is returned as `streamingArtifact` and the tag
  * region is stripped from `cleanedText`.
  */
 export function extractHtmlArtifacts(text) {
   if (!text) return { artifacts: [], cleanedText: "", streamingArtifact: null };
 
   const artifacts = [];
-
-  // First, check for an unclosed ```html fence (streaming in progress)
-  let streamingArtifact = null;
-  const openFenceRegex = /```html\s*\n/;
-  const openFenceMatch = text.match(openFenceRegex);
-
+  const completeRegex = /<artifact\s*>([\s\S]*?)<\/artifact\s*>/gi;
   let remainingText = text;
-
-  if (openFenceMatch) {
-    const openFenceIdx = openFenceMatch.index;
-    const afterFence = text.slice(openFenceIdx + openFenceMatch[0].length);
-
-    // Check if there's a closing ``` after the opening fence
-    const closeFenceIdx = afterFence.indexOf("```");
-
-    if (closeFenceIdx === -1) {
-      // No closing fence yet - this is a streaming artifact
-      streamingArtifact = afterFence.trimEnd();
-      remainingText = text.slice(0, openFenceIdx).trimEnd();
+  let streamingArtifact = null;
+  const openTags = [...text.matchAll(/<artifact\s*>/gi)];
+  const lastOpenTag = openTags.at(-1);
+  if (lastOpenTag) {
+    const bodyStart = lastOpenTag.index + lastOpenTag[0].length;
+    const closeTag = /<\/artifact\s*>/i.exec(text.slice(bodyStart));
+    if (!closeTag) {
+      streamingArtifact = text.slice(bodyStart).trimEnd();
+      remainingText = text.slice(0, lastOpenTag.index).trimEnd();
     }
   }
-
-  // Now extract complete fenced ```html blocks (case-insensitive, multiline)
-  const completeRegex = /```html\s*\n([\s\S]*?)```/gi;
   let match = completeRegex.exec(remainingText);
-
-  while (match !== null) {
+  while (match) {
     artifacts.push(match[1].trim());
     match = completeRegex.exec(remainingText);
   }
+  remainingText = remainingText.replace(completeRegex, "");
 
-  // Remove all complete ```html``` blocks from the remaining text
-  let cleanedText = remainingText.replace(completeRegex, "").trim();
+  if (!streamingArtifact) {
+    const openFenceRegex = /```html\s*\n/i;
+    const openFence = openFenceRegex.exec(remainingText);
+    if (openFence) {
+      const bodyStart = openFence.index + openFence[0].length;
+      if (!remainingText.slice(bodyStart).includes("```")) {
+        streamingArtifact = remainingText.slice(bodyStart).trimEnd();
+        remainingText = remainingText.slice(0, openFence.index).trimEnd();
+      }
+    }
+  }
 
-  // Also collapse multiple blank lines
+  // Keep artifacts already saved in conversations visible after the format change.
+  const legacyRegex = /```html\s*\n([\s\S]*?)```/gi;
+  match = legacyRegex.exec(remainingText);
+  while (match) {
+    artifacts.push(match[1].trim());
+    match = legacyRegex.exec(remainingText);
+  }
+  let cleanedText = remainingText.replace(legacyRegex, "").trim();
   cleanedText = cleanedText.replace(/\n{3,}/g, "\n\n");
-
   return { artifacts, cleanedText, streamingArtifact };
+}
+
+export function getArtifactTitle(html, fallback = "Untitled artifact") {
+  const match = String(html || "").match(
+    /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i,
+  );
+  return match?.[1]?.replace(/\s+/g, " ").trim() || fallback;
 }
 
 /**
@@ -57,19 +68,20 @@ export function extractHtmlArtifacts(text) {
 export const ARTIFACT_INSTRUCTIONS = `
 ## Artifact Mode
 
-When the user asks you to create, design, or generate any content (webpages, components, games, dashboards, visual demos, tools, data visualizations, charts, UI mockups, etc.) — including when they provide an image, screenshot, or design mockup as reference — output the complete, self-contained HTML document inside a fenced code block with the language \`html\`. For example:
+When the user asks you to create, design, or generate any content (webpages, components, games, dashboards, visual demos, tools, data visualizations, charts, UI mockups, etc.) — including when they provide an image, screenshot, or design mockup as reference — output the complete, self-contained HTML document inside an \`<artifact>\` block. For example:
 
-\`\`\`html
+<artifact>
 <!DOCTYPE html>
 <html>
   ...complete, self-contained HTML with inline CSS & JS...
 </html>
-\`\`\`
+</artifact>
 
 Rules:
 - Use this for any complete, standalone HTML artifact requested by the user, whether prompted by text, an uploaded image, or a screenshot.
 - Ensure all CSS and JavaScript are inline (no external dependencies).
-- Do NOT wrap simple code snippets or non-HTML code in html blocks.
+- Include a descriptive \`<title>\` in the HTML document; the app uses it as the artifact's gallery title.
+- Do NOT wrap simple code snippets or non-HTML code in artifact tags.
 - Keep explanations brief — the artifact itself is the deliverable.
 - Make the artifact responsive — it should work well on both mobile and desktop. Use relative units, flexible layouts, and media queries as needed.
 `.trim();
@@ -81,5 +93,5 @@ Rules:
 export const ARTIFACT_AGENT_MODE_INSTRUCTIONS = `
 ## Artifact Delivery with Agent Mode
 
-When artifacts mode is enabled together with agent mode, still output the complete HTML artifact inside a fenced \`\`\`html code block as text in the chat. Do NOT write the artifact to a file in the sandbox (do not use execute_code or run_command to create or save the HTML file). The sandbox is only for computation, data processing, file manipulation the user explicitly asked for, and command execution. If you already wrote an artifact file to the sandbox in an earlier step, still output the final version as a text artifact.
+When artifacts mode is enabled together with agent mode, still output the complete HTML artifact inside an \`<artifact>\` block as text in the chat. Do NOT write the artifact to a file in the sandbox (do not use execute_code or run_command to create or save the HTML file). The sandbox is only for computation, data processing, file manipulation the user explicitly asked for, and command execution. If you already wrote an artifact file to the sandbox in an earlier step, still output the final version as a text artifact.
 `.trim();

@@ -106,7 +106,9 @@ describe("ARTIFACT_INSTRUCTIONS", () => {
     expect(ARTIFACT_INSTRUCTIONS.length).toBeGreaterThan(0);
   });
 
-  it("mentions the html fence format", () => {
-    expect(ARTIFACT_INSTRUCTIONS).toContain("```html");
+  it("mentions the artifact tag format and title requirement", () => {
+    expect(ARTIFACT_INSTRUCTIONS).toContain("<artifact>");
+    expect(ARTIFACT_INSTRUCTIONS).toContain("</artifact>");
+    expect(ARTIFACT_INSTRUCTIONS).toContain("<title>");
   });
 });

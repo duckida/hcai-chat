@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
+import { getArtifactTitle } from "@/lib/artifacts";
 import Markdown from "./message/Markdown";
 import SandboxTerminal from "./SandboxTerminal";
 import ThinkingIndicator from "./ThinkingIndicator";
@@ -291,7 +292,9 @@ export default function ArtifactPanel({
                   <div className="hidden sm:flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full bg-primary shadow-sm" />
                     <span className="text-[11px] font-bold text-muted-foreground font-mono uppercase tracking-widest leading-none">
-                      {kind === "artifact" ? "Artifact" : "Cloud sandbox"}
+                      {kind === "artifact"
+                        ? getArtifactTitle(activeArtifact)
+                        : "Cloud sandbox"}
                     </span>
                     {(kind === "artifact"
                       ? streamingArtifact

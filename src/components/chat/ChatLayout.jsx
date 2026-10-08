@@ -1,8 +1,15 @@
 "use client";
 
+import {
+  ChevronRight,
+  GalleryVerticalEnd,
+  Plus,
+  Settings2,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import SidebarContent from "@/components/layout/SidebarContent";
+import { Button } from "@/components/primitives/button";
 
 const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
 const MIN_SIDEBAR_WIDTH = 200;
@@ -70,6 +77,8 @@ export default function ChatLayout({
   toolsSupported = true,
   hasE2bKey = false,
   totalCost = 0,
+  onSettingsClick,
+  onArtifactGalleryClick,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -229,32 +238,81 @@ export default function ChatLayout({
           ? ""
           : "transition-[grid-template-columns] duration-200 ease-out"
       }`}
-      style={{ gridTemplateColumns: `auto minmax(0, 1fr) ${panelTrack}px` }}
+      style={{
+        gridTemplateColumns: `${sidebarOpen ? sidebarWidth : 56}px minmax(0, 1fr) ${panelTrack}px`,
+      }}
     >
       <aside
         className={`hidden md:block shrink-0 overflow-hidden relative border-r border-border bg-muted ${!isDragging ? "transition-all duration-300 ease-in-out" : ""}`}
-        style={{ width: sidebarOpen ? `${sidebarWidth}px` : "0px" }}
+        style={{ width: sidebarOpen ? `${sidebarWidth}px` : "56px" }}
       >
-        <div className="w-full h-full flex flex-col min-w-[200px]">
-          {sidebarContent}
-        </div>
-        <button
-          ref={sidebarHandleRef}
-          type="button"
-          aria-label="Resize sidebar"
-          className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center hover:bg-border/20 active:bg-border/30 transition-colors z-50 border-none bg-transparent p-0 ${isDragging ? "bg-border/20" : ""}`}
-          onPointerDown={startResize}
-          onPointerMove={(event) => {
-            if (isDragging) resizeTo(event.clientX);
-          }}
-          onPointerUp={endResize}
-          onPointerCancel={endResize}
-          onLostPointerCapture={endResize}
-        >
-          <div
-            className={`w-1 h-12 rounded-full ${isDragging ? "bg-muted-foreground" : "bg-border"}`}
-          />
-        </button>
+        {sidebarOpen ? (
+          <div className="w-full h-full flex flex-col min-w-[200px]">
+            {sidebarContent}
+          </div>
+        ) : (
+          <nav
+            aria-label="Quick actions"
+            className="h-full w-14 flex flex-col items-center py-3 gap-2 bg-muted"
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Expand sidebar"
+              onClick={() => setSidebarOpen(true)}
+              className="h-9 w-9 text-muted-foreground"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="New Chat"
+              onClick={onNewChat}
+              className="h-9 w-9 text-muted-foreground"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Artifact gallery"
+              onClick={onArtifactGalleryClick}
+              className="h-9 w-9 text-muted-foreground"
+            >
+              <GalleryVerticalEnd className="h-4 w-4" />
+            </Button>
+            <div className="flex-1" />
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Settings"
+              onClick={onSettingsClick}
+              className="h-9 w-9 text-muted-foreground"
+            >
+              <Settings2 className="h-4 w-4" />
+            </Button>
+          </nav>
+        )}
+        {sidebarOpen && (
+          <button
+            ref={sidebarHandleRef}
+            type="button"
+            aria-label="Resize sidebar"
+            className={`absolute right-0 top-0 bottom-0 w-3 cursor-col-resize flex items-center justify-center hover:bg-border/20 active:bg-border/30 transition-colors z-50 border-none bg-transparent p-0 ${isDragging ? "bg-border/20" : ""}`}
+            onPointerDown={startResize}
+            onPointerMove={(event) => {
+              if (isDragging) resizeTo(event.clientX);
+            }}
+            onPointerUp={endResize}
+            onPointerCancel={endResize}
+            onLostPointerCapture={endResize}
+          >
+            <div
+              className={`w-1 h-12 rounded-full ${isDragging ? "bg-muted-foreground" : "bg-border"}`}
+            />
+          </button>
+        )}
       </aside>
 
       {/* A grid item's `min-height` defaults to `auto`, which means its

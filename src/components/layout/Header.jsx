@@ -77,21 +77,23 @@ export default function Header({
   return (
     <header className="h-12 sm:h-14 border-b border-border flex items-center justify-between gap-2 px-3 sm:px-4 bg-background/80 backdrop-blur-md sticky top-0 z-20">
       <div className="flex items-center gap-1 sm:gap-2 shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleSidebar}
-          // Icon-only, so the name has to be explicit. Without it this is a
-          // chevron to a screen reader, and React says so on every load.
-          aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-          className="hidden md:flex h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
-        >
-          {sidebarOpen ? (
-            <ChevronLeft className="w-4 h-4" />
-          ) : (
-            <ChevronRight className="w-4 h-4" />
-          )}
-        </Button>
+        {sidebarOpen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleSidebar}
+            // Icon-only, so the name has to be explicit. Without it this is a
+            // chevron to a screen reader, and React says so on every load.
+            aria-label={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+            className="hidden md:flex h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {sidebarOpen ? (
+              <ChevronLeft className="w-4 h-4" />
+            ) : (
+              <ChevronRight className="w-4 h-4" />
+            )}
+          </Button>
+        )}
         <div className="md:hidden">
           <Button
             variant="ghost"

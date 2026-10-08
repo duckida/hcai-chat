@@ -254,7 +254,7 @@ describe("ArtifactPanel", () => {
       // Artifact-only: a static label, not a one-option tab strip.
       expect(artifactTab()).toBeNull();
       expect(sandboxTab()).toBeNull();
-      expect(screen.getByText("Artifact")).toBeInTheDocument();
+      expect(screen.getByText("Untitled artifact")).toBeInTheDocument();
 
       rerender(
         <ArtifactPanel

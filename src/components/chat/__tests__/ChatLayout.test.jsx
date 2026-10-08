@@ -76,9 +76,10 @@ describe("ChatLayout shell", () => {
     expect(aside).toHaveStyle({ width: "260px" });
 
     await userEvent.click(headerButtons()[0]);
-    expect(aside).toHaveStyle({ width: "0px" });
+    expect(aside).toHaveStyle({ width: "56px" });
+    expect(screen.getByRole("navigation", { name: "Quick actions" })).toBeInTheDocument();
 
-    await userEvent.click(headerButtons()[0]);
+    await userEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(aside).toHaveStyle({ width: "260px" });
   });
 
@@ -445,7 +446,7 @@ describe("artifact panel track", () => {
     expect(trackWidth()).toBe(480);
     // The thread keeps the middle track and the sidebar the first, so the row
     // is three explicit tracks rather than auto-placed children.
-    expect(row().style.gridTemplateColumns).toMatch(/^auto minmax\(0, 1fr\) \d+px$/);
+    expect(row().style.gridTemplateColumns).toMatch(/^\d+px minmax\(0, 1fr\) \d+px$/);
   });
 
   it("collapses the track when the panel is closed", () => {
