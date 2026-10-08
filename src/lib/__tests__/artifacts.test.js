@@ -113,6 +113,7 @@ describe("ARTIFACT_INSTRUCTIONS", () => {
     expect(ARTIFACT_INSTRUCTIONS).toContain("<artifact>");
     expect(ARTIFACT_INSTRUCTIONS).toContain("</artifact>");
     expect(ARTIFACT_INSTRUCTIONS).toContain("<title>");
+    expect(ARTIFACT_INSTRUCTIONS).toContain("no more than three words");
   });
 });
 

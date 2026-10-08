@@ -391,8 +391,6 @@ export default function ChatApp({
       <ChatLayout
         onNewChat={handleNewChat}
         conversations={conversations.conversations}
-        artifacts={galleryArtifacts}
-        onSelectArtifact={openArtifact}
         activeConversation={conversations.activeConversation}
         onSelectConversation={conversations.selectConversation}
         onDeleteConversation={conversations.deleteConversation}

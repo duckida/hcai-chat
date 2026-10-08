@@ -20,6 +20,7 @@ const baseProps = (overrides = {}) => ({
   onDeleteConversation: vi.fn(),
   onRenameConversation: vi.fn(),
   onNewChat: vi.fn(),
+  onArtifactGalleryClick: vi.fn(),
   onApiKeyClick: vi.fn(),
   searchQuery: "",
   onSearchChange: vi.fn(),
@@ -275,7 +276,7 @@ describe("ChatLayout fullscreen artifacts", () => {
 });
 
 describe("SidebarContent conversations", () => {
-  it("starts a new chat and opens settings", async () => {
+  it("starts chats, opens the artifact gallery and opens settings", async () => {
     const props = baseProps();
     render(<ChatLayout {...props} />);
 
@@ -285,6 +286,13 @@ describe("SidebarContent conversations", () => {
       }),
     );
     expect(props.onNewChat).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(
+      within(document.querySelector("aside")).getByRole("button", {
+        name: "Artifact Gallery",
+      }),
+    );
+    expect(props.onArtifactGalleryClick).toHaveBeenCalledTimes(1);
 
     await userEvent.click(screen.getByRole("button", { name: /Settings/ }));
     expect(props.onApiKeyClick).toHaveBeenCalledTimes(1);
