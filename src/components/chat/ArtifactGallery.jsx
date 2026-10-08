@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, X } from "lucide-react";
+import { ArrowLeft, Check, Pencil, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
 import { getArtifactTitle } from "@/lib/artifacts";
@@ -44,16 +44,28 @@ function ArtifactThumbnail({ title, html }) {
   );
 }
 
-export default function ArtifactGallery({ artifacts, open, onOpenChange }) {
+export default function ArtifactGallery({
+  artifacts,
+  open,
+  onOpenChange,
+  onOpenArtifact,
+  onRenameArtifact,
+  onDeleteArtifact,
+}) {
   const [selected, setSelected] = useState(null);
-  const items = artifacts.map((html, index) => ({
-    html,
-    title: getArtifactTitle(html),
-    key: `${getArtifactTitle(html)}-${index}`,
-  }));
+  const [editingKey, setEditingKey] = useState(null);
+  const [editTitle, setEditTitle] = useState("");
+  const items = artifacts.map((artifact, index) => {
+    const item = typeof artifact === "string" ? { html: artifact } : artifact;
+    const title = item.title || getArtifactTitle(item.html);
+    return { ...item, title, key: item.key || `${title}-${index}` };
+  });
 
   useEffect(() => {
-    if (!open) setSelected(null);
+    if (!open) {
+      setSelected(null);
+      setEditingKey(null);
+    }
   }, [open]);
 
   if (!open) return null;
@@ -83,14 +95,25 @@ export default function ArtifactGallery({ artifacts, open, onOpenChange }) {
             )}
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Back to chat"
-          onClick={() => onOpenChange(false)}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          {selected && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenArtifact?.(selected)}
+            >
+              Open in chat
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Back to chat"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </header>
 
       {selected ? (
@@ -104,17 +127,78 @@ export default function ArtifactGallery({ artifacts, open, onOpenChange }) {
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
           <div className="mx-auto grid max-w-[1600px] grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((item) => (
-              <button
+              <article
                 key={item.key}
-                type="button"
-                onClick={() => setSelected(item)}
-                className="group overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="group overflow-hidden rounded-xl border border-border bg-card text-left transition-colors hover:border-primary/50"
               >
-                <ArtifactThumbnail title={item.title} html={item.html} />
-                <span className="block truncate px-3 py-3 text-sm font-medium group-hover:text-primary">
-                  {item.title}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  aria-label={`Open ${item.title} in chat`}
+                  onClick={() => onOpenArtifact?.(item)}
+                  className="block w-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                >
+                  <ArtifactThumbnail title={item.title} html={item.html} />
+                </button>
+                <div className="flex min-h-12 items-center gap-1 px-2">
+                  {editingKey === item.key ? (
+                    <>
+                      <input
+                        aria-label="Artifact title"
+                        value={editTitle}
+                        onChange={(event) => setEditTitle(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            onRenameArtifact?.(item, editTitle);
+                            setEditingKey(null);
+                          }
+                          if (event.key === "Escape") setEditingKey(null);
+                        }}
+                        className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                      />
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Save artifact title"
+                        onClick={() => {
+                          onRenameArtifact?.(item, editTitle);
+                          setEditingKey(null);
+                        }}
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(item)}
+                        className="min-w-0 flex-1 truncate px-1 py-2 text-left text-sm font-medium group-hover:text-primary"
+                      >
+                        {item.title}
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Rename ${item.title}`}
+                        onClick={() => {
+                          setEditingKey(item.key);
+                          setEditTitle(item.title);
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Delete ${item.title}`}
+                        onClick={() => onDeleteArtifact?.(item)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </article>
             ))}
           </div>
         </div>

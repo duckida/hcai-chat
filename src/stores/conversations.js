@@ -126,7 +126,12 @@ export const conversationsActions = {
     const existing = current.find((c) => c.id === id);
     if (!existing) return;
     const updated = { ...existing, ...patch };
-    commit({ conversations: current.map((c) => (c.id === id ? updated : c)) });
+    commit({
+      conversations: current.map((c) => (c.id === id ? updated : c)),
+      ...(conversationsStore.getState().activeConversation === id
+        ? { messages: updated.messages || [] }
+        : {}),
+    });
     putConversation(updated).catch(() => {});
   },
 

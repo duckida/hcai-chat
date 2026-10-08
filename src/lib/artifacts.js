@@ -58,7 +58,62 @@ export function getArtifactTitle(html, fallback = "Untitled artifact") {
   const match = String(html || "").match(
     /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i,
   );
-  return match?.[1]?.replace(/\s+/g, " ").trim() || fallback;
+  return (
+    match?.[1]
+      ?.replace(/\s+/g, " ")
+      .trim()
+      .replace(/&amp;/gi, "&")
+      .replace(/&lt;/gi, "<")
+      .replace(/&gt;/gi, ">")
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'") || fallback
+  );
+}
+
+export function updateArtifactAt(text, artifactIndex, update) {
+  let index = 0;
+  const blockRegex =
+    /<artifact\s*>([\s\S]*?)<\/artifact\s*>|```html\s*\n([\s\S]*?)```/gi;
+  return String(text || "").replace(
+    blockRegex,
+    (block, taggedHtml, fencedHtml) => {
+      const currentIndex = index++;
+      if (currentIndex !== artifactIndex) return block;
+      const html = taggedHtml ?? fencedHtml;
+      const result = update(html.trim());
+      if (result == null) return "";
+      return taggedHtml !== undefined
+        ? `<artifact>${result}</artifact>`
+        : `\`\`\`html\n${result}\`\`\``;
+    },
+  );
+}
+
+export function renameArtifact(html, title) {
+  const safeTitle = String(title || "")
+    .trim()
+    .replace(/[<>]/g, "");
+  if (!safeTitle) return html;
+  const escapedTitle = safeTitle
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  if (/<title\b[^>]*>[\s\S]*?<\/title\s*>/i.test(html)) {
+    return html.replace(
+      /<title\b[^>]*>[\s\S]*?<\/title\s*>/i,
+      () => `<title>${escapedTitle}</title>`,
+    );
+  }
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(
+      /<head\b[^>]*>/i,
+      (head) => `${head}<title>${escapedTitle}</title>`,
+    );
+  }
+  return html.replace(
+    /<html\b[^>]*>/i,
+    (openHtml) => `${openHtml}<head><title>${escapedTitle}</title></head>`,
+  );
 }
 
 /**

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   ARTIFACT_INSTRUCTIONS,
   extractHtmlArtifacts,
+  getArtifactTitle,
+  renameArtifact,
+  updateArtifactAt,
 } from "../artifacts";
 
 describe("extractHtmlArtifacts", () => {
@@ -110,5 +113,37 @@ describe("ARTIFACT_INSTRUCTIONS", () => {
     expect(ARTIFACT_INSTRUCTIONS).toContain("<artifact>");
     expect(ARTIFACT_INSTRUCTIONS).toContain("</artifact>");
     expect(ARTIFACT_INSTRUCTIONS).toContain("<title>");
+  });
+});
+
+describe("artifact management", () => {
+  it("uses and updates the HTML title", () => {
+    const renamed = renameArtifact(
+      "<html><head><title>Old</title></head><body></body></html>",
+      "New & Improved",
+    );
+    expect(getArtifactTitle(renamed)).toBe("New & Improved");
+  });
+
+  it("adds a title when the document does not have one", () => {
+    expect(getArtifactTitle(renameArtifact("<html><body></body></html>", "Card"))).toBe(
+      "Card",
+    );
+  });
+
+  it("renames or deletes only the selected artifact block", () => {
+    const source =
+      "Before <artifact><html><head><title>A</title></head></html></artifact> middle <artifact><html><head><title>B</title></head></html></artifact> after";
+    const renamed = updateArtifactAt(source, 1, (html) =>
+      renameArtifact(html, "Renamed"),
+    );
+    expect(extractHtmlArtifacts(renamed).artifacts.map(getArtifactTitle)).toEqual([
+      "A",
+      "Renamed",
+    ]);
+    const deleted = updateArtifactAt(renamed, 0, () => null);
+    expect(extractHtmlArtifacts(deleted).artifacts.map(getArtifactTitle)).toEqual([
+      "Renamed",
+    ]);
   });
 });

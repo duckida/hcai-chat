@@ -79,6 +79,8 @@ export default function ChatLayout({
   totalCost = 0,
   onSettingsClick,
   onArtifactGalleryClick,
+  artifacts = [],
+  onSelectArtifact,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
@@ -223,6 +225,8 @@ export default function ChatLayout({
       searchQuery={searchQuery}
       onSearchChange={onSearchChange}
       onSheetClose={() => setMobileSheetOpen(false)}
+      artifacts={artifacts}
+      onSelectArtifact={onSelectArtifact}
     />
   );
 

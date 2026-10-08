@@ -1,6 +1,15 @@
 "use client";
 
-import { Check, Key, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  Check,
+  Key,
+  Pencil,
+  Plus,
+  Puzzle,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
 import { Input } from "@/components/primitives/input";
@@ -206,6 +215,8 @@ export default function SidebarContent({
   searchQuery,
   onSearchChange,
   onSheetClose,
+  artifacts = [],
+  onSelectArtifact,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -253,6 +264,31 @@ export default function SidebarContent({
           <span className="text-[14px]">New Chat</span>
         </Button>
       </div>
+
+      {artifacts.length > 0 && (
+        <div className="px-3 pb-3">
+          <div className="px-2 mb-1.5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">
+            Artifacts
+          </div>
+          <div className="max-h-40 overflow-y-auto space-y-0.5">
+            {artifacts.map((artifact) => (
+              <button
+                key={artifact.key}
+                type="button"
+                title={artifact.title}
+                onClick={() => {
+                  onSelectArtifact?.(artifact);
+                  onSheetClose?.();
+                }}
+                className="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <Puzzle className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{artifact.title}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="px-3 mb-3">
         <div className="relative">

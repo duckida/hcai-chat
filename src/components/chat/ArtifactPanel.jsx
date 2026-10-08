@@ -39,6 +39,7 @@ const DEFAULT_WIDTH = 480;
  */
 export default function ArtifactPanel({
   artifacts = [],
+  selectedArtifactIndex,
   sandboxRuns = [],
   isOpen = false,
   onToggle,
@@ -67,7 +68,13 @@ export default function ArtifactPanel({
 
   // Get the active artifact (last one)
   const activeArtifact =
-    allArtifacts.length > 0 ? allArtifacts[allArtifacts.length - 1] : null;
+    selectedArtifactIndex != null &&
+    selectedArtifactIndex >= 0 &&
+    selectedArtifactIndex < artifacts.length
+      ? artifacts[selectedArtifactIndex]
+      : allArtifacts.length > 0
+        ? allArtifacts[allArtifacts.length - 1]
+        : null;
 
   const hasArtifacts = allArtifacts.length > 0;
   const hasSandbox = sandboxRuns.length > 0;

@@ -73,6 +73,18 @@ describe("ArtifactPanel", () => {
     expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
   });
 
+  it("opens the selected artifact instead of the latest one", () => {
+    const first = "<title>First</title><main>first artifact</main>";
+    const second = "<title>Second</title><main>second artifact</main>";
+    renderPanel({
+      artifacts: [first, second],
+      selectedArtifactIndex: 0,
+      isOpen: true,
+    });
+
+    expect(screen.getByTitle("Artifact Preview")).toHaveAttribute("srcdoc", first);
+  });
+
   it("shows the artifact source on the code tab", async () => {
     const user = userEvent.setup();
     renderPanel({ isOpen: true });

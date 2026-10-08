@@ -217,36 +217,36 @@ describe("ChatLayout shell", () => {
 });
 
 describe("ChatLayout header toggles", () => {
-  // Header button order: collapse, mobile menu, thinking, artifacts,
+  // Header button order: collapse, mobile menu, new chat, thinking, artifacts,
   // web search, agent mode, then the model picker trigger.
   it("wires each toggle to its handler", async () => {
     const props = baseProps();
     render(<ChatLayout {...props} />);
 
-    await userEvent.click(headerButtons()[2]);
+    await userEvent.click(headerButtons()[3]);
     expect(props.onThinkingChange).toHaveBeenCalledWith(false);
 
-    await userEvent.click(headerButtons()[3]);
+    await userEvent.click(headerButtons()[4]);
     expect(props.onArtifactsChange).toHaveBeenCalledWith(true);
 
-    await userEvent.click(headerButtons()[4]);
+    await userEvent.click(headerButtons()[5]);
     expect(props.onWebSearchChange).toHaveBeenCalledWith(true);
 
-    await userEvent.click(headerButtons()[5]);
+    await userEvent.click(headerButtons()[6]);
     expect(props.onAgentModeChange).toHaveBeenCalledWith(true);
   });
 
   it("disables web search and agent mode when the model lacks tools", () => {
     render(<ChatLayout {...baseProps({ toolsSupported: false })} />);
-    expect(headerButtons()[4]).toBeDisabled();
     expect(headerButtons()[5]).toBeDisabled();
-    expect(headerButtons()[2]).not.toBeDisabled();
+    expect(headerButtons()[6]).toBeDisabled();
+    expect(headerButtons()[3]).not.toBeDisabled();
   });
 
   it("disables agent mode only when no E2B key is stored", () => {
     render(<ChatLayout {...baseProps({ hasE2bKey: false })} />);
-    expect(headerButtons()[5]).toBeDisabled();
-    expect(headerButtons()[4]).not.toBeDisabled();
+    expect(headerButtons()[6]).toBeDisabled();
+    expect(headerButtons()[5]).not.toBeDisabled();
   });
 
   it("renders the context usage indicator with the model's window", () => {
@@ -264,7 +264,7 @@ describe("ChatLayout fullscreen artifacts", () => {
     const overlay = document.querySelector(".fixed.inset-0");
     expect(overlay).not.toBeNull();
     expect(within(overlay).getByTestId("right-panel")).toBeInTheDocument();
-    expect(headerButtons()).toHaveLength(2);
+    expect(headerButtons()).toHaveLength(3);
   });
 
   it("keeps the shell chrome when not fullscreen", () => {
@@ -279,7 +279,11 @@ describe("SidebarContent conversations", () => {
     const props = baseProps();
     render(<ChatLayout {...props} />);
 
-    await userEvent.click(screen.getByRole("button", { name: /New Chat/ }));
+    await userEvent.click(
+      within(document.querySelector("aside")).getByRole("button", {
+        name: /New Chat/,
+      }),
+    );
     expect(props.onNewChat).toHaveBeenCalledTimes(1);
 
     await userEvent.click(screen.getByRole("button", { name: /Settings/ }));

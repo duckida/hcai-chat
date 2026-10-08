@@ -13,7 +13,12 @@ import SettingsModal from "@/components/settings/SettingsModal";
 import { useChatTurn } from "@/hooks/use-chat-turn";
 import { useIsDesktop } from "@/hooks/use-media-query";
 import { getStoredApiKey, getStoredE2bApiKey } from "@/lib/api-client";
-import { extractHtmlArtifacts } from "@/lib/artifacts";
+import {
+  extractHtmlArtifacts,
+  getArtifactTitle,
+  renameArtifact,
+  updateArtifactAt,
+} from "@/lib/artifacts";
 import { getMessageText } from "@/lib/messages";
 import { getModelPricingMap, isModelFree } from "@/lib/model-pricing";
 import { useConversations } from "@/stores/conversations";
@@ -55,6 +60,7 @@ export default function ChatApp({
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [hasE2bKey, setHasE2bKey] = useState(false);
   const [isArtifactGalleryOpen, setIsArtifactGalleryOpen] = useState(false);
+  const [selectedArtifactKey, setSelectedArtifactKey] = useState(null);
 
   // Whether the panel has been dismissed on this visit to the conversation on
   // screen. Deliberately not stored on the conversation: returning to a chat
@@ -132,29 +138,98 @@ export default function ChatApp({
   // the next chat cannot blank the panel when you come back to this one. The
   // text goes through getMessageText because content parts are stored, and
   // extractHtmlArtifacts only reads strings.
-  const messageArtifacts = useMemo(() => {
-    const allArtifacts = [];
-    for (const msg of conversations.messages) {
-      if (msg.role === "assistant") {
-        const { artifacts } = extractHtmlArtifacts(getMessageText(msg.content));
-        allArtifacts.push(...artifacts);
-      }
-    }
-    return allArtifacts;
-  }, [conversations.messages]);
-
   const galleryArtifacts = useMemo(() => {
-    const allArtifacts = [];
+    const entries = [];
     for (const conversation of conversations.conversations) {
-      for (const msg of conversation.messages || []) {
+      for (const [messageIndex, msg] of (
+        conversation.messages || []
+      ).entries()) {
         if (msg.role !== "assistant") continue;
-        allArtifacts.push(
-          ...extractHtmlArtifacts(getMessageText(msg.content)).artifacts,
-        );
+        const artifacts = extractHtmlArtifacts(
+          getMessageText(msg.content),
+        ).artifacts;
+        artifacts.forEach((html, artifactIndex) => {
+          entries.push({
+            key: `${conversation.id}:${messageIndex}:${artifactIndex}`,
+            conversationId: conversation.id,
+            messageIndex,
+            artifactIndex,
+            html,
+            title: getArtifactTitle(html),
+            conversationTitle: conversation.title,
+          });
+        });
       }
     }
-    return allArtifacts;
+    return entries;
   }, [conversations.conversations]);
+
+  const activeArtifactEntries = galleryArtifacts.filter(
+    (artifact) => artifact.conversationId === conversations.activeConversation,
+  );
+  const messageArtifacts = activeArtifactEntries.map(
+    (artifact) => artifact.html,
+  );
+  const selectedArtifactIndex = activeArtifactEntries.findIndex(
+    (artifact) => artifact.key === selectedArtifactKey,
+  );
+
+  const openArtifact = useCallback(
+    (artifact) => {
+      conversations.selectConversation(artifact.conversationId);
+      setSelectedArtifactKey(artifact.key);
+      setPanelDismissed(false);
+      setPanelTab("artifact");
+      setIsArtifactGalleryOpen(false);
+    },
+    [conversations],
+  );
+
+  const updateArtifact = useCallback(
+    (artifact, update) => {
+      const conversation = conversations.conversations.find(
+        (item) => item.id === artifact.conversationId,
+      );
+      const message = conversation?.messages?.[artifact.messageIndex];
+      if (!message) return;
+      const content = message.content;
+      let nextContent = content;
+      if (typeof content === "string") {
+        nextContent = updateArtifactAt(content, artifact.artifactIndex, update);
+      } else if (Array.isArray(content)) {
+        let precedingArtifacts = 0;
+        nextContent = content.map((part) => {
+          if (part.type !== "text") return part;
+          const count = extractHtmlArtifacts(part.text).artifacts.length;
+          const targetIndex = artifact.artifactIndex - precedingArtifacts;
+          precedingArtifacts += count;
+          if (targetIndex < 0 || targetIndex >= count) return part;
+          return {
+            ...part,
+            text: updateArtifactAt(part.text, targetIndex, update),
+          };
+        });
+      }
+      const messages = conversation.messages.map((item, index) =>
+        index === artifact.messageIndex
+          ? { ...item, content: nextContent }
+          : item,
+      );
+      conversations.patchConversation(artifact.conversationId, { messages });
+    },
+    [conversations],
+  );
+
+  const renameGalleryArtifact = useCallback(
+    (artifact, title) =>
+      updateArtifact(artifact, (html) => renameArtifact(html, title)),
+    [updateArtifact],
+  );
+
+  const deleteGalleryArtifact = useCallback(
+    (artifact) => updateArtifact(artifact, () => null),
+    [updateArtifact],
+  );
 
   // The toggle still governs whether a thread *produces* artifacts: with it off,
   // a fresh chat streams nothing into the panel and HTML lands as plain chat
@@ -316,6 +391,8 @@ export default function ChatApp({
       <ChatLayout
         onNewChat={handleNewChat}
         conversations={conversations.conversations}
+        artifacts={galleryArtifacts}
+        onSelectArtifact={openArtifact}
         activeConversation={conversations.activeConversation}
         onSelectConversation={conversations.selectConversation}
         onDeleteConversation={conversations.deleteConversation}
@@ -347,6 +424,9 @@ export default function ChatApp({
         rightPanel={(panel) => (
           <ArtifactPanel
             artifacts={messageArtifacts}
+            selectedArtifactIndex={
+              selectedArtifactIndex >= 0 ? selectedArtifactIndex : undefined
+            }
             streamingArtifact={streamingArtifact}
             sandboxRuns={sandboxRuns}
             tab={panelTab}
@@ -375,6 +455,9 @@ export default function ChatApp({
         artifacts={galleryArtifacts}
         open={isArtifactGalleryOpen}
         onOpenChange={setIsArtifactGalleryOpen}
+        onOpenArtifact={openArtifact}
+        onRenameArtifact={renameGalleryArtifact}
+        onDeleteArtifact={deleteGalleryArtifact}
       />
 
       <SettingsModal
