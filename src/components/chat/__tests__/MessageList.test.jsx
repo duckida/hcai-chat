@@ -69,11 +69,11 @@ describe("MessageList", () => {
     expect(screen.getByText("partial response")).toBeInTheDocument();
   });
 
-  it("shows the streaming indicator when streamingThinking is set with thinkingEnabled", () => {
+  it("shows the streaming indicator when streamingThinking is set and a thinking level is on", () => {
     renderList({
       messages: [],
       turn: { streamingThinking: "thinking..." },
-      settings: { thinkingEnabled: true },
+      settings: { thinkingLevel: "medium" },
     });
     expect(screen.getByText(/thinking/i)).toBeInTheDocument();
   });
@@ -82,7 +82,20 @@ describe("MessageList", () => {
     renderList({
       messages: [],
       turn: { streamingThinking: "thinking..." },
-      settings: { thinkingEnabled: false },
+      settings: { thinkingLevel: "off" },
+    });
+    expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
+  });
+
+  it("shows no empty thinking placeholder when thinking is off", () => {
+    // The placeholder is a second gate on its own code path: with the level
+    // off there is nothing to wait for, so a stream that has not produced
+    // anything yet must stay blank rather than showing "Thinking".
+    renderList({
+      messages: [{ role: "user", content: "hello" }],
+      activeConversation: "conv-a",
+      turn: { streamingConversationId: "conv-a", isLoading: true },
+      settings: { thinkingLevel: "off" },
     });
     expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
   });
@@ -348,7 +361,7 @@ describe("MessageList", () => {
         isLoading: true,
         streamingContent: "other chat text",
       },
-      settings: { thinkingEnabled: true },
+      settings: { thinkingLevel: "medium" },
     });
     expect(screen.queryByText("other chat text")).not.toBeInTheDocument();
     expect(screen.queryByText(/thinking/i)).not.toBeInTheDocument();
@@ -360,7 +373,7 @@ describe("MessageList", () => {
       messages: [{ role: "user", content: "hello" }],
       activeConversation: "conv-a",
       turn: { streamingConversationId: "conv-a", isLoading: true },
-      settings: { thinkingEnabled: true },
+      settings: { thinkingLevel: "medium" },
     });
     expect(screen.getByText(/thinking/i)).toBeInTheDocument();
   });
@@ -407,7 +420,7 @@ describe("MessageList", () => {
           },
         ],
       },
-      settings: { thinkingEnabled: true, showThinking: true },
+      settings: { thinkingLevel: "medium", showThinking: true },
     });
 
     expect(screen.getByText(/computing/)).toBeInTheDocument();
@@ -425,7 +438,7 @@ describe("MessageList", () => {
           { index: 0, tool: "javascript_calculator", at: 0, label: "5 + 5" },
         ],
       },
-      settings: { thinkingEnabled: true, showThinking: true },
+      settings: { thinkingLevel: "medium", showThinking: true },
     });
 
     expect(screen.getByText("5 + 5")).toBeInTheDocument();
@@ -470,7 +483,7 @@ describe("MessageList", () => {
           { index: 0, tool: "javascript_calculator", at: 0, label: "9 * 9" },
         ],
       },
-      settings: { thinkingEnabled: true, showThinking: true },
+      settings: { thinkingLevel: "medium", showThinking: true },
     });
 
     expect(screen.queryByText("9 * 9")).not.toBeInTheDocument();

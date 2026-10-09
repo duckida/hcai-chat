@@ -43,11 +43,15 @@ export default function ChatApp({
   const toolsSupported = useModels(
     (s) => s.toolsSupported[settings.selectedModel] ?? true,
   );
+  const modelReasoning = useModels(
+    (s) => s.reasoningByModel[settings.selectedModel],
+  );
 
   const stream = useChatTurn({
     selectedModel: settings.selectedModel,
     titleGenerationModel: settings.titleGenerationModel,
-    thinkingEnabled: settings.thinkingEnabled,
+    thinkingLevel: settings.thinkingLevel,
+    modelReasoning,
     artifactsEnabled: settings.artifactsEnabled,
     webSearchEnabled: settings.webSearchEnabled,
     agentModeEnabled: settings.agentModeEnabled,
@@ -399,8 +403,8 @@ export default function ChatApp({
         onRenameConversation={conversations.renameConversation}
         selectedModel={settings.selectedModel}
         onModelChange={handleModelChange}
-        thinkingEnabled={settings.thinkingEnabled}
-        onThinkingChange={(v) => setSetting("thinkingEnabled", v)}
+        thinkingLevel={settings.thinkingLevel}
+        onThinkingLevelChange={(v) => setSetting("thinkingLevel", v)}
         artifactsEnabled={settings.artifactsEnabled}
         onArtifactsChange={(v) => setSetting("artifactsEnabled", v)}
         webSearchEnabled={settings.webSearchEnabled}

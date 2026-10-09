@@ -5,6 +5,7 @@ import {
 } from "@/lib/artifacts";
 import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
+import { reasoningParamsFor } from "@/lib/thinking";
 
 const AGENT_MODE_PROMPT = `
 
@@ -167,7 +168,7 @@ export async function POST(req) {
       artifacts,
       tools: clientTools,
       stream,
-      think,
+      thinkingLevel,
       max_tokens,
       agentMode,
     } = body;
@@ -225,10 +226,10 @@ export async function POST(req) {
       ...(openAiTools ? { tools: openAiTools, tool_choice: "auto" } : {}),
       ...(max_tokens ? { max_tokens } : {}),
       // Same OpenRouter reasoning/usage opt-ins the AI SDK provider turned
-      // providerOptions into wire fields: spread straight into the body.
-      ...(think === true
-        ? { include_reasoning: true, reasoning: { exclude: false } }
-        : { include_reasoning: false, reasoning: { exclude: true } }),
+      // providerOptions into wire fields: spread straight into the body. The
+      // client sends a level, not a boolean — OpenRouter translates `effort`
+      // into whichever control the selected provider actually takes.
+      ...reasoningParamsFor(thinkingLevel),
     };
 
     const client = new OpenAI({

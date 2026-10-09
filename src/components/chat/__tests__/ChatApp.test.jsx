@@ -248,7 +248,7 @@ describe("web search and artifacts are independent", () => {
     const { result } = renderHook(() => useChatTurn({
       selectedModel: "qwen/qwen3.6-flash",
       titleGenerationModel: "qwen/qwen3.6-flash",
-      thinkingEnabled: false,
+      thinkingLevel: "off",
       artifactsEnabled: true,
       webSearchEnabled: true,
       agentModeEnabled: false,

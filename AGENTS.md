@@ -296,7 +296,7 @@ Traps, all of which have cost real debugging time:
   one — a single `mouseMoved` does not reliably produce the enter event hover is
   built on, and `el.click()` never opens a pointer-driven tooltip at all.
 - Model references: use `qwen/qwen3.6-flash` in tests. The app's default chat
-  model is `xiaomi/mimo-v2.5`.
+  model is `deepseek/deepseek-v4.1-flash`.
 - Sandbox tests must `vi.mock("e2b", ...)` with a static factory and **not** use
   `vi.resetModules()`; re-evaluating a mocked module fails to destructure
   `Sandbox`.

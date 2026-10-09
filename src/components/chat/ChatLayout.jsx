@@ -57,8 +57,8 @@ export default function ChatLayout({
   onSearchChange,
   selectedModel,
   onModelChange,
-  thinkingEnabled,
-  onThinkingChange,
+  thinkingLevel,
+  onThinkingLevelChange,
   artifactsEnabled,
   onArtifactsChange,
   webSearchEnabled,
@@ -332,8 +332,8 @@ export default function ChatLayout({
           onNewChat={onNewChat}
           selectedModel={selectedModel}
           onModelChange={onModelChange}
-          thinkingEnabled={thinkingEnabled}
-          onThinkingChange={onThinkingChange}
+          thinkingLevel={thinkingLevel}
+          onThinkingLevelChange={onThinkingLevelChange}
           artifactsEnabled={artifactsEnabled}
           onArtifactsChange={onArtifactsChange}
           webSearchEnabled={webSearchEnabled}

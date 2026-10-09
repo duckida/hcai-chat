@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react";
 import { Fragment, useMemo } from "react";
 import { useThreadScroll } from "@/hooks/use-thread-scroll";
 import { hasRenderableContent } from "@/lib/messages";
+import { isThinkingOn } from "@/lib/thinking";
 import { useSettings } from "@/stores/settings";
 import { useTurn } from "@/stores/turn";
 import EmptyState from "./message/EmptyState";
@@ -16,7 +17,7 @@ import ThinkingBlock from "./message/ThinkingBlock";
 
 /** Only what the "still thinking, nothing on screen yet" placeholder needs. */
 const selectPlaceholderSettings = (state) => ({
-  thinkingEnabled: state.thinkingEnabled,
+  thinkingLevel: state.thinkingLevel,
   showThinking: state.showThinking,
 });
 
@@ -39,9 +40,10 @@ export default function MessageList({ messages, activeConversation = null }) {
     streamingToolChips,
     streamingConversationId,
   } = useTurn();
-  const { thinkingEnabled, showThinking } = useSettings(
+  const { thinkingLevel, showThinking } = useSettings(
     selectPlaceholderSettings,
   );
+  const thinkingOn = isThinkingOn(thinkingLevel);
   const activeMessages = useMemo(
     () => (messages || []).filter(hasRenderableContent),
     [messages],
@@ -163,7 +165,7 @@ export default function MessageList({ messages, activeConversation = null }) {
                 !renderedStreamingContent &&
                 !renderedStreamingThinking &&
                 liveToolChips.length === 0 &&
-                thinkingEnabled && (
+                thinkingOn && (
                   <div className="w-full animate-hcai-fade-in-slow">
                     <MessageRow variant="assistant">
                       <ThinkingBlock

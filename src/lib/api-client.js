@@ -1,5 +1,6 @@
 import { sanitizeMessages } from "./messages";
 import { createSseParser } from "./sse-parser";
+import { DEFAULT_THINKING_LEVEL } from "./thinking";
 
 const API_KEY_STORAGE_KEY = "hack_club_ai_key";
 const E2B_API_KEY_STORAGE_KEY = "e2b_api_key";
@@ -95,7 +96,7 @@ function buildRequestBody({
   model,
   messages,
   apiKey,
-  thinking,
+  thinkingLevel,
   artifacts,
   maxTokens,
   agentMode,
@@ -110,7 +111,7 @@ function buildRequestBody({
     model,
     messages,
     apiKey,
-    think: !!thinking,
+    thinkingLevel,
     artifacts,
   };
 
@@ -705,11 +706,11 @@ async function continuePartial(body, model, handlers, mirror) {
  */
 export const streamChatCompletion = async ({
   messages,
-  model = "xiaomi/mimo-v2.5",
+  model = "deepseek/deepseek-v4.1-flash",
   onChunk,
   onError,
   onComplete,
-  thinking = false,
+  thinkingLevel = DEFAULT_THINKING_LEVEL,
   artifacts = false,
   tools = null,
   toolChoice = "auto",
@@ -742,7 +743,7 @@ export const streamChatCompletion = async ({
     model,
     messages: sanitizeMessages(messages),
     apiKey,
-    thinking,
+    thinkingLevel,
     artifacts,
     maxTokens,
     agentMode,

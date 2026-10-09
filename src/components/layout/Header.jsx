@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Brain,
   ChevronLeft,
   ChevronRight,
   Cloud,
@@ -13,6 +12,7 @@ import {
 } from "lucide-react";
 import ContextUsage from "@/components/chat/ContextUsage";
 import ModelPicker from "@/components/chat/ModelPicker";
+import ThinkingPicker from "@/components/chat/ThinkingPicker";
 import { Button } from "@/components/primitives/button";
 import Sheet from "@/components/primitives/sheet";
 import { Tooltip, TooltipTrigger } from "@/components/primitives/tooltip";
@@ -59,8 +59,8 @@ export default function Header({
   onNewChat,
   selectedModel,
   onModelChange,
-  thinkingEnabled,
-  onThinkingChange,
+  thinkingLevel,
+  onThinkingLevelChange,
   artifactsEnabled,
   onArtifactsChange,
   webSearchEnabled,
@@ -132,14 +132,11 @@ export default function Header({
         {!artifactFullscreen && (
           <>
             <div className="flex items-center gap-0.5 sm:gap-1">
-              <ToggleButton
-                active={thinkingEnabled}
-                onClick={() => onThinkingChange(!thinkingEnabled)}
-                tooltip={`Toggle thinking ${thinkingEnabled ? "off" : "on"}`}
-                activeClass="text-blue-600 bg-blue-50 dark:text-blue-400 dark:bg-blue-950"
-              >
-                <Brain className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              </ToggleButton>
+              <ThinkingPicker
+                modelId={selectedModel}
+                value={thinkingLevel}
+                onChange={onThinkingLevelChange}
+              />
 
               <ToggleButton
                 active={artifactsEnabled}

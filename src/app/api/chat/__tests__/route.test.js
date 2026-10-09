@@ -243,7 +243,7 @@ describe("/api/chat POST", () => {
     );
   });
 
-  it("sets reasoning/usage flags from the think flag", async () => {
+  it("turns a thinking level into OpenRouter reasoning fields", async () => {
     harness.create.mockResolvedValue({
       choices: [{ message: { content: "x" }, finish_reason: "stop" }],
     });
@@ -253,26 +253,67 @@ describe("/api/chat POST", () => {
         model: TEST_MODEL,
         messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
-        think: true,
+        thinkingLevel: "high",
         stream: false,
       }),
     );
 
     expect(lastParams().include_reasoning).toBe(true);
-    expect(lastParams().reasoning).toEqual({ exclude: false });
+    expect(lastParams().reasoning).toEqual({ effort: "high", exclude: false });
 
     await POST(
       makeReq({
         model: TEST_MODEL,
         messages: [{ role: "user", content: "hi" }],
         apiKey: "k",
-        think: false,
+        thinkingLevel: "off",
         stream: false,
       }),
     );
 
     expect(harness.create.mock.calls[1][0].include_reasoning).toBe(false);
-    expect(harness.create.mock.calls[1][0].reasoning).toEqual({ exclude: true });
+    expect(harness.create.mock.calls[1][0].reasoning).toEqual({
+      enabled: false,
+      exclude: true,
+    });
+  });
+
+  it("reasons at the default level when the request names no level", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    expect(lastParams().reasoning).toEqual({
+      effort: "medium",
+      exclude: false,
+    });
+  });
+
+  it("does not forward a level the model would reject", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        thinkingLevel: "galaxy-brain",
+        stream: false,
+      }),
+    );
+
+    expect(lastParams().reasoning.effort).toBe("medium");
   });
 
   it("forwards valid function tools without inventing execute closures", async () => {

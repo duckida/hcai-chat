@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { isThinkingOn } from "@/lib/thinking";
 import { useSettings } from "@/stores/settings";
 import ThinkingIndicator from "../ThinkingIndicator";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
@@ -10,7 +11,7 @@ import ThinkingBlock from "./ThinkingBlock";
 import useMessageText from "./useMessageText";
 
 const selectDisplaySettings = (state) => ({
-  thinkingEnabled: state.thinkingEnabled,
+  thinkingLevel: state.thinkingLevel,
   webSearchEnabled: state.webSearchEnabled,
   agentModeEnabled: state.agentModeEnabled,
   artifactsEnabled: state.artifactsEnabled,
@@ -35,12 +36,15 @@ const StreamingMessage = memo(function StreamingMessage({
   streamingToolChips,
 }) {
   const {
-    thinkingEnabled,
+    thinkingLevel,
     webSearchEnabled,
     agentModeEnabled,
     artifactsEnabled,
     showThinking,
   } = useSettings(selectDisplaySettings);
+  // A level of "off" is the old toggle's off; any other level renders
+  // reasoning exactly as it did before levels existed.
+  const thinkingOn = isThinkingOn(thinkingLevel);
 
   const {
     text: cleanedText,
@@ -55,7 +59,7 @@ const StreamingMessage = memo(function StreamingMessage({
         {webSearchEnabled && <WebSearchIndicator isSearching={true} />}
         {agentModeEnabled && <AgentIndicator />}
         {(streamingThinking || streamingToolChips?.length > 0) &&
-          thinkingEnabled && (
+          thinkingOn && (
             <ThinkingBlock
               thinking={streamingThinking}
               chips={streamingToolChips}

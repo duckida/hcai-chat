@@ -6,7 +6,7 @@ import {
   writeSetting,
 } from "../settings";
 
-const DEFAULT_MODEL = "xiaomi/mimo-v2.5";
+const DEFAULT_MODEL = "deepseek/deepseek-v4.1-flash";
 const DEFAULT_TITLE_MODEL = "qwen/qwen3-next-80b-a3b-instruct";
 
 describe("settings registry", () => {
@@ -24,7 +24,7 @@ describe("settings registry", () => {
       "e2bApiKey",
       "selectedModel",
       "titleGenerationModel",
-      "thinkingEnabled",
+      "thinkingLevel",
       "artifactsEnabled",
       "webSearchEnabled",
       "agentModeEnabled",
@@ -40,7 +40,7 @@ describe("settings registry", () => {
   it("exposes SSR-safe defaults", () => {
     expect(getDefaultSetting("selectedModel")).toBe(DEFAULT_MODEL);
     expect(getDefaultSetting("titleGenerationModel")).toBe(DEFAULT_TITLE_MODEL);
-    expect(getDefaultSetting("thinkingEnabled")).toBe(true);
+    expect(getDefaultSetting("thinkingLevel")).toBe("medium");
     expect(getDefaultSetting("artifactsEnabled")).toBe(false);
     expect(getDefaultSetting("webSearchEnabled")).toBe(false);
     expect(getDefaultSetting("agentModeEnabled")).toBe(false);
@@ -71,10 +71,32 @@ describe("settings registry", () => {
     expect(readSetting("maxTokens")).toBe(1024);
   });
 
-  it("round-trips a boolean setting", () => {
-    writeSetting("thinkingEnabled", false);
-    expect(localStorage.getItem("thinking_enabled")).toBe("false");
-    expect(readSetting("thinkingEnabled")).toBe(false);
+  it("round-trips the thinking level through its storage key", () => {
+    writeSetting("thinkingLevel", "high");
+    expect(localStorage.getItem("thinking_level")).toBe("high");
+    expect(readSetting("thinkingLevel")).toBe("high");
+  });
+
+  it("reads an unknown stored level back as the default", () => {
+    // `effort` values are model-dependent and the picker's label assumes a
+    // known level, so junk in storage must not become a selected-but-labelled
+    // neither value.
+    localStorage.setItem("thinking_level", "galaxy-brain");
+    expect(readSetting("thinkingLevel")).toBe("medium");
+  });
+
+  it("migrates the old thinking toggle into a level", () => {
+    localStorage.setItem("thinking_enabled", "false");
+    expect(readSetting("thinkingLevel")).toBe("off");
+
+    localStorage.setItem("thinking_enabled", "true");
+    expect(readSetting("thinkingLevel")).toBe("medium");
+  });
+
+  it("prefers the new thinking level over the legacy toggle", () => {
+    localStorage.setItem("thinking_enabled", "false");
+    localStorage.setItem("thinking_level", "high");
+    expect(readSetting("thinkingLevel")).toBe("high");
   });
 
   it("maps in-memory names to legacy storage keys", () => {
@@ -100,8 +122,8 @@ describe("settings registry", () => {
   });
 
   it("treats missing stored values as defaults", () => {
-    localStorage.removeItem("thinking_enabled");
-    expect(readSetting("thinkingEnabled")).toBe(true);
+    localStorage.removeItem("thinking_level");
+    expect(readSetting("thinkingLevel")).toBe("medium");
   });
 
 });

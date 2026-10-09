@@ -21,7 +21,7 @@ describe("persistence contracts", () => {
       "e2b_api_key",
       "selected_model",
       "title_generation_model",
-      "thinking_enabled",
+      "thinking_level",
       "artifacts_enabled",
       "web_search_enabled",
       "agent_mode_enabled",

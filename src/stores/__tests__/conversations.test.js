@@ -63,7 +63,7 @@ describe("conversations store", () => {
     });
     expect(created.id).toBeTruthy();
     expect(created.title).toBe("New Chat");
-    expect(created.model).toBe("xiaomi/mimo-v2.5");
+    expect(created.model).toBe("deepseek/deepseek-v4.1-flash");
     expect(result.current.conversations).toHaveLength(1);
     expect(result.current.activeConversation).toBe(created.id);
     // A new conversation is written incrementally, not via a full rewrite.

@@ -142,7 +142,7 @@ function useHarness(overrides = {}) {
   const stream = useChatTurn({
     selectedModel: "xiaomi/mimo-v2.5",
     titleGenerationModel: "qwen/qwen3.6-flash",
-    thinkingEnabled: true,
+    thinkingLevel: "medium",
     artifactsEnabled: false,
     webSearchEnabled: false,
     agentModeEnabled: false,
@@ -988,6 +988,35 @@ describe("useChatTurn", () => {
     const carried = followUp.messages.find((m) => m.role === "assistant");
     expect(carried.content).toBe("One.");
     expect(carried.thinking).toBe("I should count to three.");
+  });
+
+  it("sends the level the selected model takes, not the stored one", async () => {
+    // The stored level is global; models differ. Sending "max" to a model that
+    // offers only low/medium/high is a 400 from the provider, and a level the
+    // model does not take is silently ignored at best.
+    const bodies = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, opts) => {
+        if (opts?.body) bodies.push(JSON.parse(opts.body));
+        return Promise.resolve(makeStreamResponse(["data: [DONE]\n\n"]));
+      }),
+    );
+    const result = await setup({
+      thinkingLevel: "max",
+      modelReasoning: {
+        mandatory: false,
+        supported_efforts: ["high", "medium", "low"],
+        default_effort: "low",
+      },
+    });
+
+    await act(async () => {
+      await result.result.current.stream.send("think hard", []);
+    });
+
+    const request = bodies.find((b) => Array.isArray(b.messages));
+    expect(request.thinkingLevel).toBe("low");
   });
 
   it("feeds the tool result back in the next round's request", async () => {

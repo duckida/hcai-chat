@@ -17,6 +17,11 @@ const CATALOG = {
       name: "OpenAI: GPT-4o",
       context_length: 128000,
       supported_parameters: ["tools", "temperature"],
+      reasoning: {
+        mandatory: false,
+        supported_efforts: ["high", "medium", "low"],
+        default_effort: "medium",
+      },
     },
     {
       id: "google/gemini-3.1-flash-lite",
@@ -115,11 +120,26 @@ describe("normalizeModelCatalog", () => {
     expect(toolsSupported["google/gemini-3.1-flash-lite"]).toBe(false);
   });
 
+  it("keeps each model's reasoning capabilities, and null for the models without", () => {
+    const { reasoningByModel } = normalizeModelCatalog(CATALOG);
+    expect(reasoningByModel["openai/gpt-4o"]).toEqual({
+      mandatory: false,
+      supported_efforts: ["high", "medium", "low"],
+      default_effort: "medium",
+    });
+    // Null is a fact about the model — OpenRouter omits `reasoning` on models
+    // that cannot reason, which is not the same as an id the catalog has never
+    // seen (that key is simply absent).
+    expect(reasoningByModel["google/gemini-3.1-flash-lite"]).toBeNull();
+    expect(reasoningByModel["nobody/unknown"]).toBeUndefined();
+  });
+
   it("tolerates a payload with no data array", () => {
     expect(normalizeModelCatalog(undefined)).toEqual({
       grouped: {},
       contextWindows: {},
       toolsSupported: {},
+      reasoningByModel: {},
     });
     expect(normalizeModelCatalog({ data: "nope" }).grouped).toEqual({});
   });
@@ -204,6 +224,7 @@ describe("resetModels", () => {
       grouped: {},
       contextWindows: {},
       toolsSupported: {},
+      reasoningByModel: {},
       status: "idle",
     });
   });

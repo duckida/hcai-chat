@@ -9,6 +9,7 @@ import {
   streamChatCompletion,
 } from "@/lib/api-client";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
+import { resolveThinkingLevel } from "@/lib/thinking";
 import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
 import {
   activeConversationRef,
@@ -146,7 +147,8 @@ async function executeClientTool(
 export function useChatTurn({
   selectedModel,
   titleGenerationModel,
-  thinkingEnabled,
+  thinkingLevel,
+  modelReasoning,
   artifactsEnabled,
   webSearchEnabled,
   agentModeEnabled,
@@ -685,7 +687,9 @@ export function useChatTurn({
             onChunk,
             onError: makeOnError(),
             onComplete: makeOnComplete(needsWebSearch),
-            thinking: thinkingEnabled,
+            // The stored level is global, the model is not: resolve it here so
+            // a request never carries an effort this model would reject.
+            thinkingLevel: resolveThinkingLevel(thinkingLevel, modelReasoning),
             artifacts: artifactsEnabled,
             tools,
             toolChoice: "auto",
@@ -907,8 +911,9 @@ export function useChatTurn({
       agentModeEnabled,
       artifactsEnabled,
       maxTokens,
+      modelReasoning,
       selectedModel,
-      thinkingEnabled,
+      thinkingLevel,
       titleGenerationModel,
       toolsSupported,
       webSearchEnabled,

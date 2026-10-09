@@ -67,7 +67,7 @@ describe("hydration safety", () => {
     // the defaults.
     localStorage.setItem("selected_model", "qwen/qwen3.6-flash");
     localStorage.setItem("max_tokens", "1024");
-    localStorage.setItem("thinking_enabled", "false");
+    localStorage.setItem("thinking_level", "off");
     localStorage.setItem("artifacts_enabled", "true");
     localStorage.setItem("agent_mode_enabled", "true");
     localStorage.setItem("show_sandbox_output", "false");
@@ -85,7 +85,9 @@ describe("hydration safety", () => {
     localStorage.setItem("max_tokens", "1024");
 
     serverRender();
-    expect(settingsStore.getState().selectedModel).toBe("xiaomi/mimo-v2.5");
+    expect(settingsStore.getState().selectedModel).toBe(
+      "deepseek/deepseek-v4.1-flash",
+    );
     expect(settingsStore.getState().maxTokens).toBe(32000);
 
     hydrateSettings();

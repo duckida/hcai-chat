@@ -10,7 +10,16 @@
  * inside a mount effect, never during render.
  */
 
+import { DEFAULT_THINKING_LEVEL, isThinkingLevel } from "@/lib/thinking";
+
 const JSON_PARSE = (value) => JSON.parse(value);
+
+// A stored level can be anything at all — it was written by an older build, or
+// hand-edited — and the picker's label and the request's `effort` both assume a
+// known one, so an unknown value reads back as the default instead of an empty
+// selection.
+const THINKING_LEVEL_PARSE = (value) =>
+  isThinkingLevel(value) ? value : DEFAULT_THINKING_LEVEL;
 
 export const SETTINGS = [
   {
@@ -28,7 +37,7 @@ export const SETTINGS = [
   {
     key: "selectedModel",
     storageKey: "selected_model",
-    default: "xiaomi/mimo-v2.5",
+    default: "deepseek/deepseek-v4.1-flash",
     parse: String,
   },
   {
@@ -38,10 +47,10 @@ export const SETTINGS = [
     parse: String,
   },
   {
-    key: "thinkingEnabled",
-    storageKey: "thinking_enabled",
-    default: true,
-    parse: JSON_PARSE,
+    key: "thinkingLevel",
+    storageKey: "thinking_level",
+    default: DEFAULT_THINKING_LEVEL,
+    parse: THINKING_LEVEL_PARSE,
   },
   {
     key: "artifactsEnabled",
@@ -117,6 +126,18 @@ export function readSetting(key) {
   if (!setting || typeof window === "undefined") return getDefaultSetting(key);
 
   const stored = window.localStorage.getItem(setting.storageKey);
+  if (stored == null && key === "thinkingLevel") {
+    // Keep the old binary preference when upgrading: false maps to Off, while
+    // true maps to the new default effort. New writes use thinking_level.
+    const legacyThinking = window.localStorage.getItem("thinking_enabled");
+    if (legacyThinking != null) {
+      try {
+        return JSON.parse(legacyThinking) === false
+          ? "off"
+          : DEFAULT_THINKING_LEVEL;
+      } catch {}
+    }
+  }
   return deserializeSetting(setting, stored);
 }
 

@@ -26,8 +26,8 @@ const baseProps = (overrides = {}) => ({
   onSearchChange: vi.fn(),
   selectedModel: "model-a",
   onModelChange: vi.fn(),
-  thinkingEnabled: true,
-  onThinkingChange: vi.fn(),
+  thinkingLevel: "medium",
+  onThinkingLevelChange: vi.fn(),
   artifactsEnabled: false,
   onArtifactsChange: vi.fn(),
   webSearchEnabled: false,
@@ -224,8 +224,12 @@ describe("ChatLayout header toggles", () => {
     const props = baseProps();
     render(<ChatLayout {...props} />);
 
+    // Thinking is a level menu, not a toggle: the click opens the list and the
+    // choice comes back as a level id rather than a boolean.
     await userEvent.click(headerButtons()[3]);
-    expect(props.onThinkingChange).toHaveBeenCalledWith(false);
+    const menu = await screen.findByRole("menu");
+    await userEvent.click(within(menu).getByText("High"));
+    expect(props.onThinkingLevelChange).toHaveBeenCalledWith("high");
 
     await userEvent.click(headerButtons()[4]);
     expect(props.onArtifactsChange).toHaveBeenCalledWith(true);

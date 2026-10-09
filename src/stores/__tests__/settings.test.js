@@ -15,8 +15,8 @@ beforeEach(async () => {
 describe("settings store", () => {
   it("starts at SSR-safe defaults before hydration", () => {
     const { result } = renderHook(() => useSettings());
-    expect(result.current.selectedModel).toBe("xiaomi/mimo-v2.5");
-    expect(result.current.thinkingEnabled).toBe(true);
+    expect(result.current.selectedModel).toBe("deepseek/deepseek-v4.1-flash");
+    expect(result.current.thinkingLevel).toBe("medium");
     expect(result.current.artifactsEnabled).toBe(false);
     expect(result.current.agentModeEnabled).toBe(false);
     expect(result.current.showSandboxCode).toBe(true);
@@ -26,27 +26,27 @@ describe("settings store", () => {
 
   it("does not read storage during render, only in hydrateSettings", () => {
     localStorage.setItem("selected_model", "qwen/qwen3.6-flash");
-    localStorage.setItem("thinking_enabled", "false");
+    localStorage.setItem("thinking_level", "off");
 
     const { result } = renderHook(() => useSettings());
-    expect(result.current.selectedModel).toBe("xiaomi/mimo-v2.5");
-    expect(result.current.thinkingEnabled).toBe(true);
+    expect(result.current.selectedModel).toBe("deepseek/deepseek-v4.1-flash");
+    expect(result.current.thinkingLevel).toBe("medium");
 
     act(() => settings.hydrateSettings());
     expect(result.current.selectedModel).toBe("qwen/qwen3.6-flash");
-    expect(result.current.thinkingEnabled).toBe(false);
+    expect(result.current.thinkingLevel).toBe("off");
   });
 
   it("hydrates every declared key from storage", () => {
     localStorage.setItem("selected_model", "qwen/qwen3.6-flash");
-    localStorage.setItem("thinking_enabled", "false");
+    localStorage.setItem("thinking_level", "off");
     localStorage.setItem("max_tokens", "1024");
 
     act(() => settings.hydrateSettings());
 
     const state = settings.settingsStore.getState();
     expect(state.selectedModel).toBe("qwen/qwen3.6-flash");
-    expect(state.thinkingEnabled).toBe(false);
+    expect(state.thinkingLevel).toBe("off");
     expect(state.maxTokens).toBe(1024);
     expect(state.showSandboxCode).toBe(true);
   });
@@ -79,7 +79,7 @@ describe("settings store", () => {
 
   it("keeps the same reference when unrelated keys change", () => {
     const { result } = renderHook(() => useSettings((s) => s.maxTokens));
-    act(() => settings.setSetting("thinkingEnabled", false));
+    act(() => settings.setSetting("thinkingLevel", "high"));
     expect(result.current).toBe(32000);
   });
 });

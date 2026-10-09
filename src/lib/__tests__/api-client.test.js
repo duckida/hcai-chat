@@ -181,7 +181,7 @@ describe("streamChatCompletion", () => {
     expect(body.messages).toEqual(messages);
     expect(body.apiKey).toBe("key");
     expect(body.artifacts).toBe(false);
-    expect(body.think).toBe(false);
+    expect(body.thinkingLevel).toBe("medium");
   });
 
   it("strips error placeholders and empty assistant records from the POSTed messages", async () => {
@@ -366,7 +366,7 @@ describe("streamChatCompletion", () => {
       model: TEST_MODEL,
       onChunk,
       onError: vi.fn(),
-      thinking: true,
+      thinkingLevel: "high",
     });
     expect(onChunk).toHaveBeenCalledWith("hmm", "thinking");
   });

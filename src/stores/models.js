@@ -21,7 +21,8 @@ export function splitModelName(model) {
 
 /**
  * Dedupe, group by provider, and sort the catalog, deriving the
- * context-window and tool-support maps keyed by model id in the same pass.
+ * context-window, tool-support and thinking-capability maps keyed by model id
+ * in the same pass.
  */
 export function normalizeModelCatalog(payload) {
   const rows = Array.isArray(payload?.data) ? payload.data : [];
@@ -36,6 +37,7 @@ export function normalizeModelCatalog(payload) {
   const byProvider = {};
   const contextWindows = {};
   const toolsSupported = {};
+  const reasoningByModel = {};
 
   for (const model of unique) {
     const [provider, name] = splitModelName(model);
@@ -44,6 +46,11 @@ export function normalizeModelCatalog(payload) {
     contextWindows[model.id] = model.context_length || DEFAULT_CONTEXT_WINDOW;
     toolsSupported[model.id] =
       model.supported_parameters?.includes("tools") ?? false;
+    // OpenRouter omits `reasoning` on non-reasoning and dynamic-router models,
+    // so null is a fact about the model. An id that is *absent* from this map
+    // is one the catalog has never heard of — a different case, and the
+    // thinking controls treat it differently.
+    reasoningByModel[model.id] = model.reasoning ?? null;
   }
 
   const grouped = {};
@@ -53,13 +60,14 @@ export function normalizeModelCatalog(payload) {
     );
   }
 
-  return { grouped, contextWindows, toolsSupported };
+  return { grouped, contextWindows, toolsSupported, reasoningByModel };
 }
 
 const initialState = {
   grouped: {},
   contextWindows: {},
   toolsSupported: {},
+  reasoningByModel: {},
   status: "idle",
 };
 
