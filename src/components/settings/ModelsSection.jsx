@@ -4,6 +4,7 @@ import ModelPicker from "@/components/chat/ModelPicker";
 import { Button } from "@/components/primitives/button";
 import { Input } from "@/components/primitives/input";
 import { SectionHeading, SectionLabel } from "@/components/settings/chrome";
+import { isValidOpenRouterProviderSlug } from "@/lib/openrouter-provider";
 
 const MIN_MAX_TOKENS = 128;
 const MAX_MAX_TOKENS = 1_000_000;
@@ -32,12 +33,7 @@ export default function ModelsSection({
 
   const saveProvider = () => {
     const slug = providerSlug.trim();
-    if (
-      !providerModel ||
-      !slug ||
-      slug.length > 64 ||
-      !/^[a-z0-9][a-z0-9_-]*$/i.test(slug)
-    ) {
+    if (!providerModel || !isValidOpenRouterProviderSlug(slug)) {
       return;
     }
     const next = { ...openRouterProviders };
@@ -129,7 +125,7 @@ export default function ModelsSection({
         <div className="space-y-2">
           <SectionLabel
             htmlFor="openrouter-provider-slug"
-            description="Restricts this model to the exact provider slug. Example: deepseek."
+            description="Restricts this model to a provider or exact endpoint. Examples: deepseek, deepinfra/turbo."
           >
             Provider Slug
           </SectionLabel>
@@ -148,10 +144,7 @@ export default function ModelsSection({
           type="button"
           onPress={saveProvider}
           isDisabled={
-            !providerModel ||
-            !providerSlug.trim() ||
-            providerSlug.trim().length > 64 ||
-            !/^[a-z0-9][a-z0-9_-]*$/i.test(providerSlug.trim())
+            !providerModel || !isValidOpenRouterProviderSlug(providerSlug)
           }
           className="w-full rounded-xl sm:w-auto"
           aria-label={

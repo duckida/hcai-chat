@@ -5,6 +5,7 @@ import {
 } from "@/lib/artifacts";
 import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
+import { isValidOpenRouterProviderSlug } from "@/lib/openrouter-provider";
 import { reasoningParamsFor } from "@/lib/thinking";
 
 const AGENT_MODE_PROMPT = `
@@ -471,15 +472,13 @@ function validateRequest(body) {
   if (
     providerSlug !== undefined &&
     providerSlug !== null &&
-    (typeof providerSlug !== "string" ||
-      providerSlug.trim().length === 0 ||
-      providerSlug.trim().length > 64 ||
-      !/^[a-z0-9][a-z0-9_-]*$/i.test(providerSlug.trim()))
+    !isValidOpenRouterProviderSlug(providerSlug)
   ) {
     return {
       valid: false,
       status: 400,
-      error: "providerSlug must be a valid OpenRouter provider slug",
+      error:
+        "providerSlug must be a valid OpenRouter provider or endpoint slug",
     };
   }
 

@@ -112,6 +112,24 @@ describe("/api/chat POST", () => {
     expect(data.finishReason).toBe("stop");
   });
 
+  it("routes to an exact provider endpoint slug", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "Hi there" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "key",
+        providerSlug: "baidu/fp8",
+        stream: false,
+      }),
+    );
+
+    expect(lastParams().provider).toEqual({ only: ["baidu/fp8"] });
+  });
+
   it("hoists a system message into the instructions message", async () => {
     harness.create.mockResolvedValue({
       choices: [{ message: { content: "x" }, finish_reason: "stop" }],
