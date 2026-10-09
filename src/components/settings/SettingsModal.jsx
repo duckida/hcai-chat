@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/primitives/button";
-import { Dialog, DialogDescription } from "@/components/primitives/dialog";
+import {
+  Dialog,
+  DialogDescription,
+  DialogTitle,
+} from "@/components/primitives/dialog";
 import AppearanceSection from "@/components/settings/AppearanceSection";
-import BehaviorSection from "@/components/settings/BehaviorSection";
-import ConnectionSection from "@/components/settings/ConnectionSection";
+import KeysSection from "@/components/settings/KeysSection";
 import ModelsSection from "@/components/settings/ModelsSection";
 import SandboxSection from "@/components/settings/SandboxSection";
-import {
-  MobileSectionPills,
-  SidebarNav,
-} from "@/components/settings/SectionNav";
+import SectionTabs from "@/components/settings/SectionNav";
 import {
   getStoredApiKey,
   getStoredE2bApiKey,
@@ -24,16 +24,20 @@ export default function SettingsModal({
   isOpen,
   onClose,
   onSave,
+  selectedModel = "deepseek/deepseek-v4.1-flash",
+  onSelectedModelChange,
   titleGenerationModel,
   onTitleGenerationModelChange,
+  openRouterProviders = {},
+  onOpenRouterProvidersChange,
   theme: paletteTheme = "aurora",
   onThemeChange,
+  googleFont = "Inter",
+  onGoogleFontChange,
+  accentColor = "#ec3750",
+  onAccentColorChange,
   showThinking = false,
   onShowThinkingChange,
-  showSandboxCode = true,
-  onShowSandboxCodeChange,
-  showSandboxOutput = true,
-  onShowSandboxOutputChange,
   showMetrics = true,
   onShowMetricsChange,
   maxTokens = 32000,
@@ -44,7 +48,7 @@ export default function SettingsModal({
   const [e2bApiKey, setE2bApiKey] = useState("");
   const [showE2bKey, setShowE2bKey] = useState(false);
   const [error, setError] = useState("");
-  const [activeSection, setActiveSection] = useState("connection");
+  const [activeSection, setActiveSection] = useState("keys");
 
   // Settings has to be able to fetch the catalog by itself: it is rendered
   // without the app shell in tests, so the request must originate here.
@@ -76,22 +80,28 @@ export default function SettingsModal({
   return (
     <Dialog
       open={isOpen}
-      onOpenChange={(open) => !open && onClose()}
-      className="sm:max-w-2xl bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden"
+      onOpenChange={(open) => !open && onClose?.()}
+      className="w-[calc(100vw-2rem)] max-w-none sm:max-w-2xl bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden"
     >
       <DialogDescription className="sr-only">
-        Configure your AI connection, models, appearance, and behavior.
+        Configure your keys, models, sandbox, and appearance.
       </DialogDescription>
-      <div className="flex flex-col sm:flex-row max-h-[90vh]">
-        <SidebarNav activeId={activeSection} onSelect={setActiveSection} />
-        <MobileSectionPills
-          activeId={activeSection}
-          onSelect={setActiveSection}
-        />
-        <div className="flex-1 min-h-0 w-full overflow-y-auto sm:max-h-[90vh]">
-          <div className="p-6 sm:p-8">
-            {activeSection === "connection" && (
-              <ConnectionSection
+      <div className="flex max-h-[90vh] min-h-0 min-w-0 flex-col">
+        <div className="px-6 pb-4 pt-6 sm:px-8">
+          <DialogTitle className="text-xl font-[900] tracking-tight text-foreground">
+            Settings
+          </DialogTitle>
+        </div>
+        <SectionTabs activeId={activeSection} onSelect={setActiveSection} />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+          <div
+            id="settings-panel"
+            role="tabpanel"
+            aria-labelledby={`settings-tab-${activeSection}`}
+            className="p-6 sm:p-8"
+          >
+            {activeSection === "keys" && (
+              <KeysSection
                 apiKey={apiKey}
                 onApiKeyChange={(value) => {
                   setApiKey(value);
@@ -100,28 +110,25 @@ export default function SettingsModal({
                 error={error}
                 showKey={showKey}
                 onToggleShowKey={() => setShowKey((prev) => !prev)}
-              />
-            )}
-
-            {activeSection === "sandbox" && (
-              <SandboxSection
                 e2bApiKey={e2bApiKey}
                 onE2bApiKeyChange={setE2bApiKey}
                 showE2bKey={showE2bKey}
                 onToggleShowE2bKey={() => setShowE2bKey((prev) => !prev)}
-                showSandboxCode={showSandboxCode}
-                onShowSandboxCodeChange={onShowSandboxCodeChange}
-                showSandboxOutput={showSandboxOutput}
-                onShowSandboxOutputChange={onShowSandboxOutputChange}
               />
             )}
 
+            {activeSection === "sandbox" && <SandboxSection />}
+
             {activeSection === "models" && (
               <ModelsSection
+                selectedModel={selectedModel}
+                onSelectedModelChange={onSelectedModelChange}
                 titleGenerationModel={titleGenerationModel}
                 onTitleGenerationModelChange={onTitleGenerationModelChange}
                 maxTokens={maxTokens}
                 onMaxTokensChange={onMaxTokensChange}
+                openRouterProviders={openRouterProviders}
+                onOpenRouterProvidersChange={onOpenRouterProvidersChange}
               />
             )}
 
@@ -129,11 +136,10 @@ export default function SettingsModal({
               <AppearanceSection
                 theme={paletteTheme}
                 onThemeChange={onThemeChange}
-              />
-            )}
-
-            {activeSection === "behavior" && (
-              <BehaviorSection
+                googleFont={googleFont}
+                onGoogleFontChange={onGoogleFontChange}
+                accentColor={accentColor}
+                onAccentColorChange={onAccentColorChange}
                 showThinking={showThinking}
                 onShowThinkingChange={onShowThinkingChange}
                 showMetrics={showMetrics}

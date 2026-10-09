@@ -4,11 +4,8 @@ import SandboxTerminal from "../SandboxTerminal";
 import { resetSettings, settingsStore } from "@/stores/settings";
 
 /**
- * The transcript moved here from the thread, and so did its gates: both
- * display settings decide what a *terminal* shows, and they stay independent —
- * hiding output must not hide the command, or the toggle would be a lie.
- * Store-seeded the way the app does it, because SandboxTerminal reads the
- * settings store itself rather than being handed flags.
+ * The transcript always shows a complete run. Legacy visibility preferences
+ * are still seeded here to ensure old saved values cannot hide either half.
  */
 function renderTerminal({ runs, settings } = {}) {
   resetSettings();
@@ -83,28 +80,19 @@ describe("SandboxTerminal", () => {
     expect(screen.queryByText(/^exit/)).toBeNull();
   });
 
-  describe("display settings", () => {
-    it("shows stdout when the setting is on", () => {
-      renderTerminal({
-        runs: [completedRun],
-        settings: { showSandboxOutput: true, showSandboxCode: true },
-      });
-      expect(screen.getByText("hello from the sandbox")).toBeInTheDocument();
-    });
-
-    it("hides stdout when the setting is off", () => {
+  describe("complete transcript", () => {
+    it("shows both the command and output when legacy visibility settings are off", () => {
       renderTerminal({
         runs: [completedRun],
         settings: { showSandboxOutput: false, showSandboxCode: true },
       });
-      expect(screen.queryByText("hello from the sandbox")).toBeNull();
-      // The code is a separate setting and is unaffected.
+      expect(screen.getByText("hello from the sandbox")).toBeInTheDocument();
       expect(
         screen.getByText("print('hello from the sandbox')"),
       ).toBeInTheDocument();
     });
 
-    it("hides stderr too, so a failing command cannot leak through", () => {
+    it("shows stderr even when the legacy output setting is off", () => {
       renderTerminal({
         runs: [
           {
@@ -120,18 +108,18 @@ describe("SandboxTerminal", () => {
         settings: { showSandboxOutput: false, showSandboxCode: true },
       });
       expect(
-        screen.queryByText("Traceback: most recent call last"),
-      ).toBeNull();
+        screen.getByText("Traceback: most recent call last"),
+      ).toBeInTheDocument();
     });
 
-    it("hides the command without hiding its output", () => {
+    it("shows the command even when the legacy input setting is off", () => {
       renderTerminal({
         runs: [completedRun],
         settings: { showSandboxCode: false, showSandboxOutput: true },
       });
       expect(
-        screen.queryByText("print('hello from the sandbox')"),
-      ).toBeNull();
+        screen.getByText("print('hello from the sandbox')"),
+      ).toBeInTheDocument();
       expect(screen.getByText("hello from the sandbox")).toBeInTheDocument();
     });
   });

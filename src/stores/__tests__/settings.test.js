@@ -7,7 +7,14 @@ let useSettings;
 beforeEach(async () => {
   vi.resetModules();
   localStorage.clear();
-  document.documentElement.classList.remove("theme-sunrise", "theme-hackclub");
+  document.documentElement.classList.remove(
+    "theme-sunrise",
+    "theme-hackclub",
+    "theme-custom",
+  );
+  document.documentElement.style.removeProperty("--font-inter");
+  document.documentElement.style.removeProperty("--custom-accent");
+  document.documentElement.style.removeProperty("--custom-accent-foreground");
   settings = await import("@/stores/settings");
   useSettings = settings.useSettings;
 });
@@ -97,6 +104,13 @@ describe("settings store theme classes", () => {
 
     act(() => settings.setSetting("theme", "aurora"));
     expect(root.classList.contains("theme-hackclub")).toBe(false);
+
+    act(() => settings.setSetting("theme", "custom"));
+    act(() => settings.setSetting("accentColor", "#00aaff"));
+    act(() => settings.setSetting("googleFont", "Roboto"));
+    expect(root.classList.contains("theme-custom")).toBe(true);
+    expect(root.style.getPropertyValue("--custom-accent")).toBe("#00aaff");
+    expect(root.style.getPropertyValue("--font-inter")).toContain("Roboto");
   });
 
   it("restores the stored theme class during hydration", () => {

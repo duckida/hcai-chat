@@ -170,6 +170,7 @@ export async function POST(req) {
       stream,
       thinkingLevel,
       max_tokens,
+      providerSlug,
       agentMode,
     } = body;
 
@@ -225,6 +226,9 @@ export async function POST(req) {
       messages: [{ role: "system", content: systemPrompt }, ...wireMessages],
       ...(openAiTools ? { tools: openAiTools, tool_choice: "auto" } : {}),
       ...(max_tokens ? { max_tokens } : {}),
+      ...(providerSlug
+        ? { provider: { only: [providerSlug.trim().toLowerCase()] } }
+        : {}),
       // Same OpenRouter reasoning/usage opt-ins the AI SDK provider turned
       // providerOptions into wire fields: spread straight into the body. The
       // client sends a level, not a boolean — OpenRouter translates `effort`
@@ -428,7 +432,7 @@ export async function POST(req) {
 }
 
 function validateRequest(body) {
-  const { messages, model, apiKey, max_tokens } = body;
+  const { messages, model, apiKey, max_tokens, providerSlug } = body;
 
   if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
     return { valid: false, status: 401, error: "Valid API key is required" };
@@ -462,6 +466,21 @@ function validateRequest(body) {
         error: "max_tokens must be between 1 and 1048576",
       };
     }
+  }
+
+  if (
+    providerSlug !== undefined &&
+    providerSlug !== null &&
+    (typeof providerSlug !== "string" ||
+      providerSlug.trim().length === 0 ||
+      providerSlug.trim().length > 64 ||
+      !/^[a-z0-9][a-z0-9_-]*$/i.test(providerSlug.trim()))
+  ) {
+    return {
+      valid: false,
+      status: 400,
+      error: "providerSlug must be a valid OpenRouter provider slug",
+    };
   }
 
   return { valid: true };

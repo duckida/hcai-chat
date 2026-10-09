@@ -34,6 +34,9 @@ describe("settings registry", () => {
       "showMetrics",
       "maxTokens",
       "theme",
+      "openRouterProviders",
+      "googleFont",
+      "accentColor",
     ]);
   });
 
@@ -50,6 +53,8 @@ describe("settings registry", () => {
     expect(getDefaultSetting("showMetrics")).toBe(true);
     expect(getDefaultSetting("maxTokens")).toBe(32000);
     expect(getDefaultSetting("theme")).toBe("aurora");
+    expect(getDefaultSetting("googleFont")).toBe("Inter");
+    expect(getDefaultSetting("accentColor")).toBe("#ec3750");
     expect(getDefaultSetting("apiKey")).toBe("");
     expect(getDefaultSetting("e2bApiKey")).toBe("");
   });

@@ -1,30 +1,30 @@
-import { ShieldCheck } from "lucide-react";
 import {
   KeyInput,
   SectionHeading,
   SectionLabel,
 } from "@/components/settings/chrome";
 
-export default function ConnectionSection({
+export default function KeysSection({
   apiKey,
   onApiKeyChange,
   error,
   showKey,
   onToggleShowKey,
+  e2bApiKey,
+  onE2bApiKeyChange,
+  showE2bKey,
+  onToggleShowE2bKey,
 }) {
   return (
     <div className="space-y-6">
-      <SectionHeading
-        title="Connection"
-        description="Connect to your AI provider. Your key is stored locally."
-      />
+      <SectionHeading title="Keys" />
 
       <div className="space-y-3">
         <SectionLabel
           htmlFor="apiKey"
           description="Get your key at ai.hackclub.com."
         >
-          Hack Club API Key
+          HCAI API Key
         </SectionLabel>
         <KeyInput
           id="apiKey"
@@ -43,12 +43,17 @@ export default function ConnectionSection({
         )}
       </div>
 
-      <div className="flex items-center gap-3 bg-muted p-4 rounded-xl border border-border">
-        <ShieldCheck className="w-5 h-5 text-green-500 shrink-0" />
-        <p className="text-[12px] text-muted-foreground font-medium leading-normal">
-          Your key is stored only on your local device and never sent to our
-          servers.
-        </p>
+      <div className="space-y-3">
+        <SectionLabel htmlFor="e2bApiKey">E2B API Key (optional)</SectionLabel>
+        <KeyInput
+          id="e2bApiKey"
+          type={showE2bKey ? "text" : "password"}
+          value={e2bApiKey}
+          onChange={(e) => onE2bApiKeyChange(e.target.value)}
+          placeholder="e2b_..."
+          showValue={showE2bKey}
+          onToggleShow={onToggleShowE2bKey}
+        />
       </div>
     </div>
   );

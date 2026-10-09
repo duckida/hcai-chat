@@ -57,6 +57,7 @@ export const setStoredE2bApiKey = (apiKey) => {
 export const generateTitle = async (
   message,
   model = "qwen/qwen3-next-80b-a3b-instruct",
+  providerSlug = null,
 ) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) return "New Chat";
@@ -77,6 +78,7 @@ export const generateTitle = async (
         ],
         apiKey,
         stream: false,
+        ...(providerSlug ? { providerSlug } : {}),
       }),
     });
 
@@ -106,6 +108,7 @@ function buildRequestBody({
   tools,
   toolChoice,
   singleRound = false,
+  providerSlug = null,
 }) {
   const body = {
     model,
@@ -116,6 +119,7 @@ function buildRequestBody({
   };
 
   if (maxTokens) body.max_tokens = maxTokens;
+  if (providerSlug) body.providerSlug = providerSlug;
 
   if (agentMode) {
     body.agentMode = true;
@@ -725,6 +729,7 @@ export const streamChatCompletion = async ({
   onSandboxResult = null,
   onFallbackStart = null,
   singleRound = false,
+  providerSlug = null,
 }) => {
   const apiKey = getStoredApiKey();
   if (!apiKey) {
@@ -753,6 +758,7 @@ export const streamChatCompletion = async ({
     tools,
     toolChoice,
     singleRound,
+    providerSlug,
   });
 
   // The mirror is this turn's delivered content and thinking, for the one

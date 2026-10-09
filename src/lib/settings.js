@@ -13,6 +13,30 @@
 import { DEFAULT_THINKING_LEVEL, isThinkingLevel } from "@/lib/thinking";
 
 const JSON_PARSE = (value) => JSON.parse(value);
+export const GOOGLE_FONT_FAMILIES = [
+  "Inter",
+  "Roboto",
+  "Open Sans",
+  "Lato",
+  "Montserrat",
+  "Poppins",
+  "Nunito",
+  "Merriweather",
+];
+
+const PROVIDER_MAP_PARSE = (value) => {
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      ([modelId, provider]) =>
+        typeof modelId === "string" &&
+        modelId.length > 0 &&
+        typeof provider === "string" &&
+        provider.trim().length > 0,
+    ),
+  );
+};
 
 // A stored level can be anything at all — it was written by an older build, or
 // hand-edited — and the picker's label and the request's `effort` both assume a
@@ -105,6 +129,27 @@ export const SETTINGS = [
     storageKey: "theme",
     default: "aurora",
     parse: String,
+  },
+  {
+    key: "openRouterProviders",
+    storageKey: "openrouter_providers",
+    default: {},
+    parse: PROVIDER_MAP_PARSE,
+  },
+  {
+    key: "googleFont",
+    storageKey: "google_font",
+    default: "Inter",
+    parse: (value) => (GOOGLE_FONT_FAMILIES.includes(value) ? value : "Inter"),
+  },
+  {
+    key: "accentColor",
+    storageKey: "accent_color",
+    default: "#ec3750",
+    parse: (value) =>
+      typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
+        ? value.toLowerCase()
+        : "#ec3750",
   },
 ];
 

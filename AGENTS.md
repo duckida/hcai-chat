@@ -72,8 +72,8 @@ because the stream loop reads them in the same tick it mutates state.
   `ModelPicker`, `ContextUsage`, `ResponseMetrics`, `CustomLink`,
   `ThinkingIndicator`, and `message/` (row/bodypart components).
 - `src/components/settings/` — `SettingsModal` orchestrator + one file per
-  section + shared `chrome.jsx`. Five sections: Connection, Sandbox, Models,
-  Appearance, Behavior.
+  section + shared `chrome.jsx`. Four sections: Keys, Sandbox, Models,
+  Appearance (including thinking and metrics controls).
 - `src/hooks/` — `use-chat-turn.js` (the send lifecycle), `use-thread-scroll.js`
   (tail-following), `use-media-query.js`.
 - `src/lib/` — pure/client helpers. `api-client.js` (SSE chat client),
@@ -194,7 +194,7 @@ silently the way it did before. Mechanics to know before touching it:
   generation, and `finish_reason` is never forwarded.
 
 ### Storage and schema are contracts
-`contracts.test.js` pins the fourteen `localStorage` storage keys, the
+`contracts.test.js` pins the seventeen `localStorage` storage keys, the
 IndexedDB database name / store / `keyPath`, and the rule that the E2B key never
 appears in a URL. **None of these fail loudly if broken** — a renamed key reads
 back as a default, a renamed store reads back as an empty history. A deliberate

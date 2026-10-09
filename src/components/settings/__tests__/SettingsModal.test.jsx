@@ -31,7 +31,7 @@ const renderModal = (overrides = {}) => {
 const goToSection = async (user, label) => {
   const nav = screen.getByRole("navigation", { name: /settings sections/i });
   await user.click(
-    within(nav).getByRole("button", { name: new RegExp(`^${label}`, "i") }),
+    within(nav).getByRole("tab", { name: new RegExp(`^${label}`, "i") }),
   );
   await screen.findByRole("heading", { name: new RegExp(`^${label}$`, "i") });
 };
@@ -49,10 +49,8 @@ beforeEach(() => {
 });
 
 describe("SettingsModal", () => {
-  it("takes its accessible name from the title placed in the sidebar", async () => {
-    // The settings dialog does not pass a `title` prop: "Settings" is rendered
-    // inside its own section nav. That heading is what has to name the dialog,
-    // otherwise it is an unlabelled modal.
+  it("takes its accessible name from the title above the tabs", async () => {
+    // The Settings heading names the dialog independently from the active tab.
     renderModal();
     await waitFor(() => {
       expect(screen.getByRole("dialog", { name: /^settings$/i })).toBeInTheDocument();
@@ -66,14 +64,14 @@ describe("SettingsModal", () => {
     });
   });
 
-  it("starts on the Connection section", async () => {
+  it("starts on the Keys section", async () => {
     renderModal();
     expect(
-      await screen.findByRole("heading", { name: /^Connection$/ }),
+      await screen.findByRole("heading", { name: /^Keys$/ }),
     ).toBeInTheDocument();
   });
 
-  it("switches active section via the sidebar nav", async () => {
+  it("switches active section via the horizontal tabs", async () => {
     const user = userEvent.setup();
     renderModal();
     await goToSection(user, "Models");
@@ -85,7 +83,7 @@ describe("SettingsModal", () => {
   it("preloads the stored API key when opened", async () => {
     localStorage.setItem("hack_club_ai_key", "stored-key");
     renderModal();
-    const input = await screen.findByLabelText(/hack club api key/i);
+    const input = await screen.findByLabelText(/hcai api key/i);
     expect(input.value).toBe("stored-key");
   });
 
@@ -106,7 +104,7 @@ describe("SettingsModal", () => {
   it("saves the trimmed key on success", async () => {
     const user = userEvent.setup();
     const { props } = renderModal();
-    const input = await screen.findByLabelText(/hack club api key/i);
+    const input = await screen.findByLabelText(/hcai api key/i);
     await user.clear(input);
     await user.type(input, "  my-key  ");
     await user.click(screen.getByRole("button", { name: /save and connect/i }));
@@ -117,7 +115,7 @@ describe("SettingsModal", () => {
 
   it("toggles key visibility via the eye button", async () => {
     renderModal();
-    const input = await screen.findByLabelText(/hack club api key/i);
+    const input = await screen.findByLabelText(/hcai api key/i);
     expect(input.type).toBe("password");
     const wrapper = input.parentElement;
     const eyeBtn = wrapper.querySelector("button");
@@ -137,7 +135,7 @@ describe("SettingsModal", () => {
     expect(
       await screen.findByText(/valid api key is required/i),
     ).toBeInTheDocument();
-    const input = screen.getByLabelText(/hack club api key/i);
+    const input = screen.getByLabelText(/hcai api key/i);
     await user.type(input, "k");
     expect(
       screen.queryByText(/valid api key is required/i),
@@ -176,7 +174,7 @@ describe("SettingsModal", () => {
     await goToSection(user, "Models");
     const slider = await screen.findByRole("slider");
     expect(slider.value).toBe("8192");
-    expect(screen.getByText("8,192")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Max Output Tokens$/i)).toHaveValue(8192);
   });
 
   it("calls onMaxTokensChange when the slider is moved", async () => {
@@ -193,9 +191,9 @@ describe("SettingsModal", () => {
     const user = userEvent.setup();
     const onShowMetricsChange = vi.fn();
     renderModal({ showMetrics: false, onShowMetricsChange });
-    await goToSection(user, "Behavior");
-    await screen.findByText(/show response metrics/i);
-    const metricsLabel = screen.getByText(/show response metrics/i);
+    await goToSection(user, "Appearance");
+    await screen.findByText(/^show metrics$/i);
+    const metricsLabel = screen.getByText(/^show metrics$/i);
     const outerRow = metricsLabel.parentElement.parentElement;
     const toggleBtn = outerRow.querySelector("button");
     fireEvent.click(toggleBtn);
@@ -261,13 +259,13 @@ describe("SettingsModal switches", () => {
   it("exposes each switch as role=switch reflecting its state", async () => {
     const user = userEvent.setup();
     renderModal({ showThinking: true, showMetrics: false });
-    await goToSection(user, "Behavior");
+    await goToSection(user, "Appearance");
 
     const thinking = screen.getByRole("switch", { name: /^show thinking$/i });
     expect(thinking).toHaveAttribute("aria-checked", "true");
 
     const metrics = screen.getByRole("switch", {
-      name: /^show response metrics$/i,
+      name: /^show metrics$/i,
     });
     expect(metrics).toHaveAttribute("aria-checked", "false");
   });
@@ -275,10 +273,10 @@ describe("SettingsModal switches", () => {
   it("names each switch from its visible label", async () => {
     const user = userEvent.setup();
     renderModal();
-    await goToSection(user, "Behavior");
+    await goToSection(user, "Appearance");
 
     const metrics = screen.getByRole("switch", {
-      name: /^show response metrics$/i,
+      name: /^show metrics$/i,
     });
     expect(metrics).toHaveAccessibleDescription(/token count and timing/i);
   });
@@ -287,27 +285,22 @@ describe("SettingsModal switches", () => {
     const user = userEvent.setup();
     const onShowThinkingChange = vi.fn();
     renderModal({ showThinking: false, onShowThinkingChange });
-    await goToSection(user, "Behavior");
+    await goToSection(user, "Appearance");
 
     await user.click(screen.getByText(/^Show Thinking$/));
 
     expect(onShowThinkingChange).toHaveBeenCalledWith(true);
   });
 
-  it("offers a switch for each sandbox display option", async () => {
-    const user = userEvent.setup();
-    const onShowSandboxCodeChange = vi.fn();
-    renderModal({ showSandboxCode: false, onShowSandboxCodeChange });
-    await goToSection(user, "Sandbox");
+  it("omits sandbox transcript visibility switches", async () => {
+    renderModal();
+    await goToSection(userEvent.setup(), "Sandbox");
 
     expect(
-      screen.getByRole("switch", { name: /^show sandbox input$/i }),
-    ).toBeInTheDocument();
+      screen.queryByRole("switch", { name: /^show sandbox input$/i }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.getByRole("switch", { name: /^show sandbox output$/i }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByText(/^Show Sandbox Input$/));
-    expect(onShowSandboxCodeChange).toHaveBeenCalledWith(true);
+      screen.queryByRole("switch", { name: /^show sandbox output$/i }),
+    ).not.toBeInTheDocument();
   });
 });

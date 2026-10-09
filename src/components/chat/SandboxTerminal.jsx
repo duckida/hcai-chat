@@ -2,7 +2,6 @@
 
 import { CheckCircle2, XCircle } from "lucide-react";
 import { useThreadScroll } from "@/hooks/use-thread-scroll";
-import { useSettings } from "@/stores/settings";
 import ThinkingIndicator from "./ThinkingIndicator";
 
 // The sandbox workspace, mirrored client-side. `WORKSPACE` itself lives in
@@ -11,33 +10,28 @@ import ThinkingIndicator from "./ThinkingIndicator";
 // lazy-loaded on the server for exactly that reason).
 const PROMPT = "/workspace $";
 
-const selectSandboxDisplay = (state) => ({
-  showSandboxCode: state.showSandboxCode,
-  showSandboxOutput: state.showSandboxOutput,
-});
-
 /**
  * One run of the log: the input at the shell prompt, its output, and how it
- * ended. Both display settings gate their own half, independently — turning
- * off output must not hide the command, or the toggle would be a lie.
+ * ended. The transcript always shows the full run so commands and their
+ * results stay together in the side panel.
  */
-function TerminalRun({ run, showSandboxCode, showSandboxOutput }) {
+function TerminalRun({ run }) {
   const isRunning = run.status === "running" || run.status === "writing";
 
   return (
     <div className="space-y-1 min-w-0">
-      {showSandboxCode && run.code && (
+      {run.code && (
         <pre className="whitespace-pre-wrap break-words">
           <span className="text-green-600 dark:text-green-400">{PROMPT}</span>{" "}
           <span className="text-foreground">{run.code}</span>
         </pre>
       )}
-      {showSandboxOutput && run.stdout && (
+      {run.stdout && (
         <pre className="whitespace-pre-wrap break-words text-foreground/80">
           {run.stdout}
         </pre>
       )}
-      {showSandboxOutput && run.stderr && (
+      {run.stderr && (
         <pre className="whitespace-pre-wrap break-words text-red-500">
           {run.stderr}
         </pre>
@@ -82,9 +76,6 @@ function TerminalRun({ run, showSandboxCode, showSandboxOutput }) {
  * back so the next one starts at the bottom.
  */
 export default function SandboxTerminal({ runs = [] }) {
-  const { showSandboxCode, showSandboxOutput } =
-    useSettings(selectSandboxDisplay);
-
   const isActive = runs.some(
     (run) => run.status === "running" || run.status === "writing",
   );
@@ -103,12 +94,7 @@ export default function SandboxTerminal({ runs = [] }) {
       >
         <div className="space-y-4 min-w-0">
           {runs.map((run) => (
-            <TerminalRun
-              key={run.key}
-              run={run}
-              showSandboxCode={showSandboxCode}
-              showSandboxOutput={showSandboxOutput}
-            />
+            <TerminalRun key={run.key} run={run} />
           ))}
         </div>
       </section>

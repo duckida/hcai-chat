@@ -50,6 +50,7 @@ export default function ChatApp({
   const stream = useChatTurn({
     selectedModel: settings.selectedModel,
     titleGenerationModel: settings.titleGenerationModel,
+    openRouterProviders: settings.openRouterProviders,
     thinkingLevel: settings.thinkingLevel,
     modelReasoning,
     artifactsEnabled: settings.artifactsEnabled,
@@ -471,18 +472,24 @@ export default function ChatApp({
           setHasE2bKey(!!getStoredE2bApiKey());
           toast.success("Settings updated");
         }}
+        selectedModel={settings.selectedModel}
+        onSelectedModelChange={(v) => setSetting("selectedModel", v)}
         titleGenerationModel={settings.titleGenerationModel}
         onTitleGenerationModelChange={(v) =>
           setSetting("titleGenerationModel", v)
         }
+        openRouterProviders={settings.openRouterProviders}
+        onOpenRouterProvidersChange={(v) =>
+          setSetting("openRouterProviders", v)
+        }
         theme={settings.theme}
         onThemeChange={(v) => setSetting("theme", v)}
+        googleFont={settings.googleFont}
+        onGoogleFontChange={(v) => setSetting("googleFont", v)}
+        accentColor={settings.accentColor}
+        onAccentColorChange={(v) => setSetting("accentColor", v)}
         showThinking={settings.showThinking}
         onShowThinkingChange={(v) => setSetting("showThinking", v)}
-        showSandboxCode={settings.showSandboxCode}
-        onShowSandboxCodeChange={(v) => setSetting("showSandboxCode", v)}
-        showSandboxOutput={settings.showSandboxOutput}
-        onShowSandboxOutputChange={(v) => setSetting("showSandboxOutput", v)}
         showMetrics={settings.showMetrics}
         onShowMetricsChange={(v) => setSetting("showMetrics", v)}
         maxTokens={settings.maxTokens}

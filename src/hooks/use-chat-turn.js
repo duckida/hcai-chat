@@ -147,6 +147,7 @@ async function executeClientTool(
 export function useChatTurn({
   selectedModel,
   titleGenerationModel,
+  openRouterProviders,
   thinkingLevel,
   modelReasoning,
   artifactsEnabled,
@@ -513,12 +514,18 @@ export function useChatTurn({
             const firstUserMessage = finalMessages.find(
               (m) => m.role === "user",
             )?.content;
-            patch.title = await generateTitle(
+            const titleMessage =
               typeof firstUserMessage === "string" && firstUserMessage.trim()
                 ? firstUserMessage
-                : content,
-              titleGenerationModel,
-            );
+                : content;
+            const titleProvider = openRouterProviders?.[titleGenerationModel];
+            patch.title = titleProvider
+              ? await generateTitle(
+                  titleMessage,
+                  titleGenerationModel,
+                  titleProvider,
+                )
+              : await generateTitle(titleMessage, titleGenerationModel);
           }
           conversationsActions.patchConversation(currentId, patch);
           snapToActualUsage();
@@ -684,6 +691,7 @@ export function useChatTurn({
           await streamChatCompletion({
             messages: roundMessages,
             model: selectedModel,
+            providerSlug: openRouterProviders?.[selectedModel] || null,
             onChunk,
             onError: makeOnError(),
             onComplete: makeOnComplete(needsWebSearch),
@@ -912,6 +920,7 @@ export function useChatTurn({
       artifactsEnabled,
       maxTokens,
       modelReasoning,
+      openRouterProviders,
       selectedModel,
       thinkingLevel,
       titleGenerationModel,

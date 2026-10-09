@@ -477,3 +477,21 @@ li > ol {
   --sidebar-border: #252429;
   --sidebar-ring: #ec3750;
 }
+
+.theme-custom {
+  --primary: var(--custom-accent);
+  --primary-foreground: var(--custom-accent-foreground);
+  --accent: color-mix(in oklab, var(--custom-accent) 14%, var(--background));
+  --accent-foreground: var(--foreground);
+  --ring: var(--custom-accent);
+  --sidebar-primary: var(--custom-accent);
+  --sidebar-primary-foreground: var(--custom-accent-foreground);
+  --sidebar-accent: color-mix(
+    in oklab,
+    var(--custom-accent) 14%,
+    var(--background)
+  );
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-ring: var(--custom-accent);
+  --chart-1: var(--custom-accent);
+}

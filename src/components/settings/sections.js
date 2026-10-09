@@ -1,10 +1,10 @@
-import { Brain, Cloud, Key, Palette, Sliders } from "lucide-react";
+import { Brain, Cloud, Key, Palette } from "lucide-react";
 
 export const SECTIONS = [
   {
-    id: "connection",
-    label: "Connection",
-    description: "API key & security",
+    id: "keys",
+    label: "Keys",
+    description: "HCAI and E2B keys",
     icon: Key,
   },
   {
@@ -16,19 +16,13 @@ export const SECTIONS = [
   {
     id: "models",
     label: "Models",
-    description: "Title generation & limits",
+    description: "Defaults, providers & limits",
     icon: Brain,
   },
   {
     id: "appearance",
     label: "Appearance",
-    description: "Theme & color mode",
+    description: "Theme & display options",
     icon: Palette,
-  },
-  {
-    id: "behavior",
-    label: "Behavior",
-    description: "Defaults & metrics",
-    icon: Sliders,
   },
 ];

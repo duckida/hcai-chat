@@ -25,6 +25,7 @@ export default function ModelPicker({
   triggerClassName = "",
   align = "start",
   emptyLabel = "Model",
+  ariaLabelledBy,
 }) {
   const groupedModels = useModels((s) => s.grouped);
   const hasModels = Object.keys(groupedModels).length > 0;
@@ -37,6 +38,7 @@ export default function ModelPicker({
     <MenuTrigger>
       <Button
         variant="ghost"
+        aria-labelledby={ariaLabelledBy}
         className={cn(
           "justify-between w-auto min-w-[64px] sm:min-w-[100px] border-none shadow-none hover:bg-accent transition-colors focus-visible:ring-0 font-bold text-[12px] sm:text-[14px] text-foreground bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1 sm:px-3 rounded-xl",
           triggerClassName,

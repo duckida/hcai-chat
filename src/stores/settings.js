@@ -8,10 +8,11 @@ import {
 } from "@/lib/settings";
 import { createStore, useStore } from "@/lib/store";
 
-const THEME_CLASSES = ["theme-sunrise", "theme-hackclub"];
+const THEME_CLASSES = ["theme-sunrise", "theme-hackclub", "theme-custom"];
 const THEME_CLASS_BY_NAME = {
   sunrise: "theme-sunrise",
   hackclub: "theme-hackclub",
+  custom: "theme-custom",
 };
 
 function defaultValues() {
@@ -20,12 +21,42 @@ function defaultValues() {
   return values;
 }
 
-function applyThemeClass(theme) {
+function getAccentForeground(hex) {
+  const channels = [1, 3, 5].map(
+    (offset) => Number.parseInt(hex.slice(offset, offset + 2), 16) / 255,
+  );
+  const linear = channels.map((channel) =>
+    channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  const luminance =
+    0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  return luminance > 0.179 ? "#111111" : "#ffffff";
+}
+
+function applyTheme(values) {
   if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.classList.remove(...THEME_CLASSES);
-  const className = THEME_CLASS_BY_NAME[theme];
+  const className = THEME_CLASS_BY_NAME[values.theme];
   if (className) root.classList.add(className);
+
+  if (values.theme === "custom") {
+    root.style.setProperty(
+      "--font-inter",
+      `"${values.googleFont}", ui-sans-serif, system-ui, sans-serif`,
+    );
+    root.style.setProperty("--custom-accent", values.accentColor);
+    // A user-picked light accent needs dark button text; a dark accent needs
+    // white text to keep primary controls readable.
+    root.style.setProperty(
+      "--custom-accent-foreground",
+      getAccentForeground(values.accentColor),
+    );
+  } else {
+    root.style.removeProperty("--font-inter");
+    root.style.removeProperty("--custom-accent");
+    root.style.removeProperty("--custom-accent-foreground");
+  }
 }
 
 export const settingsStore = createStore(defaultValues());
@@ -34,13 +65,15 @@ export function hydrateSettings() {
   const values = {};
   for (const key of SETTING_KEYS) values[key] = readSetting(key);
   settingsStore.setState(values);
-  applyThemeClass(values.theme);
+  applyTheme(values);
 }
 
 export function setSetting(key, value) {
   settingsStore.setState({ [key]: value });
   writeSetting(key, value);
-  if (key === "theme") applyThemeClass(value);
+  if (["theme", "googleFont", "accentColor"].includes(key)) {
+    applyTheme(settingsStore.getState());
+  }
 }
 
 /**
@@ -49,7 +82,9 @@ export function setSetting(key, value) {
  * it into every test that renders after it.
  */
 export function resetSettings() {
-  settingsStore.setState(defaultValues());
+  const values = defaultValues();
+  settingsStore.setState(values);
+  applyTheme(values);
 }
 
 export function useSettings(selector) {

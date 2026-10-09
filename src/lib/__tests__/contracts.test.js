@@ -31,6 +31,9 @@ describe("persistence contracts", () => {
       "show_metrics",
       "max_tokens",
       "theme",
+      "openrouter_providers",
+      "google_font",
+      "accent_color",
     ]);
   });
 

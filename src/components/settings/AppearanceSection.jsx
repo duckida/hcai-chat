@@ -1,6 +1,7 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
+import { Input } from "@/components/primitives/input";
 import {
   Select,
   SelectItem,
@@ -8,7 +9,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/primitives/select";
-import { SectionHeading, SectionLabel } from "@/components/settings/chrome";
+import {
+  SectionHeading,
+  SectionLabel,
+  SwitchRow,
+} from "@/components/settings/chrome";
+import { GOOGLE_FONT_FAMILIES } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
 function DarkModeSelector() {
@@ -66,6 +72,14 @@ function DarkModeSelector() {
 export default function AppearanceSection({
   theme: paletteTheme,
   onThemeChange,
+  googleFont = "Inter",
+  onGoogleFontChange,
+  accentColor = "#ec3750",
+  onAccentColorChange,
+  showThinking,
+  onShowThinkingChange,
+  showMetrics,
+  onShowMetricsChange,
 }) {
   return (
     <div className="space-y-6">
@@ -121,8 +135,89 @@ export default function AppearanceSection({
             >
               Hack Club
             </SelectItem>
+            <SelectItem
+              id="custom"
+              className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
+            >
+              Custom
+            </SelectItem>
           </SelectPopover>
         </Select>
+      </div>
+
+      {paletteTheme === "custom" && (
+        <div className="space-y-4 rounded-2xl border border-border bg-muted/30 p-4 sm:p-5">
+          <div className="space-y-2">
+            <SectionLabel
+              id="google-font-label"
+              description="Choose the Google Font used throughout the app."
+            >
+              Google Font
+            </SectionLabel>
+            <Select
+              aria-labelledby="google-font-label"
+              selectedKey={googleFont}
+              onSelectionChange={onGoogleFontChange}
+            >
+              <SelectTrigger className="w-full border-border bg-background rounded-xl px-4 h-12">
+                <SelectValue placeholder="Select a font" />
+              </SelectTrigger>
+              <SelectPopover
+                offset={5}
+                className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
+              >
+                {GOOGLE_FONT_FAMILIES.map((font) => (
+                  <SelectItem
+                    key={font}
+                    id={font}
+                    className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
+                  >
+                    {font}
+                  </SelectItem>
+                ))}
+              </SelectPopover>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <SectionLabel
+              htmlFor="custom-accent-color"
+              description="Used for primary buttons, focus rings, and selected accents."
+            >
+              Accent Color
+            </SectionLabel>
+            <div className="flex min-w-0 items-center gap-3 rounded-xl border border-border bg-background p-2">
+              <Input
+                id="custom-accent-color"
+                type="color"
+                value={accentColor}
+                onChange={(event) => onAccentColorChange?.(event.target.value)}
+                className="h-10 w-14 shrink-0 cursor-pointer rounded-lg border-0 bg-transparent p-1"
+              />
+              <span className="truncate font-mono text-sm font-semibold uppercase text-foreground">
+                {accentColor}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-3 border-t border-border pt-5">
+        <SwitchRow
+          id="show-thinking"
+          label="Show Thinking"
+          description="Expand thinking blocks by default."
+          checked={showThinking}
+          onChange={onShowThinkingChange}
+        />
+
+        <SwitchRow
+          id="show-response-metrics"
+          label="Show Metrics"
+          description="Display token count and timing info."
+          checked={showMetrics}
+          onChange={onShowMetricsChange}
+        />
       </div>
     </div>
   );
