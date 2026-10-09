@@ -426,10 +426,7 @@ describe("artifact panel track", () => {
   const handle = () => screen.getByRole("separator", { name: /resize side panel/i });
   const row = () => document.querySelector(".grid");
   const trackWidth = () => {
-    // "auto minmax(0, 1fr) 480px" splits on the space inside minmax() too, so
-    // the panel track is the last part, not the third.
-    const parts = row().style.gridTemplateColumns.trim().split(/\s+/);
-    return Number.parseInt(parts[parts.length - 1], 10);
+    return Number.parseInt(row().style.getPropertyValue("--panel-track"), 10);
   };
 
   const withPanel = (overrides = {}) =>
@@ -458,7 +455,9 @@ describe("artifact panel track", () => {
     expect(trackWidth()).toBe(480);
     // The thread keeps the middle track and the sidebar the first, so the row
     // is three explicit tracks rather than auto-placed children.
-    expect(row().style.gridTemplateColumns).toMatch(/^\d+px minmax\(0, 1fr\) \d+px$/);
+    expect(row()).toHaveClass("grid-cols-1");
+    expect(row().className).toContain("md:grid-cols-[var(--sidebar-track)_minmax(0,1fr)_var(--panel-track)]");
+    expect(row().style.getPropertyValue("--sidebar-track")).toBe("260px");
   });
 
   it("collapses the track when the panel is closed", () => {

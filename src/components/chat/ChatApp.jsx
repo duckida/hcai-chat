@@ -141,6 +141,7 @@ export default function ChatApp({
   const galleryArtifacts = useMemo(() => {
     const entries = [];
     for (const conversation of conversations.conversations) {
+      let latestArtifact = null;
       for (const [messageIndex, msg] of (
         conversation.messages || []
       ).entries()) {
@@ -149,7 +150,7 @@ export default function ChatApp({
           getMessageText(msg.content),
         ).artifacts;
         artifacts.forEach((html, artifactIndex) => {
-          entries.push({
+          latestArtifact = {
             key: `${conversation.id}:${messageIndex}:${artifactIndex}`,
             conversationId: conversation.id,
             messageIndex,
@@ -157,9 +158,10 @@ export default function ChatApp({
             html,
             title: getArtifactTitle(html),
             conversationTitle: conversation.title,
-          });
+          };
         });
       }
+      if (latestArtifact) entries.push(latestArtifact);
     }
     return entries;
   }, [conversations.conversations]);

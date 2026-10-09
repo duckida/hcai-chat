@@ -79,11 +79,10 @@ const stubFetch = () =>
     })),
   );
 
-/** The last track of `auto minmax(0, 1fr) Npx` is the panel's width. */
+/** The panel width is kept in a CSS variable for responsive grid tracks. */
 const trackWidth = () => {
   const row = document.querySelector(".grid");
-  const parts = row.style.gridTemplateColumns.trim().split(/\s+/);
-  return Number.parseInt(parts[parts.length - 1], 10);
+  return Number.parseInt(row.style.getPropertyValue("--panel-track"), 10);
 };
 
 /** Open paints a resize handle; collapsed still offers the artifacts it has. */

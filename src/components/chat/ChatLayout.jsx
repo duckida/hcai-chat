@@ -234,13 +234,14 @@ export default function ChatLayout({
       // than reflowing the thread a pixel at a time. The transition is off
       // during a drag — a transition that trails the pointer reads as lag, and
       // the track is already being written directly on every move.
-      className={`grid h-screen bg-background text-foreground overflow-hidden font-sans antialiased selection:bg-accent ${
+      className={`grid grid-cols-1 md:grid-cols-[var(--sidebar-track)_minmax(0,1fr)_var(--panel-track)] h-screen bg-background text-foreground overflow-hidden font-sans antialiased selection:bg-accent ${
         isPanelResizing
           ? ""
           : "transition-[grid-template-columns] duration-200 ease-out"
       }`}
       style={{
-        gridTemplateColumns: `${sidebarOpen ? sidebarWidth : 56}px minmax(0, 1fr) ${panelTrack}px`,
+        "--sidebar-track": `${sidebarOpen ? sidebarWidth : 56}px`,
+        "--panel-track": `${panelTrack}px`,
       }}
     >
       <aside
@@ -321,7 +322,7 @@ export default function ChatLayout({
           viewport, and the grid's `overflow-hidden` would clip the composer
           below it with nothing left to scroll. `min-h-0` is what keeps the row
           at the viewport's height and the thread scrolling inside it instead. */}
-      <div className="col-start-2 flex flex-col min-w-0 min-h-0 relative">
+      <div className="col-start-1 md:col-start-2 flex flex-col min-w-0 min-h-0 relative">
         <Header
           sidebarOpen={sidebarOpen}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}

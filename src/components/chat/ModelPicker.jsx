@@ -38,11 +38,11 @@ export default function ModelPicker({
       <Button
         variant="ghost"
         className={cn(
-          "justify-between w-auto min-w-[100px] border-none shadow-none hover:bg-accent transition-colors focus-visible:ring-0 font-bold text-[12px] sm:text-[14px] text-foreground bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1.5 sm:px-3 rounded-xl",
+          "justify-between w-auto min-w-[64px] sm:min-w-[100px] border-none shadow-none hover:bg-accent transition-colors focus-visible:ring-0 font-bold text-[12px] sm:text-[14px] text-foreground bg-transparent gap-0.5 sm:gap-2 h-7 sm:h-9 px-1 sm:px-3 rounded-xl",
           triggerClassName,
         )}
       >
-        <span className="truncate min-w-0 max-w-[120px] sm:max-w-[200px]">
+        <span className="truncate min-w-0 max-w-[40px] sm:max-w-[200px]">
           {selectedName}
         </span>
         <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />

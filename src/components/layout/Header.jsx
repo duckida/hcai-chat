@@ -100,7 +100,7 @@ export default function Header({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-7 w-7 sm:h-8 sm:w-8"
             aria-label="Open menu"
             onClick={() => onMobileSheetOpenChange(true)}
           >
@@ -109,7 +109,7 @@ export default function Header({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8"
+            className="h-7 w-7 sm:h-8 sm:w-8"
             aria-label="New Chat"
             onClick={onNewChat}
           >
@@ -128,7 +128,7 @@ export default function Header({
         </div>
       </div>
 
-      <div className="flex-1 min-w-0 flex items-center justify-center gap-0.5 sm:gap-2">
+      <div className="flex-1 min-w-0 flex items-center justify-center gap-0 sm:gap-2 overflow-hidden">
         {!artifactFullscreen && (
           <>
             <div className="flex items-center gap-0.5 sm:gap-1">
