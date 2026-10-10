@@ -14,7 +14,7 @@ import {
   SectionLabel,
   SwitchRow,
 } from "@/components/settings/chrome";
-import { GOOGLE_FONT_FAMILIES } from "@/lib/settings";
+import { GOOGLE_FONT_FAMILIES, sanitizeGoogleFont } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
 function DarkModeSelector() {
@@ -149,34 +149,31 @@ export default function AppearanceSection({
         <div className="space-y-4 rounded-2xl border border-border bg-muted/30 p-4 sm:p-5">
           <div className="space-y-2">
             <SectionLabel
-              id="google-font-label"
-              description="Choose the Google Font used throughout the app."
+              htmlFor="custom-google-font"
+              description="Type the name of any Google Fonts family, or pick a suggestion."
             >
               Google Font
             </SectionLabel>
-            <Select
-              aria-labelledby="google-font-label"
-              selectedKey={googleFont}
-              onSelectionChange={onGoogleFontChange}
-            >
-              <SelectTrigger className="w-full border-border bg-background rounded-xl px-4 h-12">
-                <SelectValue placeholder="Select a font" />
-              </SelectTrigger>
-              <SelectPopover
-                offset={5}
-                className="border-border shadow-2xl rounded-2xl p-1 min-w-[220px] bg-popover z-[100]"
-              >
-                {GOOGLE_FONT_FAMILIES.map((font) => (
-                  <SelectItem
-                    key={font}
-                    id={font}
-                    className="text-[13px] transition-colors rounded-lg py-2.5 px-4 focus:bg-accent cursor-pointer"
-                  >
-                    {font}
-                  </SelectItem>
-                ))}
-              </SelectPopover>
-            </Select>
+            {/* Free text, not a Select: any family on Google Fonts works, so a
+                fixed list would reject most of them. The curated families ride
+                along as datalist suggestions for discoverability. */}
+            <Input
+              id="custom-google-font"
+              list="google-font-suggestions"
+              value={googleFont}
+              placeholder="Inter"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) =>
+                onGoogleFontChange?.(sanitizeGoogleFont(event.target.value))
+              }
+              className="h-12 w-full rounded-xl border-border bg-background px-4 font-medium"
+            />
+            <datalist id="google-font-suggestions">
+              {GOOGLE_FONT_FAMILIES.map((font) => (
+                <option key={font} value={font} />
+              ))}
+            </datalist>
           </div>
 
           <div className="space-y-2">

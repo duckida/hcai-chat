@@ -13,6 +13,10 @@
 import { DEFAULT_THINKING_LEVEL, isThinkingLevel } from "@/lib/thinking";
 
 const JSON_PARSE = (value) => JSON.parse(value);
+/**
+ * Suggested families for the Google Font field. The field is free text — the
+ * list is only a datalist of starting points, not a whitelist.
+ */
 export const GOOGLE_FONT_FAMILIES = [
   "Inter",
   "Roboto",
@@ -23,6 +27,22 @@ export const GOOGLE_FONT_FAMILIES = [
   "Nunito",
   "Merriweather",
 ];
+
+/**
+ * A Google Font family is typed by hand, so this runs on any string that can
+ * reach it: a fresh keystroke, an older build's stored value, or a hand-edited
+ * localStorage entry. Family names are letters, digits, spaces and hyphens;
+ * dropping everything else keeps the value from breaking out of the
+ * `--font-inter` CSS declaration or the stylesheet URL it is interpolated into.
+ * Length is capped because the value ends up in a request URL.
+ */
+export function sanitizeGoogleFont(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/\s+/g, " ")
+    .slice(0, 64);
+}
 
 const PROVIDER_MAP_PARSE = (value) => {
   const parsed = JSON.parse(value);
@@ -140,7 +160,7 @@ export const SETTINGS = [
     key: "googleFont",
     storageKey: "google_font",
     default: "Inter",
-    parse: (value) => (GOOGLE_FONT_FAMILIES.includes(value) ? value : "Inter"),
+    parse: (value) => sanitizeGoogleFont(value).trim() || "Inter",
   },
   {
     key: "accentColor",

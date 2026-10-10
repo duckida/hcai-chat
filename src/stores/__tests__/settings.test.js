@@ -113,6 +113,20 @@ describe("settings store theme classes", () => {
     expect(root.style.getPropertyValue("--font-inter")).toContain("Roboto");
   });
 
+  it("sanitizes an injected font name before it reaches the CSS variable", () => {
+    const root = document.documentElement;
+
+    act(() => settings.setSetting("theme", "custom"));
+    act(() =>
+      settings.setSetting("googleFont", 'Roboto"} body{display:none'),
+    );
+
+    const value = root.style.getPropertyValue("--font-inter");
+    expect(value).toContain("Roboto");
+    expect(value).not.toContain("}");
+    expect(value).not.toContain("{");
+  });
+
   it("restores the stored theme class during hydration", () => {
     localStorage.setItem("theme", "hackclub");
     act(() => settings.hydrateSettings());

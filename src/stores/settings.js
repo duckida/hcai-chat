@@ -4,6 +4,7 @@ import {
   getDefaultSetting,
   readSetting,
   SETTING_KEYS,
+  sanitizeGoogleFont,
   writeSetting,
 } from "@/lib/settings";
 import { createStore, useStore } from "@/lib/store";
@@ -41,9 +42,13 @@ function applyTheme(values) {
   if (className) root.classList.add(className);
 
   if (values.theme === "custom") {
+    // A stored font only reaches this point through `sanitizeGoogleFont`, but
+    // the value is interpolated straight into a CSS declaration, so sanitize
+    // again rather than trusting every caller of `setSetting`.
+    const fontFamily = sanitizeGoogleFont(values.googleFont).trim() || "Inter";
     root.style.setProperty(
       "--font-inter",
-      `"${values.googleFont}", ui-sans-serif, system-ui, sans-serif`,
+      `"${fontFamily}", ui-sans-serif, system-ui, sans-serif`,
     );
     root.style.setProperty("--custom-accent", values.accentColor);
     // A user-picked light accent needs dark button text; a dark accent needs

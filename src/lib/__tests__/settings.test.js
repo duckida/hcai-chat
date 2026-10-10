@@ -122,6 +122,24 @@ describe("settings registry", () => {
     expect(readSetting("maxTokens")).toBe(32000);
   });
 
+  it("round-trips an arbitrary Google Font family name", () => {
+    // The font field is free text, so a family outside the suggested list has
+    // to survive a write/read pair rather than snapping back to the default.
+    writeSetting("googleFont", "Space Grotesk");
+    expect(localStorage.getItem("google_font")).toBe("Space Grotesk");
+    expect(readSetting("googleFont")).toBe("Space Grotesk");
+  });
+
+  it("strips characters that could break out of the font CSS value", () => {
+    localStorage.setItem("google_font", 'Inter";} html {display:none}');
+    expect(readSetting("googleFont")).toBe("Inter html displaynone");
+  });
+
+  it("reads a blank stored font back as the default", () => {
+    localStorage.setItem("google_font", "   ");
+    expect(readSetting("googleFont")).toBe("Inter");
+  });
+
   it("returns the default for an unknown key", () => {
     expect(readSetting("nope")).toBeUndefined();
   });

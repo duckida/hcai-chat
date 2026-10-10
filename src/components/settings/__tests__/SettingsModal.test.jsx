@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import AppearanceSection from "../AppearanceSection";
 
 const mockSetTheme = vi.fn();
 let mockThemeState = { theme: "system", setTheme: mockSetTheme, resolvedTheme: "light" };
@@ -252,6 +254,59 @@ describe("SettingsModal", () => {
     // current value is what a screen reader announces.
     const trigger = screen.getByRole("button", { name: /sunrise/i });
     expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+  });
+
+  it("strips injection characters from a typed font name", async () => {
+    const user = userEvent.setup();
+    const onGoogleFontChange = vi.fn();
+    renderModal({ theme: "custom", onGoogleFontChange });
+    await goToSection(user, "Appearance");
+
+    fireEvent.change(screen.getByLabelText(/^google font$/i), {
+      target: { value: 'AB"; }C' },
+    });
+    expect(onGoogleFontChange).toHaveBeenLastCalledWith("AB C");
+  });
+
+  it("hides the Google Font field outside custom mode", async () => {
+    const user = userEvent.setup();
+    renderModal({ theme: "aurora" });
+    await goToSection(user, "Appearance");
+    expect(screen.queryByLabelText(/^google font$/i)).toBeNull();
+  });
+});
+
+// AppearanceSection is controlled, so typing needs a harness that feeds the
+// value back the way the settings store does; a static prop would restore the
+// old value on every keystroke and never accumulate the typed name.
+function ControllableAppearance({ onGoogleFontChange }) {
+  const [font, setFont] = useState("Inter");
+  return (
+    <AppearanceSection
+      theme="custom"
+      googleFont={font}
+      onGoogleFontChange={(value) => {
+        setFont(value);
+        onGoogleFontChange(value);
+      }}
+    />
+  );
+}
+
+describe("AppearanceSection Google Font", () => {
+  it("lets the user type any Google Font family name", async () => {
+    const user = userEvent.setup();
+    const onGoogleFontChange = vi.fn();
+    render(<ControllableAppearance onGoogleFontChange={onGoogleFontChange} />);
+
+    const input = screen.getByLabelText(/^google font$/i);
+    expect(input).toHaveValue("Inter");
+
+    await user.clear(input);
+    await user.type(input, "Space Grotesk");
+
+    expect(input).toHaveValue("Space Grotesk");
+    expect(onGoogleFontChange).toHaveBeenLastCalledWith("Space Grotesk");
   });
 });
 
