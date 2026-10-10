@@ -34,6 +34,7 @@ describe("persistence contracts", () => {
       "openrouter_providers",
       "google_font",
       "accent_color",
+      "favorite_models",
     ]);
   });
 

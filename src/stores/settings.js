@@ -82,6 +82,20 @@ export function setSetting(key, value) {
 }
 
 /**
+ * Add a model to the starred list, or remove it if it is already there.
+ * New favorites append so the picker's favorites group keeps the order the
+ * user starred them in.
+ */
+export function toggleFavoriteModel(modelId) {
+  const current = settingsStore.getState().favoriteModels || [];
+  const next = current.includes(modelId)
+    ? current.filter((id) => id !== modelId)
+    : [...current, modelId];
+  setSetting("favoriteModels", next);
+  return next;
+}
+
+/**
  * Restore built-in defaults without touching storage. The store is a
  * module-level singleton, so a test that flips a toggle would otherwise leak
  * it into every test that renders after it.

@@ -58,6 +58,22 @@ const PROVIDER_MAP_PARSE = (value) => {
   );
 };
 
+// Favorites are rendered at the top of the picker, in the order they were
+// starred, so a stored list has to be deduped and stripped of anything that is
+// not a model id — junk here would render an empty row.
+const MODEL_ID_LIST_PARSE = (value) => {
+  const parsed = JSON.parse(value);
+  if (!Array.isArray(parsed)) return [];
+  const seen = new Set();
+  const ids = [];
+  for (const id of parsed) {
+    if (typeof id !== "string" || id.length === 0 || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+};
+
 // A stored level can be anything at all — it was written by an older build, or
 // hand-edited — and the picker's label and the request's `effort` both assume a
 // known one, so an unknown value reads back as the default instead of an empty
@@ -170,6 +186,12 @@ export const SETTINGS = [
       typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value)
         ? value.toLowerCase()
         : "#ec3750",
+  },
+  {
+    key: "favoriteModels",
+    storageKey: "favorite_models",
+    default: [],
+    parse: MODEL_ID_LIST_PARSE,
   },
 ];
 

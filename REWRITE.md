@@ -726,6 +726,15 @@ history.
    calling `loadModels()` in a mount effect. Because the store is module-global, any test that
    asserts `fetch("/api/models")` must call `resetModels()` first or the store is already
    `ready` and skips the request.
+8. **Two rows for one model need two React Aria ids.** The favorites group lists a starred
+   model again at the top while its provider group still lists it, and RAC keys its collection
+   by the item's `id`. A duplicate id does not merge the two nodes — the later one overwrites
+   the earlier in the key map while the section that owned the earlier one still points at that
+   key, so Favorites walked the *provider* node's sibling chain and rendered the whole provider
+   group under the Favorites header. Starred rows carry a `favorite:`-prefixed id that
+   `onAction` strips before the choice leaves the picker, and
+   `ModelPicker` "lists a starred model once instead of its whole provider group" /
+   "selects the real model id from a favorites row" pin both halves (negative-controlled).
 
 ---
 

@@ -194,7 +194,7 @@ silently the way it did before. Mechanics to know before touching it:
   generation, and `finish_reason` is never forwarded.
 
 ### Storage and schema are contracts
-`contracts.test.js` pins the seventeen `localStorage` storage keys, the
+`contracts.test.js` pins the eighteen `localStorage` storage keys, the
 IndexedDB database name / store / `keyPath`, and the rule that the E2B key never
 appears in a URL. **None of these fail loudly if broken** — a renamed key reads
 back as a default, a renamed store reads back as an empty history. A deliberate

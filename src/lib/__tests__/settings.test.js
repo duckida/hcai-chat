@@ -37,6 +37,7 @@ describe("settings registry", () => {
       "openRouterProviders",
       "googleFont",
       "accentColor",
+      "favoriteModels",
     ]);
   });
 
