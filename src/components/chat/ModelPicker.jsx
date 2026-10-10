@@ -107,7 +107,15 @@ function ModelRow({ model, itemId = model.id, selected, favorite }) {
         }
         aria-pressed={favorite}
         className={cn(
-          "ml-auto shrink-0 rounded-md p-0.5 transition-colors",
+          // Padding carries the tap target and the negative margin cancels it,
+          // so the *layout* box stays the 20px it always was while the
+          // hit-testable border box is 36px: a 20px star is a fifth of the
+          // touch target a finger needs, and the miss lands on the row, which
+          // selects the model and closes the picker. The margins are named per
+          // side rather than `-m-2` because the shorthand sets `margin-left`
+          // too, which lands after `ml-auto` in the stylesheet and silently
+          // un-right-aligns the star.
+          "ml-auto shrink-0 rounded-md p-2.5 -my-2 -mr-2 transition-colors",
           favorite
             ? "text-amber-500"
             : "text-muted-foreground/50 hover:text-foreground",

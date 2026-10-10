@@ -735,6 +735,14 @@ history.
    `onAction` strips before the choice leaves the picker, and
    `ModelPicker` "lists a starred model once instead of its whole provider group" /
    "selects the real model id from a favorites row" pin both halves (negative-controlled).
+9. **The star's padding is its tap target, and the negative margin that cancels it must be
+   per-side.** The star's icon is 16px and the row's box is 40px tall, so the un-padded button
+   was a 20×20px target inside it: a tap 12px left of the icon hit the *row*, which selects the
+   model and closes the picker. `p-2.5 -my-2 -mr-2` keeps the layout box at 20px (the icon does
+   not move, the row does not grow) while the hit-testable border box becomes 36px. It has to be
+   `-my-2 -mr-2` rather than `-m-2`: the shorthand also sets `margin-left`, which sorts after
+   `ml-auto` and silently drops the star out of its right alignment. Measured in the browser —
+   jsdom has no layout, so the class string is the only thing a unit test could assert.
 
 ---
 
