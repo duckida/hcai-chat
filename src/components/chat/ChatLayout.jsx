@@ -291,7 +291,8 @@ export default function ChatLayout({
         onOpenChange={setMobileSheetOpen}
         side="left"
         title="Navigation"
-        className="p-0 w-[260px] border-none"
+        className="p-0 border-none"
+        widthClassName="w-[260px]"
         showCloseButton={false}
       >
         {sidebarContent}

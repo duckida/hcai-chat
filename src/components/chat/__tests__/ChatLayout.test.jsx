@@ -261,6 +261,20 @@ describe("ChatLayout shell", () => {
     expect(within(sheet).getByText("First chat")).toBeInTheDocument();
     expect(within(sheet).getByText("Second chat")).toBeInTheDocument();
   });
+
+  // The modal box is what paints `bg-background`, so a dialog narrower than
+  // that box leaves the rest of it showing as a blank strip beside the panel —
+  // which is exactly what a 260px dialog inside a 384px `max-w-sm` modal did.
+  // The width has to sit on the box that paints, and the dialog fills it.
+  it("fills the mobile sheet's painted box instead of setting its own width", async () => {
+    render(<ChatLayout {...baseProps()} />);
+
+    await userEvent.click(headerButtons()[1]);
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.className).not.toMatch(/\bw-/);
+    expect(dialog.parentElement.className).toMatch(/w-\[260px\]/);
+  });
 });
 
 describe("ChatLayout header toggles", () => {

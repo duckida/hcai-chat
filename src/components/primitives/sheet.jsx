@@ -27,6 +27,7 @@ export default function Sheet({
   side = "left",
   title,
   className,
+  widthClassName = "w-[85vw] max-w-sm",
   showCloseButton = true,
   closeLabel = "Close",
   children,
@@ -40,11 +41,15 @@ export default function Sheet({
       className="fixed inset-0 isolate z-50 bg-black/30 supports-backdrop-filter:backdrop-blur-sm"
     >
       <Modal
+        // The width belongs here, not on the dialog below: this box is what
+        // paints `bg-background`, so a narrower dialog left the rest of it
+        // showing as a blank strip beside the panel.
         className={cn(
           "fixed z-50 animate-hcai-fade-in outline-none",
+          widthClassName,
           side === "left"
-            ? "inset-y-0 left-0 h-full w-[85vw] max-w-sm border-r border-border bg-background shadow-xl"
-            : "inset-y-0 right-0 h-full w-[85vw] max-w-sm border-l border-border bg-background shadow-xl",
+            ? "inset-y-0 left-0 h-full border-r border-border bg-background shadow-xl"
+            : "inset-y-0 right-0 h-full border-l border-border bg-background shadow-xl",
         )}
       >
         <DialogPrimitive
