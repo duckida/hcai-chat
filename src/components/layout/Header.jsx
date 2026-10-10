@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Cloud,
@@ -67,6 +68,9 @@ export default function Header({
   onWebSearchChange,
   agentModeEnabled,
   onAgentModeChange,
+  artifactGalleryOpen = false,
+  artifactGalleryDetailOpen = false,
+  onGalleryBack,
   artifactFullscreen = false,
   panelOpen = false,
   panelAvailable = false,
@@ -94,6 +98,21 @@ export default function Header({
             ) : (
               <ChevronRight className="w-4 h-4" />
             )}
+          </Button>
+        )}
+        {artifactGalleryOpen && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onGalleryBack}
+            aria-label={
+              artifactGalleryDetailOpen
+                ? "Back to artifact gallery"
+                : "Back to chat"
+            }
+            className="h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
         <div className="md:hidden flex items-center gap-1">

@@ -252,7 +252,7 @@ export default function SidebarContent({
 
   return (
     <div className="flex flex-col h-full bg-muted">
-      <div className="p-3 mb-2">
+      <div className="p-3 pb-2">
         <Button
           onClick={() => {
             onNewChat();
@@ -263,6 +263,21 @@ export default function SidebarContent({
         >
           <Plus className="w-4 h-4" />
           <span className="text-[14px]">New Chat</span>
+        </Button>
+        <Button
+          variant="ghost"
+          aria-current={artifactGalleryOpen ? "page" : undefined}
+          className={`mt-1 w-full justify-between text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg ${artifactGalleryOpen ? "bg-accent text-foreground" : ""}`}
+          onClick={() => {
+            onArtifactGalleryClick?.();
+            onSheetClose?.();
+          }}
+        >
+          <span className="flex items-center gap-3">
+            <GalleryVerticalEnd className="w-4 h-4 opacity-70" />
+            <span className="text-[13px] font-semibold">Artifact Gallery</span>
+          </span>
+          <ArrowUpRight className="w-4 h-4 opacity-70" />
         </Button>
       </div>
 
@@ -323,21 +338,6 @@ export default function SidebarContent({
       </div>
 
       <div className="p-3">
-        <Button
-          variant="ghost"
-          aria-current={artifactGalleryOpen ? "page" : undefined}
-          className={`w-full justify-between text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg ${artifactGalleryOpen ? "bg-accent text-foreground" : ""}`}
-          onClick={() => {
-            onArtifactGalleryClick?.();
-            onSheetClose?.();
-          }}
-        >
-          <span className="flex items-center gap-3">
-            <GalleryVerticalEnd className="w-4 h-4 opacity-70" />
-            <span className="text-[13px] font-semibold">Artifact Gallery</span>
-          </span>
-          <ArrowUpRight className="w-4 h-4 opacity-70" />
-        </Button>
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg"

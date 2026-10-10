@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Check, Pencil, Trash2, X } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
 import { getArtifactTitle } from "@/lib/artifacts";
@@ -47,26 +47,20 @@ function ArtifactThumbnail({ title, html }) {
 export default function ArtifactGallery({
   artifacts,
   open,
-  onOpenChange,
+  selectedArtifact,
+  onSelectedArtifactChange,
   onOpenArtifact,
   onRenameArtifact,
   onDeleteArtifact,
 }) {
-  const [selected, setSelected] = useState(null);
   const [editingKey, setEditingKey] = useState(null);
   const [editTitle, setEditTitle] = useState("");
+  const selected = selectedArtifact;
   const items = artifacts.map((artifact, index) => {
     const item = typeof artifact === "string" ? { html: artifact } : artifact;
     const title = item.title || getArtifactTitle(item.html);
     return { ...item, title, key: item.key || `${title}-${index}` };
   });
-
-  useEffect(() => {
-    if (!open) {
-      setSelected(null);
-      setEditingKey(null);
-    }
-  }, [open]);
 
   if (!open) return null;
 
@@ -76,27 +70,15 @@ export default function ArtifactGallery({
       className="flex h-full min-h-0 flex-col bg-background text-foreground"
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          {selected && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Back to artifact gallery"
-              onClick={() => setSelected(null)}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-semibold">
+            {selected ? selected.title : "Artifact gallery"}
+          </h1>
+          {!selected && (
+            <p className="text-xs text-muted-foreground">
+              {items.length} {items.length === 1 ? "artifact" : "artifacts"}
+            </p>
           )}
-          <div className="min-w-0">
-            <h1 className="truncate text-base font-semibold">
-              {selected ? selected.title : "Artifact gallery"}
-            </h1>
-            {!selected && (
-              <p className="text-xs text-muted-foreground">
-                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-              </p>
-            )}
-          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {selected && (
@@ -108,14 +90,6 @@ export default function ArtifactGallery({
               Open in chat
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="Back to chat"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="h-4 w-4" />
-          </Button>
         </div>
       </header>
 
@@ -174,7 +148,7 @@ export default function ArtifactGallery({
                     <>
                       <button
                         type="button"
-                        onClick={() => setSelected(item)}
+                        onClick={() => onSelectedArtifactChange(item)}
                         className="min-w-0 flex-1 truncate px-1 py-2 text-left text-sm font-medium group-hover:text-primary"
                       >
                         {item.title}

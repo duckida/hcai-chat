@@ -80,6 +80,8 @@ export default function ChatLayout({
   children,
   artifactGallery,
   artifactGalleryOpen = false,
+  artifactGalleryDetailOpen = false,
+  onGalleryBack,
   artifactFullscreen = false,
   panelOpen = false,
   panelAvailable = false,
@@ -369,6 +371,9 @@ export default function ChatLayout({
           onWebSearchChange={onWebSearchChange}
           agentModeEnabled={agentModeEnabled}
           onAgentModeChange={onAgentModeChange}
+          artifactGalleryOpen={artifactGalleryOpen}
+          artifactGalleryDetailOpen={artifactGalleryDetailOpen}
+          onGalleryBack={onGalleryBack}
           artifactFullscreen={artifactFullscreen || artifactGalleryOpen}
           panelOpen={panelOpen}
           panelAvailable={panelAvailable && !artifactGalleryOpen}

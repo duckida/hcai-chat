@@ -58,14 +58,20 @@ function SearchHarness(props) {
 
 function MobileGalleryHarness(props) {
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   return (
     <ChatLayout
       {...props}
       artifactGalleryOpen={galleryOpen}
+      artifactGalleryDetailOpen={detailOpen}
+      onGalleryBack={() => {
+        if (detailOpen) setDetailOpen(false);
+        else setGalleryOpen(false);
+      }}
       artifactGallery={
         <section aria-label="Artifact gallery view">
-          <button type="button" onClick={() => setGalleryOpen(false)}>
-            Back to chat
+          <button type="button" onClick={() => setDetailOpen(true)}>
+            Open detail
           </button>
         </section>
       }
@@ -365,6 +371,14 @@ describe("SidebarContent conversations", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+
+    await userEvent.click(screen.getByRole("button", { name: "Open detail" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Back to artifact gallery" }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Artifact gallery view" }),
+    ).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Back to chat" }));
     expect(screen.getByTestId("main-content")).toBeInTheDocument();

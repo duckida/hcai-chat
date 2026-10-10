@@ -65,6 +65,7 @@ export default function ChatApp({
   const [isBalanceModalOpen, setIsBalanceModalOpen] = useState(false);
   const [hasE2bKey, setHasE2bKey] = useState(false);
   const [isArtifactGalleryOpen, setIsArtifactGalleryOpen] = useState(false);
+  const [selectedGalleryArtifact, setSelectedGalleryArtifact] = useState(null);
   const [selectedArtifactKey, setSelectedArtifactKey] = useState(null);
 
   // Whether the panel has been dismissed on this visit to the conversation on
@@ -185,6 +186,7 @@ export default function ChatApp({
     (artifact) => {
       conversations.selectConversation(artifact.conversationId);
       setSelectedArtifactKey(artifact.key);
+      setSelectedGalleryArtifact(null);
       setPanelDismissed(false);
       setPanelTab("artifact");
       setIsArtifactGalleryOpen(false);
@@ -360,6 +362,7 @@ export default function ChatApp({
     // grid track paid for a panel that renders nothing.
     conversations.newConversation();
     setIsArtifactGalleryOpen(false);
+    setSelectedGalleryArtifact(null);
     setArtifactFullscreen(false);
   }, [conversations]);
 
@@ -404,6 +407,7 @@ export default function ChatApp({
         onSelectConversation={(conversationId) => {
           conversations.selectConversation(conversationId);
           setIsArtifactGalleryOpen(false);
+          setSelectedGalleryArtifact(null);
         }}
         onDeleteConversation={conversations.deleteConversation}
         onRenameConversation={conversations.renameConversation}
@@ -421,6 +425,14 @@ export default function ChatApp({
         onSettingsClick={() => setIsApiKeyModalOpen(true)}
         onArtifactGalleryClick={() => setIsArtifactGalleryOpen(true)}
         artifactGalleryOpen={isArtifactGalleryOpen}
+        artifactGalleryDetailOpen={Boolean(selectedGalleryArtifact)}
+        onGalleryBack={() => {
+          if (selectedGalleryArtifact) {
+            setSelectedGalleryArtifact(null);
+          } else {
+            setIsArtifactGalleryOpen(false);
+          }
+        }}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         panelOpen={panelOpen}
@@ -456,7 +468,8 @@ export default function ChatApp({
           <ArtifactGallery
             artifacts={galleryArtifacts}
             open={isArtifactGalleryOpen}
-            onOpenChange={setIsArtifactGalleryOpen}
+            selectedArtifact={selectedGalleryArtifact}
+            onSelectedArtifactChange={setSelectedGalleryArtifact}
             onOpenArtifact={openArtifact}
             onRenameArtifact={renameGalleryArtifact}
             onDeleteArtifact={deleteGalleryArtifact}
