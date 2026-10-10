@@ -56,6 +56,24 @@ function SearchHarness(props) {
   );
 }
 
+function MobileGalleryHarness(props) {
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  return (
+    <ChatLayout
+      {...props}
+      artifactGalleryOpen={galleryOpen}
+      artifactGallery={
+        <section aria-label="Artifact gallery view">
+          <button type="button" onClick={() => setGalleryOpen(false)}>
+            Back to chat
+          </button>
+        </section>
+      }
+      onArtifactGalleryClick={() => setGalleryOpen(true)}
+    />
+  );
+}
+
 describe("ChatLayout shell", () => {
   it("renders conversations, main content and the right panel", () => {
     render(<ChatLayout {...baseProps()} />);
@@ -82,6 +100,20 @@ describe("ChatLayout shell", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(aside).toHaveStyle({ width: "260px" });
+  });
+
+  it("restores and persists whether the sidebar is open", async () => {
+    localStorage.clear();
+    localStorage.setItem("hcai_sidebar_open", "false");
+
+    render(<ChatLayout {...baseProps()} />);
+    const aside = document.querySelector("aside");
+
+    await waitFor(() => expect(aside).toHaveStyle({ width: "56px" }));
+    await userEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+    expect(aside).toHaveStyle({ width: "260px" });
+    expect(localStorage.getItem("hcai_sidebar_open")).toBe("true");
   });
 
   it("persists a dragged sidebar width to localStorage", async () => {
@@ -316,6 +348,29 @@ describe("SidebarContent conversations", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
     );
+  });
+
+  it("opens the gallery from mobile navigation and returns to chat", async () => {
+    render(<MobileGalleryHarness {...baseProps()} />);
+
+    await userEvent.click(headerButtons()[1]);
+    const sheet = screen.getByRole("dialog");
+    await userEvent.click(
+      within(sheet).getByRole("button", { name: "Artifact Gallery" }),
+    );
+
+    expect(
+      await screen.findByRole("region", { name: "Artifact gallery view" }),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    expect(screen.getByTestId("main-content")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Artifact gallery view" }),
+    ).not.toBeInTheDocument();
   });
 
   it("selects a conversation when its title is clicked", async () => {

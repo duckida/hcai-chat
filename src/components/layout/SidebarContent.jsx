@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowUpRight,
   Check,
   GalleryVerticalEnd,
   Key,
@@ -216,6 +217,7 @@ export default function SidebarContent({
   onSearchChange,
   onSheetClose,
   onArtifactGalleryClick,
+  artifactGalleryOpen = false,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -261,20 +263,6 @@ export default function SidebarContent({
         >
           <Plus className="w-4 h-4" />
           <span className="text-[14px]">New Chat</span>
-        </Button>
-      </div>
-
-      <div className="px-3 pb-3">
-        <Button
-          onClick={() => {
-            onArtifactGalleryClick?.();
-            onSheetClose?.();
-          }}
-          className="w-full justify-start gap-2 bg-background hover:bg-accent text-foreground border-none shadow-sm h-10 px-3 rounded-lg transition-all font-medium"
-          variant="outline"
-        >
-          <GalleryVerticalEnd className="w-4 h-4" />
-          <span className="text-[14px]">Artifact Gallery</span>
         </Button>
       </div>
 
@@ -335,6 +323,21 @@ export default function SidebarContent({
       </div>
 
       <div className="p-3">
+        <Button
+          variant="ghost"
+          aria-current={artifactGalleryOpen ? "page" : undefined}
+          className={`w-full justify-between text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg ${artifactGalleryOpen ? "bg-accent text-foreground" : ""}`}
+          onClick={() => {
+            onArtifactGalleryClick?.();
+            onSheetClose?.();
+          }}
+        >
+          <span className="flex items-center gap-3">
+            <GalleryVerticalEnd className="w-4 h-4 opacity-70" />
+            <span className="text-[13px] font-semibold">Artifact Gallery</span>
+          </span>
+          <ArrowUpRight className="w-4 h-4 opacity-70" />
+        </Button>
         <Button
           variant="ghost"
           className="w-full justify-start gap-3 text-muted-foreground hover:text-foreground px-3 h-10 transition-colors rounded-lg"

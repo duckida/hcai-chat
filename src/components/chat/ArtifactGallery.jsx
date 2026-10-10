@@ -71,7 +71,10 @@ export default function ArtifactGallery({
   if (!open) return null;
 
   return (
-    <main className="fixed inset-0 z-[100] flex min-h-0 flex-col bg-background text-foreground">
+    <section
+      aria-label="Artifact gallery"
+      className="flex h-full min-h-0 flex-col bg-background text-foreground"
+    >
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           {selected && (
@@ -207,6 +210,6 @@ export default function ArtifactGallery({
           Artifacts you create will appear here.
         </div>
       )}
-    </main>
+    </section>
   );
 }

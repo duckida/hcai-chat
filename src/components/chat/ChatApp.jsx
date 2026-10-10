@@ -359,6 +359,8 @@ export default function ChatApp({
     // with nothing to open onto. Carrying the toggle over would leave the third
     // grid track paid for a panel that renders nothing.
     conversations.newConversation();
+    setIsArtifactGalleryOpen(false);
+    setArtifactFullscreen(false);
   }, [conversations]);
 
   const handleModelChange = useCallback(
@@ -399,7 +401,10 @@ export default function ChatApp({
         onNewChat={handleNewChat}
         conversations={conversations.conversations}
         activeConversation={conversations.activeConversation}
-        onSelectConversation={conversations.selectConversation}
+        onSelectConversation={(conversationId) => {
+          conversations.selectConversation(conversationId);
+          setIsArtifactGalleryOpen(false);
+        }}
         onDeleteConversation={conversations.deleteConversation}
         onRenameConversation={conversations.renameConversation}
         selectedModel={settings.selectedModel}
@@ -415,6 +420,7 @@ export default function ChatApp({
         onApiKeyClick={() => setIsApiKeyModalOpen(true)}
         onSettingsClick={() => setIsApiKeyModalOpen(true)}
         onArtifactGalleryClick={() => setIsArtifactGalleryOpen(true)}
+        artifactGalleryOpen={isArtifactGalleryOpen}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         panelOpen={panelOpen}
@@ -446,6 +452,16 @@ export default function ChatApp({
             onResizingChange={panel.onResizingChange}
           />
         )}
+        artifactGallery={
+          <ArtifactGallery
+            artifacts={galleryArtifacts}
+            open={isArtifactGalleryOpen}
+            onOpenChange={setIsArtifactGalleryOpen}
+            onOpenArtifact={openArtifact}
+            onRenameArtifact={renameGalleryArtifact}
+            onDeleteArtifact={deleteGalleryArtifact}
+          />
+        }
       >
         <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList
@@ -455,15 +471,6 @@ export default function ChatApp({
           <ChatInput onSend={stream.send} isLoading={stream.isLoading} />
         </div>
       </ChatLayout>
-
-      <ArtifactGallery
-        artifacts={galleryArtifacts}
-        open={isArtifactGalleryOpen}
-        onOpenChange={setIsArtifactGalleryOpen}
-        onOpenArtifact={openArtifact}
-        onRenameArtifact={renameGalleryArtifact}
-        onDeleteArtifact={deleteGalleryArtifact}
-      />
 
       <SettingsModal
         isOpen={isApiKeyModalOpen}

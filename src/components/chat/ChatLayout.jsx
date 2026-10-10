@@ -12,6 +12,7 @@ import SidebarContent from "@/components/layout/SidebarContent";
 import { Button } from "@/components/primitives/button";
 
 const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
+const SIDEBAR_OPEN_KEY = "hcai_sidebar_open";
 const MIN_SIDEBAR_WIDTH = 200;
 const MAX_SIDEBAR_WIDTH = 600;
 const DEFAULT_SIDEBAR_WIDTH = 260;
@@ -29,6 +30,15 @@ function readStoredSidebarWidth() {
     const parsed = parseInt(saved, 10);
     if (Number.isNaN(parsed)) return null;
     return Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, parsed));
+  } catch {
+    return null;
+  }
+}
+
+function readStoredSidebarOpen() {
+  try {
+    const saved = window.localStorage.getItem(SIDEBAR_OPEN_KEY);
+    return saved === null ? null : saved !== "false";
   } catch {
     return null;
   }
@@ -68,6 +78,8 @@ export default function ChatLayout({
   onApiKeyClick,
   rightPanel,
   children,
+  artifactGallery,
+  artifactGalleryOpen = false,
   artifactFullscreen = false,
   panelOpen = false,
   panelAvailable = false,
@@ -81,7 +93,23 @@ export default function ChatLayout({
   onArtifactGalleryClick,
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isSidebarOpenReady, setIsSidebarOpenReady] = useState(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+
+  // Read after mount so the server and first client render agree; gating the
+  // write avoids replacing a saved collapsed state with the default `true`.
+  useEffect(() => {
+    const savedSidebarOpen = readStoredSidebarOpen();
+    if (savedSidebarOpen !== null) setSidebarOpen(savedSidebarOpen);
+    setIsSidebarOpenReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isSidebarOpenReady) return;
+    try {
+      window.localStorage.setItem(SIDEBAR_OPEN_KEY, String(sidebarOpen));
+    } catch {}
+  }, [sidebarOpen, isSidebarOpenReady]);
 
   // The stored width is read after mount, not in a state initialiser. An
   // initialiser runs while rendering — including the server render — so a
@@ -169,12 +197,12 @@ export default function ChatLayout({
     [maxPanelWidth],
   );
 
-  // The panel contributes no track when it is closed, when it is fullscreen (a
-  // fixed overlay covers the row), or on a narrow viewport (where it is itself
-  // fixed and full-bleed). All three collapse to zero, which is what makes the
-  // open/close transition a single track animation.
+  // The panel contributes no track when it is closed, when the gallery replaces
+  // the chat, when it is fullscreen, or on a narrow viewport where it is fixed.
   const panelTrack =
-    panelOpen && !artifactFullscreen && isDesktop ? panelWidth : 0;
+    panelOpen && !artifactFullscreen && !artifactGalleryOpen && isDesktop
+      ? panelWidth
+      : 0;
 
   const panelApi = {
     width: panelWidth,
@@ -224,6 +252,7 @@ export default function ChatLayout({
       onSearchChange={onSearchChange}
       onSheetClose={() => setMobileSheetOpen(false)}
       onArtifactGalleryClick={onArtifactGalleryClick}
+      artifactGalleryOpen={artifactGalleryOpen}
     />
   );
 
@@ -340,9 +369,9 @@ export default function ChatLayout({
           onWebSearchChange={onWebSearchChange}
           agentModeEnabled={agentModeEnabled}
           onAgentModeChange={onAgentModeChange}
-          artifactFullscreen={artifactFullscreen}
+          artifactFullscreen={artifactFullscreen || artifactGalleryOpen}
           panelOpen={panelOpen}
-          panelAvailable={panelAvailable}
+          panelAvailable={panelAvailable && !artifactGalleryOpen}
           onTogglePanel={onTogglePanel}
           contextUsage={contextUsage}
           toolsSupported={toolsSupported}
@@ -351,13 +380,13 @@ export default function ChatLayout({
         />
 
         <main className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
-          {children}
+          {artifactGalleryOpen ? artifactGallery : children}
         </main>
       </div>
 
-      {!artifactFullscreen && rightPanel(panelApi)}
+      {!artifactFullscreen && !artifactGalleryOpen && rightPanel(panelApi)}
 
-      {artifactFullscreen && (
+      {artifactFullscreen && !artifactGalleryOpen && (
         <div className="fixed inset-0 z-[100] bg-background">
           {rightPanel(panelApi)}
         </div>
