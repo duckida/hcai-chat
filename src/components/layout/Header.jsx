@@ -1,21 +1,17 @@
 "use client";
 
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   Cloud,
   Globe,
-  Menu,
   PanelRightOpen,
-  Plus,
   Puzzle,
 } from "lucide-react";
 import ContextUsage from "@/components/chat/ContextUsage";
 import ModelPicker from "@/components/chat/ModelPicker";
 import ThinkingPicker from "@/components/chat/ThinkingPicker";
 import { Button } from "@/components/primitives/button";
-import Sheet from "@/components/primitives/sheet";
 import { Tooltip, TooltipTrigger } from "@/components/primitives/tooltip";
 
 function ToggleButton({
@@ -54,10 +50,7 @@ function ToggleButton({
 export default function Header({
   sidebarOpen,
   onToggleSidebar,
-  mobileSheetOpen,
-  onMobileSheetOpenChange,
-  sidebarContent,
-  onNewChat,
+  mobileNav,
   selectedModel,
   onModelChange,
   thinkingLevel,
@@ -68,9 +61,6 @@ export default function Header({
   onWebSearchChange,
   agentModeEnabled,
   onAgentModeChange,
-  artifactGalleryOpen = false,
-  artifactGalleryDetailOpen = false,
-  onGalleryBack,
   artifactFullscreen = false,
   panelOpen = false,
   panelAvailable = false,
@@ -100,51 +90,7 @@ export default function Header({
             )}
           </Button>
         )}
-        {artifactGalleryOpen && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onGalleryBack}
-            aria-label={
-              artifactGalleryDetailOpen
-                ? "Back to artifact gallery"
-                : "Back to chat"
-            }
-            className="h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        )}
-        <div className="md:hidden flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 sm:h-8 sm:w-8"
-            aria-label="Open menu"
-            onClick={() => onMobileSheetOpenChange(true)}
-          >
-            <Menu className="w-5 h-5 text-muted-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 sm:h-8 sm:w-8"
-            aria-label="New Chat"
-            onClick={onNewChat}
-          >
-            <Plus className="w-4 h-4 text-muted-foreground" />
-          </Button>
-          <Sheet
-            open={mobileSheetOpen}
-            onOpenChange={onMobileSheetOpenChange}
-            side="left"
-            title="Navigation"
-            className="p-0 w-[260px] border-none"
-            showCloseButton={false}
-          >
-            {sidebarContent}
-          </Sheet>
-        </div>
+        {mobileNav}
       </div>
 
       <div className="flex-1 min-w-0 flex items-center justify-center gap-0 sm:gap-2 overflow-hidden">

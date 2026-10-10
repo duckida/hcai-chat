@@ -63,19 +63,27 @@ function MobileGalleryHarness(props) {
     <ChatLayout
       {...props}
       artifactGalleryOpen={galleryOpen}
-      artifactGalleryDetailOpen={detailOpen}
-      onGalleryBack={() => {
-        if (detailOpen) setDetailOpen(false);
-        else setGalleryOpen(false);
-      }}
-      artifactGallery={
+      artifactGallery={({ mobileNav }) => (
         <section aria-label="Artifact gallery view">
-          <button type="button" onClick={() => setDetailOpen(true)}>
-            Open detail
-          </button>
+          {mobileNav}
+          {detailOpen ? (
+            <button type="button" onClick={() => setDetailOpen(false)}>
+              Back to artifact gallery
+            </button>
+          ) : (
+            <button type="button" onClick={() => setDetailOpen(true)}>
+              Open detail
+            </button>
+          )}
         </section>
-      }
+      )}
       onArtifactGalleryClick={() => setGalleryOpen(true)}
+      // Exiting the gallery is like leaving a chat: pick a new or old chat.
+      onNewChat={() => {
+        setGalleryOpen(false);
+        setDetailOpen(false);
+        props.onNewChat?.();
+      }}
     />
   );
 }
@@ -359,7 +367,9 @@ describe("SidebarContent conversations", () => {
   it("opens the gallery from mobile navigation and returns to chat", async () => {
     render(<MobileGalleryHarness {...baseProps()} />);
 
-    await userEvent.click(headerButtons()[1]);
+    // By name, not index: the header's sidebar toggle is gone while the
+    // gallery is open, so the button order shifts between states.
+    await userEvent.click(screen.getByRole("button", { name: "Open menu" }));
     const sheet = screen.getByRole("dialog");
     await userEvent.click(
       within(sheet).getByRole("button", { name: "Artifact Gallery" }),
@@ -380,7 +390,13 @@ describe("SidebarContent conversations", () => {
       screen.getByRole("region", { name: "Artifact gallery view" }),
     ).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Back to chat" }));
+    // No header back button: the gallery is left the way a chat is, by
+    // starting a new chat (or opening an existing one).
+    await userEvent.click(screen.getByRole("button", { name: "Open menu" }));
+    const sheetAgain = screen.getByRole("dialog");
+    await userEvent.click(
+      within(sheetAgain).getByRole("button", { name: "New Chat" }),
+    );
     expect(screen.getByTestId("main-content")).toBeInTheDocument();
     expect(
       screen.queryByRole("region", { name: "Artifact gallery view" }),

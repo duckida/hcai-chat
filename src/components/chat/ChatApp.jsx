@@ -425,14 +425,6 @@ export default function ChatApp({
         onSettingsClick={() => setIsApiKeyModalOpen(true)}
         onArtifactGalleryClick={() => setIsArtifactGalleryOpen(true)}
         artifactGalleryOpen={isArtifactGalleryOpen}
-        artifactGalleryDetailOpen={Boolean(selectedGalleryArtifact)}
-        onGalleryBack={() => {
-          if (selectedGalleryArtifact) {
-            setSelectedGalleryArtifact(null);
-          } else {
-            setIsArtifactGalleryOpen(false);
-          }
-        }}
         hasE2bKey={hasE2bKey}
         artifactFullscreen={artifactFullscreen}
         panelOpen={panelOpen}
@@ -464,7 +456,9 @@ export default function ChatApp({
             onResizingChange={panel.onResizingChange}
           />
         )}
-        artifactGallery={
+        // A function, not an element: the row owns the sidebar state and
+        // hands it down, so the gallery header can host the sidebar toggle.
+        artifactGallery={({ sidebarOpen, onToggleSidebar, mobileNav }) => (
           <ArtifactGallery
             artifacts={galleryArtifacts}
             open={isArtifactGalleryOpen}
@@ -473,8 +467,11 @@ export default function ChatApp({
             onOpenArtifact={openArtifact}
             onRenameArtifact={renameGalleryArtifact}
             onDeleteArtifact={deleteGalleryArtifact}
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={onToggleSidebar}
+            mobileNav={mobileNav}
           />
-        }
+        )}
       >
         <div className="flex flex-col h-full bg-background relative min-h-0 min-w-0">
           <MessageList

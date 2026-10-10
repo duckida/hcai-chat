@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Pencil, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/primitives/button";
 import { getArtifactTitle } from "@/lib/artifacts";
@@ -52,6 +52,9 @@ export default function ArtifactGallery({
   onOpenArtifact,
   onRenameArtifact,
   onDeleteArtifact,
+  sidebarOpen = false,
+  onToggleSidebar,
+  mobileNav,
 }) {
   const [editingKey, setEditingKey] = useState(null);
   const [editTitle, setEditTitle] = useState("");
@@ -70,15 +73,45 @@ export default function ArtifactGallery({
       className="flex h-full min-h-0 flex-col bg-background text-foreground"
     >
       <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold">
-            {selected ? selected.title : "Artifact gallery"}
-          </h1>
-          {!selected && (
-            <p className="text-xs text-muted-foreground">
-              {items.length} {items.length === 1 ? "artifact" : "artifacts"}
-            </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {/* Mobile navigation joins this header on small screens: the chat
+              header is not rendered while the gallery is open, so the two
+              headers become one. */}
+          {mobileNav}
+          {/* The sidebar control moves here while the gallery is open, rather
+              than sitting in the chat header above it. Desktop-only, because
+              the sidebar itself is a sheet on mobile. */}
+          {sidebarOpen && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Collapse sidebar"
+              onClick={onToggleSidebar}
+              className="hidden md:flex h-8 w-8 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
           )}
+          {selected && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Back to artifact gallery"
+              onClick={() => onSelectedArtifactChange?.(null)}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-semibold">
+              {selected ? selected.title : "Artifact gallery"}
+            </h1>
+            {!selected && (
+              <p className="text-xs text-muted-foreground">
+                {items.length} {items.length === 1 ? "artifact" : "artifacts"}
+              </p>
+            )}
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {selected && (

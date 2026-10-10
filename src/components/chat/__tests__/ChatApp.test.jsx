@@ -1,4 +1,11 @@
-import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChatApp from "@/components/chat/ChatApp";
@@ -347,5 +354,46 @@ describe("balance outage dialog", () => {
     await waitFor(() => {
       expect(screen.queryByRole("button", { name: /use it/i })).toBeNull();
     });
+  });
+});
+
+// The gallery replaces the chat header, so the two headers have to become one
+// on mobile. The forwarding chain is ChatApp -> ChatLayout -> ArtifactGallery,
+// and a break anywhere in it leaves an empty header.
+describe("artifact gallery chrome", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    resetConversations();
+    resetTurn();
+    resetSettings();
+    localStorage.setItem("hack_club_ai_key", "sk-hc-test-key");
+    stubFetch();
+  });
+
+  it("merges the mobile navigation into the gallery header", async () => {
+    render(<ChatApp />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Open menu" }),
+      ).toBeInTheDocument(),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Artifact Gallery" }),
+    );
+
+    const gallery = await screen.findByRole("region", {
+      name: "Artifact gallery",
+    });
+
+    expect(document.querySelectorAll("header")).toHaveLength(1);
+    expect(
+      within(gallery).getByRole("button", { name: "Open menu" }),
+    ).toBeInTheDocument();
+    expect(
+      within(gallery).getByRole("button", { name: "New Chat" }),
+    ).toBeInTheDocument();
   });
 });

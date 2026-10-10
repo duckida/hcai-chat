@@ -3,6 +3,7 @@
 import {
   ChevronRight,
   GalleryVerticalEnd,
+  Menu,
   Plus,
   Settings2,
 } from "lucide-react";
@@ -10,6 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Header from "@/components/layout/Header";
 import SidebarContent from "@/components/layout/SidebarContent";
 import { Button } from "@/components/primitives/button";
+import Sheet from "@/components/primitives/sheet";
 
 const SIDEBAR_WIDTH_KEY = "hcai_sidebar_width";
 const SIDEBAR_OPEN_KEY = "hcai_sidebar_open";
@@ -80,8 +82,6 @@ export default function ChatLayout({
   children,
   artifactGallery,
   artifactGalleryOpen = false,
-  artifactGalleryDetailOpen = false,
-  onGalleryBack,
   artifactFullscreen = false,
   panelOpen = false,
   panelAvailable = false,
@@ -97,6 +97,11 @@ export default function ChatLayout({
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isSidebarOpenReady, setIsSidebarOpenReady] = useState(false);
   const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+
+  // Shared by the chat header and the gallery's own header: the control moves
+  // into the gallery header while the gallery is open, so both need the same
+  // toggle and neither should own it.
+  const toggleSidebar = useCallback(() => setSidebarOpen((open) => !open), []);
 
   // Read after mount so the server and first client render agree; gating the
   // write avoids replacing a saved collapsed state with the default `true`.
@@ -258,6 +263,42 @@ export default function ChatLayout({
     />
   );
 
+  // The mobile navigation, built here because this is where the sheet state
+  // and the sidebar content live. It renders into whichever header is on
+  // screen: the chat header, or the gallery's own header once that one is open.
+  const mobileNav = (
+    <div className="md:hidden flex items-center gap-1">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 sm:h-8 sm:w-8"
+        aria-label="Open menu"
+        onClick={() => setMobileSheetOpen(true)}
+      >
+        <Menu className="w-5 h-5 text-muted-foreground" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-7 w-7 sm:h-8 sm:w-8"
+        aria-label="New Chat"
+        onClick={onNewChat}
+      >
+        <Plus className="w-4 h-4 text-muted-foreground" />
+      </Button>
+      <Sheet
+        open={mobileSheetOpen}
+        onOpenChange={setMobileSheetOpen}
+        side="left"
+        title="Navigation"
+        className="p-0 w-[260px] border-none"
+        showCloseButton={false}
+      >
+        {sidebarContent}
+      </Sheet>
+    </div>
+  );
+
   return (
     <div
       // Three tracks: sidebar, thread, panel. The panel's width is the third
@@ -354,38 +395,44 @@ export default function ChatLayout({
           below it with nothing left to scroll. `min-h-0` is what keeps the row
           at the viewport's height and the thread scrolling inside it instead. */}
       <div className="col-start-1 md:col-start-2 flex flex-col min-w-0 min-h-0 relative">
-        <Header
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          mobileSheetOpen={mobileSheetOpen}
-          onMobileSheetOpenChange={setMobileSheetOpen}
-          sidebarContent={sidebarContent}
-          onNewChat={onNewChat}
-          selectedModel={selectedModel}
-          onModelChange={onModelChange}
-          thinkingLevel={thinkingLevel}
-          onThinkingLevelChange={onThinkingLevelChange}
-          artifactsEnabled={artifactsEnabled}
-          onArtifactsChange={onArtifactsChange}
-          webSearchEnabled={webSearchEnabled}
-          onWebSearchChange={onWebSearchChange}
-          agentModeEnabled={agentModeEnabled}
-          onAgentModeChange={onAgentModeChange}
-          artifactGalleryOpen={artifactGalleryOpen}
-          artifactGalleryDetailOpen={artifactGalleryDetailOpen}
-          onGalleryBack={onGalleryBack}
-          artifactFullscreen={artifactFullscreen || artifactGalleryOpen}
-          panelOpen={panelOpen}
-          panelAvailable={panelAvailable && !artifactGalleryOpen}
-          onTogglePanel={onTogglePanel}
-          contextUsage={contextUsage}
-          toolsSupported={toolsSupported}
-          hasE2bKey={hasE2bKey}
-          totalCost={totalCost}
-        />
+        {!artifactGalleryOpen && (
+          <Header
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={toggleSidebar}
+            mobileNav={mobileNav}
+            selectedModel={selectedModel}
+            onModelChange={onModelChange}
+            thinkingLevel={thinkingLevel}
+            onThinkingLevelChange={onThinkingLevelChange}
+            artifactsEnabled={artifactsEnabled}
+            onArtifactsChange={onArtifactsChange}
+            webSearchEnabled={webSearchEnabled}
+            onWebSearchChange={onWebSearchChange}
+            agentModeEnabled={agentModeEnabled}
+            onAgentModeChange={onAgentModeChange}
+            artifactFullscreen={artifactFullscreen || artifactGalleryOpen}
+            panelOpen={panelOpen}
+            panelAvailable={panelAvailable && !artifactGalleryOpen}
+            onTogglePanel={onTogglePanel}
+            contextUsage={contextUsage}
+            toolsSupported={toolsSupported}
+            hasE2bKey={hasE2bKey}
+            totalCost={totalCost}
+          />
+        )}
 
         <main className="flex-1 min-w-0 overflow-hidden relative flex flex-col">
-          {artifactGalleryOpen ? artifactGallery : children}
+          {artifactGalleryOpen
+            ? // A function, not an element: the header controls that would
+              // otherwise sit in the chat header (the sidebar toggle, and the
+              // mobile navigation) live in the gallery's own header, and that
+              // state is owned here.
+              artifactGallery?.({
+                sidebarOpen,
+                onToggleSidebar: toggleSidebar,
+                mobileNav,
+              })
+            : children}
         </main>
       </div>
 
