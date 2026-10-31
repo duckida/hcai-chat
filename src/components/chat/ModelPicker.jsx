@@ -95,7 +95,7 @@ function ModelRow({ model, itemId = model.id, selected, favorite }) {
       textValue={model.name}
       className="text-[13px] rounded-lg py-2.5 px-4"
     >
-      <span className="truncate">{model.name}</span>
+      <span className="min-w-0 break-words">{model.name}</span>
       <button
         type="button"
         data-favorite-toggle=""
