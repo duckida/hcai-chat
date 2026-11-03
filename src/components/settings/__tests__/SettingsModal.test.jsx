@@ -89,6 +89,24 @@ describe("SettingsModal", () => {
     expect(input.value).toBe("stored-key");
   });
 
+  it("keeps the two key fields separate and disables browser autofill", async () => {
+    localStorage.setItem("hack_club_ai_key", "sk-hc-one");
+    localStorage.setItem("e2b_api_key", "e2b-two");
+    renderModal();
+
+    const hcai = await screen.findByLabelText(/hcai api key/i);
+    const e2b = screen.getByLabelText(/e2b api key/i);
+
+    // Each field reads only its own stored key — they must never merge.
+    expect(hcai).toHaveValue("sk-hc-one");
+    expect(e2b).toHaveValue("e2b-two");
+
+    // `type=password` + no autocomplete is what makes a password manager fill
+    // the same saved credential into both, so both opt out of autofill.
+    expect(hcai).toHaveAttribute("autocomplete", "off");
+    expect(e2b).toHaveAttribute("autocomplete", "off");
+  });
+
   it("shows an error when saving with an empty key", async () => {
     const user = userEvent.setup();
     const { props } = renderModal();

@@ -93,6 +93,7 @@ function KeyInput({
   value,
   onChange,
   placeholder,
+  autoComplete,
   // What this field holds, for the reveal toggle's accessible name. Falls back
   // to the placeholder, which is at least specific — "Show value" would not be.
   label = placeholder,
@@ -108,6 +109,7 @@ function KeyInput({
         value={value}
         onChange={onChange}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         className={`h-12 border-border bg-muted rounded-xl px-5 transition-all focus:bg-background focus:ring-4 focus:ring-ring placeholder:text-muted-foreground font-medium ${error ? "border-red-400 focus:ring-destructive/10" : ""}`}
       />
       <Button

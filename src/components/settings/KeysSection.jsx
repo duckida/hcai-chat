@@ -32,6 +32,10 @@ export default function KeysSection({
           value={apiKey}
           onChange={(e) => onApiKeyChange(e.target.value)}
           placeholder="sk-hc-v1-..."
+          // `off`, not a token like `new-password`: the browser must never
+          // offer to save or auto-fill these API credentials, and treating
+          // them as site passwords is what makes it fill one into the other.
+          autoComplete="off"
           showValue={showKey}
           onToggleShow={onToggleShowKey}
           error={Boolean(error)}
@@ -51,6 +55,7 @@ export default function KeysSection({
           value={e2bApiKey}
           onChange={(e) => onE2bApiKeyChange(e.target.value)}
           placeholder="e2b_..."
+          autoComplete="off"
           showValue={showE2bKey}
           onToggleShow={onToggleShowE2bKey}
         />
