@@ -41,6 +41,14 @@ function applyTheme(values) {
   const className = THEME_CLASS_BY_NAME[values.theme];
   if (className) root.classList.add(className);
 
+  // The animation opt-out rides on a root class so one CSS rule can stop
+  // every animation and transition — including ones inside components (the
+  // streaming caret, Streamdown's word fade) that never read the setting.
+  root.classList.toggle(
+    "animations-disabled",
+    values.animationsEnabled === false,
+  );
+
   if (values.theme === "custom") {
     // A stored font only reaches this point through `sanitizeGoogleFont`, but
     // the value is interpolated straight into a CSS declaration, so sanitize
@@ -76,7 +84,9 @@ export function hydrateSettings() {
 export function setSetting(key, value) {
   settingsStore.setState({ [key]: value });
   writeSetting(key, value);
-  if (["theme", "googleFont", "accentColor"].includes(key)) {
+  if (
+    ["theme", "googleFont", "accentColor", "animationsEnabled"].includes(key)
+  ) {
     applyTheme(settingsStore.getState());
   }
 }

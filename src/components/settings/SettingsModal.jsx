@@ -40,6 +40,8 @@ export default function SettingsModal({
   onShowThinkingChange,
   showMetrics = true,
   onShowMetricsChange,
+  animationsEnabled = true,
+  onAnimationsEnabledChange,
   maxTokens = 32000,
   onMaxTokensChange,
 }) {
@@ -144,6 +146,8 @@ export default function SettingsModal({
                 onShowThinkingChange={onShowThinkingChange}
                 showMetrics={showMetrics}
                 onShowMetricsChange={onShowMetricsChange}
+                animationsEnabled={animationsEnabled}
+                onAnimationsEnabledChange={onAnimationsEnabledChange}
               />
             )}
 

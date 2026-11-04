@@ -155,6 +155,12 @@ export const SETTINGS = [
     parse: JSON_PARSE,
   },
   {
+    key: "animationsEnabled",
+    storageKey: "animations_enabled",
+    default: true,
+    parse: JSON_PARSE,
+  },
+  {
     key: "maxTokens",
     storageKey: "max_tokens",
     default: 32000,

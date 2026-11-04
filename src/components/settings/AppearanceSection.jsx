@@ -80,6 +80,8 @@ export default function AppearanceSection({
   onShowThinkingChange,
   showMetrics,
   onShowMetricsChange,
+  animationsEnabled = true,
+  onAnimationsEnabledChange,
 }) {
   return (
     <div className="space-y-6">
@@ -214,6 +216,14 @@ export default function AppearanceSection({
           description="Display token count and timing info."
           checked={showMetrics}
           onChange={onShowMetricsChange}
+        />
+
+        <SwitchRow
+          id="animations-enabled"
+          label="Animations"
+          description="Fades, pulses, and the streaming animation. Turn off to reduce motion."
+          checked={animationsEnabled}
+          onChange={onAnimationsEnabledChange}
         />
       </div>
     </div>

@@ -509,6 +509,8 @@ export default function ChatApp({
         onShowThinkingChange={(v) => setSetting("showThinking", v)}
         showMetrics={settings.showMetrics}
         onShowMetricsChange={(v) => setSetting("showMetrics", v)}
+        animationsEnabled={settings.animationsEnabled}
+        onAnimationsEnabledChange={(v) => setSetting("animationsEnabled", v)}
         maxTokens={settings.maxTokens}
         onMaxTokensChange={(v) => setSetting("maxTokens", v)}
       />

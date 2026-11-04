@@ -29,6 +29,7 @@ describe("persistence contracts", () => {
       "show_sandbox_code",
       "show_sandbox_output",
       "show_metrics",
+      "animations_enabled",
       "max_tokens",
       "theme",
       "openrouter_providers",

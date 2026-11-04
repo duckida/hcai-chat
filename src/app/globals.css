@@ -226,6 +226,20 @@
   }
 }
 
+/*
+ * The "reduce motion" opt-out, applied by the settings store as a root class.
+ * !important is what beats the inline animation styles Streamdown sets on the
+ * streaming words.
+ */
+:where(html.animations-disabled) *,
+:where(html.animations-disabled) *::before,
+:where(html.animations-disabled) *::after {
+  /* biome-ignore lint/complexity/noImportantStyles: must beat Streamdown's inline animation styles on streaming words */
+  animation: none !important;
+  /* biome-ignore lint/complexity/noImportantStyles: must beat Streamdown's inline animation styles on streaming words */
+  transition: none !important;
+}
+
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
