@@ -4,6 +4,7 @@ import { memo } from "react";
 import { isThinkingOn } from "@/lib/thinking";
 import { useSettings } from "@/stores/settings";
 import ThinkingIndicator from "../ThinkingIndicator";
+import InlineView from "./InlineView";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import { AgentIndicator, WebSearchIndicator } from "./MessageParts";
 import MessageRow from "./MessageRow";
@@ -15,6 +16,7 @@ const selectDisplaySettings = (state) => ({
   webSearchEnabled: state.webSearchEnabled,
   agentModeEnabled: state.agentModeEnabled,
   artifactsEnabled: state.artifactsEnabled,
+  inlineViewsEnabled: state.inlineViewsEnabled,
   showThinking: state.showThinking,
 });
 
@@ -40,18 +42,21 @@ const StreamingMessage = memo(function StreamingMessage({
     webSearchEnabled,
     agentModeEnabled,
     artifactsEnabled,
+    inlineViewsEnabled,
     showThinking,
   } = useSettings(selectDisplaySettings);
   // A level of "off" is the old toggle's off; any other level renders
   // reasoning exactly as it did before levels existed.
   const thinkingOn = isThinkingOn(thinkingLevel);
 
-  const {
-    text: cleanedText,
-    artifacts,
-    streamingArtifact,
-  } = useMessageText(streamingContent || "", { artifactsEnabled });
+  const { parts, artifacts, streamingArtifact, inlineViews, streamingView } =
+    useMessageText(streamingContent || "", {
+      artifactsEnabled,
+      inlineViewsEnabled,
+    });
+  const hasText = parts.some((part) => part.type === "text");
   const hasArtifact = artifacts.length > 0 || !!streamingArtifact;
+  const hasInlineView = inlineViews.length > 0 || !!streamingView;
 
   return (
     <div className="w-full animate-hcai-fade-in-slow">
@@ -69,15 +74,30 @@ const StreamingMessage = memo(function StreamingMessage({
           )}
         {streamingContent && (
           <div className={MESSAGE_BODY_CLASS}>
-            {cleanedText ? (
-              <Markdown mode="stream" streaming>
-                {cleanedText}
-              </Markdown>
-            ) : hasArtifact ? (
+            {parts.map((part) =>
+              part.type === "inline" ? (
+                <InlineView
+                  key={part.key}
+                  html={part.html}
+                  title={part.title}
+                />
+              ) : (
+                <Markdown key={part.key} mode="stream" streaming caret="circle">
+                  {part.text}
+                </Markdown>
+              ),
+            )}
+            {streamingView && (
+              <p className="text-sm text-muted-foreground italic">
+                Generating inline view...
+              </p>
+            )}
+            {!hasText && !streamingView && hasArtifact && (
               <p className="text-sm text-muted-foreground italic">
                 Generating artifact...
               </p>
-            ) : (
+            )}
+            {!hasText && !hasInlineView && !hasArtifact && (
               <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
                 <span>Streaming</span>
                 <ThinkingIndicator

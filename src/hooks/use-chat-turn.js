@@ -151,6 +151,7 @@ export function useChatTurn({
   thinkingLevel,
   modelReasoning,
   artifactsEnabled,
+  inlineViewsEnabled,
   webSearchEnabled,
   agentModeEnabled,
   maxTokens,
@@ -699,6 +700,7 @@ export function useChatTurn({
             // a request never carries an effort this model would reject.
             thinkingLevel: resolveThinkingLevel(thinkingLevel, modelReasoning),
             artifacts: artifactsEnabled,
+            inlineViews: inlineViewsEnabled,
             tools,
             toolChoice: "auto",
             onToolCall: (call) => {
@@ -918,6 +920,7 @@ export function useChatTurn({
     [
       agentModeEnabled,
       artifactsEnabled,
+      inlineViewsEnabled,
       maxTokens,
       modelReasoning,
       openRouterProviders,

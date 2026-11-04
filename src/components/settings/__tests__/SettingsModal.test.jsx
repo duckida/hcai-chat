@@ -220,6 +220,21 @@ describe("SettingsModal", () => {
     expect(onShowMetricsChange).toHaveBeenCalledWith(true);
   });
 
+  it("toggles the inline views switch", async () => {
+    const user = userEvent.setup();
+    const onInlineViewsEnabledChange = vi.fn();
+    renderModal({
+      inlineViewsEnabled: true,
+      onInlineViewsEnabledChange,
+    });
+    await goToSection(user, "Appearance");
+    await screen.findByText(/^inline views$/i);
+    const label = screen.getByText(/^inline views$/i);
+    const outerRow = label.parentElement.parentElement;
+    fireEvent.click(outerRow.querySelector("button"));
+    expect(onInlineViewsEnabledChange).toHaveBeenCalledWith(false);
+  });
+
   it("renders a dark mode selector with three options", async () => {
     const user = userEvent.setup();
     renderModal();

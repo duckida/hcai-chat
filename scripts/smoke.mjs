@@ -944,7 +944,7 @@ async function main() {
               : "")
         : `clean (${consoleEntries.length} entries, ${consoleEntries.filter((e) => e.level === "verbose").length} verbose)` +
             (process.env.SMOKE_DEBUG
-              ? " " + JSON.stringify(consoleEntries.slice(0, 12))
+              ? ` ${JSON.stringify(consoleEntries.slice(0, 12))}`
               : ""),
     );
 

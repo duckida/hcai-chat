@@ -3,6 +3,7 @@ import {
   ARTIFACT_AGENT_MODE_INSTRUCTIONS,
   ARTIFACT_INSTRUCTIONS,
 } from "@/lib/artifacts";
+import { INLINE_VIEW_INSTRUCTIONS } from "@/lib/inline-views";
 import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { isValidOpenRouterProviderSlug } from "@/lib/openrouter-provider";
@@ -167,6 +168,7 @@ export async function POST(req) {
       model,
       apiKey,
       artifacts,
+      inlineViews,
       tools: clientTools,
       stream,
       thinkingLevel,
@@ -211,6 +213,13 @@ export async function POST(req) {
 
     if (artifacts) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;
+    }
+
+    if (inlineViews) {
+      // Appended after the artifact rules on purpose: when both are on, the
+      // later, more specific instruction decides that a small chart belongs
+      // inline and a full standalone page belongs in an artifact.
+      systemPrompt += `\n\n${INLINE_VIEW_INSTRUCTIONS}`;
     }
 
     if (agentMode) {

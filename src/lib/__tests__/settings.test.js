@@ -26,12 +26,14 @@ describe("settings registry", () => {
       "titleGenerationModel",
       "thinkingLevel",
       "artifactsEnabled",
+      "inlineViewsEnabled",
       "webSearchEnabled",
       "agentModeEnabled",
       "showThinking",
       "showSandboxCode",
       "showSandboxOutput",
       "showMetrics",
+      "animationsEnabled",
       "maxTokens",
       "theme",
       "openRouterProviders",
@@ -46,6 +48,7 @@ describe("settings registry", () => {
     expect(getDefaultSetting("titleGenerationModel")).toBe(DEFAULT_TITLE_MODEL);
     expect(getDefaultSetting("thinkingLevel")).toBe("medium");
     expect(getDefaultSetting("artifactsEnabled")).toBe(false);
+    expect(getDefaultSetting("inlineViewsEnabled")).toBe(true);
     expect(getDefaultSetting("webSearchEnabled")).toBe(false);
     expect(getDefaultSetting("agentModeEnabled")).toBe(false);
     expect(getDefaultSetting("showThinking")).toBe(false);

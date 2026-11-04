@@ -61,6 +61,57 @@ describe("MessageList", () => {
     expect(screen.getByText("Hi friend")).toBeInTheDocument();
   });
 
+  it("renders an inline view in place when the setting is on", () => {
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content:
+            'Before\n<inline title="Demo"><div>hello view</div></inline>\nAfter',
+        },
+      ],
+      settings: { inlineViewsEnabled: true },
+    });
+
+    const frame = screen.getByTitle("Demo");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame.getAttribute("srcdoc")).toContain("hello view");
+    // The view keeps its position: both surrounding paragraphs still render.
+    const row = document.querySelector(".msg-row");
+    expect(row.textContent).toContain("Before");
+    expect(row.textContent).toContain("After");
+  });
+
+  it("hides inline views when the setting is off and says so", () => {
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: 'Before\n<inline title="Demo"><div>hello view</div></inline>',
+        },
+      ],
+      settings: { inlineViewsEnabled: false },
+    });
+
+    expect(screen.queryByTitle("Demo")).not.toBeInTheDocument();
+    expect(screen.getByText(/inline view hidden/i)).toBeInTheDocument();
+    // The raw HTML must never leak into the thread as prose.
+    expect(screen.queryByText(/hello view/)).not.toBeInTheDocument();
+  });
+
+  it("waits for a streaming view to close before rendering it", () => {
+    renderList({
+      messages: [],
+      turn: {
+        streamingContent: 'Intro\n<inline title="Live"><canvas>',
+      },
+    });
+
+    expect(screen.getByText("Intro")).toBeInTheDocument();
+    expect(screen.queryByTitle("Live")).not.toBeInTheDocument();
+    expect(screen.getByText(/generating inline view/i)).toBeInTheDocument();
+  });
+
   it("renders streaming content", () => {
     renderList({
       messages: [],

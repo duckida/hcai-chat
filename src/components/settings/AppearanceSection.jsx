@@ -80,6 +80,8 @@ export default function AppearanceSection({
   onShowThinkingChange,
   showMetrics,
   onShowMetricsChange,
+  inlineViewsEnabled = true,
+  onInlineViewsEnabledChange,
   animationsEnabled = true,
   onAnimationsEnabledChange,
 }) {
@@ -216,6 +218,14 @@ export default function AppearanceSection({
           description="Display token count and timing info."
           checked={showMetrics}
           onChange={onShowMetricsChange}
+        />
+
+        <SwitchRow
+          id="inline-views-enabled"
+          label="Inline Views"
+          description="Render interactive HTML — charts, graphs, simulations — inside replies."
+          checked={inlineViewsEnabled}
+          onChange={onInlineViewsEnabledChange}
         />
 
         <SwitchRow

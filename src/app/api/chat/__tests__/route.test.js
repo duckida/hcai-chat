@@ -539,6 +539,42 @@ describe("/api/chat POST", () => {
     expect(lastParams().messages[0].content).toContain("execute_code");
   });
 
+  it("inline views mode appends the inline view instructions", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        stream: false,
+        inlineViews: true,
+      }),
+    );
+
+    expect(lastParams().messages[0].content).toContain("Inline Views");
+    expect(lastParams().messages[0].content).toContain("<inline title=");
+  });
+
+  it("leaves inline view instructions out when the feature is off", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        stream: false,
+      }),
+    );
+
+    expect(lastParams().messages[0].content).not.toContain("Inline Views");
+  });
+
   it("tool_calls on assistant messages pass through, thinking field is stripped", async () => {
     harness.create.mockResolvedValue({
       choices: [{ message: { content: "x" }, finish_reason: "stop" }],

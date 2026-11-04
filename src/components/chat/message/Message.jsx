@@ -1,10 +1,11 @@
 "use client";
 
-import { Globe } from "lucide-react";
+import { EyeOff, Globe } from "lucide-react";
 import { memo, useMemo } from "react";
 import { getMessageText, getUserText } from "@/lib/messages";
 import { useSettings } from "@/stores/settings";
 import ResponseMetrics from "../ResponseMetrics";
+import InlineView from "./InlineView";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import ImageAttachment, { FileBubble } from "./MessageParts";
 import MessageRow from "./MessageRow";
@@ -13,29 +14,32 @@ import ThinkingBlock from "./ThinkingBlock";
 import useMessageText from "./useMessageText";
 
 /**
- * How a persisted message presents itself — artifacts, reasoning, metrics —
- * is all display settings, so a committed message reads them itself rather
- * than being handed flags it never varies. Sandbox runs deliberately do not
- * appear here: their transcript lives in the Cloud sandbox side panel.
+ * How a persisted message presents itself — artifacts, inline views,
+ * reasoning, metrics — is all display settings, so a committed message reads
+ * them itself rather than being handed flags it never varies. Sandbox runs
+ * deliberately do not appear here: their transcript lives in the Cloud sandbox
+ * side panel.
  */
 const selectDisplaySettings = (state) => ({
   artifactsEnabled: state.artifactsEnabled,
+  inlineViewsEnabled: state.inlineViewsEnabled,
   showThinking: state.showThinking,
   showMetrics: state.showMetrics,
 });
 
 const Message = memo(function Message({ message }) {
-  const { artifactsEnabled, showThinking, showMetrics } = useSettings(
-    selectDisplaySettings,
-  );
+  const { artifactsEnabled, inlineViewsEnabled, showThinking, showMetrics } =
+    useSettings(selectDisplaySettings);
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
   const text = attachments ? getUserText(content) : getMessageText(content);
 
-  const { text: renderedText, artifacts } = useMessageText(text, {
-    artifactsEnabled,
-  });
+  const { parts, artifacts, inlineViews, hiddenInlineViews } = useMessageText(
+    text,
+    { artifactsEnabled, inlineViewsEnabled },
+  );
+  const hasText = parts.some((part) => part.type === "text");
   const hasSources = message.sources && message.sources.length > 0;
 
   // Extract image sources from content parts for rendering
@@ -47,7 +51,8 @@ const Message = memo(function Message({ message }) {
   }, [message.content]);
 
   const hasVisibleBody =
-    !!renderedText ||
+    hasText ||
+    (isAssistant && (inlineViews.length > 0 || hiddenInlineViews > 0)) ||
     artifacts.length > 0 ||
     contentImages.length > 0 ||
     (attachments && attachments.length > 0) ||
@@ -100,19 +105,46 @@ const Message = memo(function Message({ message }) {
 
         {isAssistant ? (
           <div className={MESSAGE_BODY_CLASS}>
-            {renderedText && <Markdown>{renderedText}</Markdown>}
-            {!renderedText && artifacts.length > 0 && (
+            {parts.map((part) =>
+              part.type === "inline" ? (
+                <InlineView
+                  key={part.key}
+                  html={part.html}
+                  title={part.title}
+                />
+              ) : (
+                <Markdown key={part.key}>{part.text}</Markdown>
+              ),
+            )}
+            {!hasText && artifacts.length > 0 && (
               <p className="text-sm text-muted-foreground italic">
                 Artifact generated
               </p>
             )}
+            {hiddenInlineViews > 0 && (
+              <div className="inline-flex max-w-full flex-wrap items-center gap-2 rounded-xl border border-dashed border-border bg-muted/40 px-3 py-2 text-[12px] font-medium text-muted-foreground">
+                <EyeOff className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {hiddenInlineViews === 1
+                    ? "Inline view hidden"
+                    : `${hiddenInlineViews} inline views hidden`}
+                </span>
+                <span className="text-muted-foreground/60">
+                  · enable Inline Views in Settings
+                </span>
+              </div>
+            )}
           </div>
         ) : (
-          (renderedText || artifacts.length > 0) && (
+          (hasText || artifacts.length > 0) && (
             <div className="w-fit max-w-full rounded-3xl border border-primary/25 bg-[color-mix(in_oklab,var(--primary)_14%,var(--background))] px-4 py-2.5">
               <div className={MESSAGE_BODY_CLASS}>
-                {renderedText && <Markdown>{renderedText}</Markdown>}
-                {!renderedText && artifacts.length > 0 && (
+                {parts
+                  .filter((part) => part.type === "text")
+                  .map((part) => (
+                    <Markdown key={part.key}>{part.text}</Markdown>
+                  ))}
+                {!hasText && artifacts.length > 0 && (
                   <p className="text-sm text-muted-foreground italic">
                     Artifact generated
                   </p>

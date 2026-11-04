@@ -100,6 +100,7 @@ function buildRequestBody({
   apiKey,
   thinkingLevel,
   artifacts,
+  inlineViews,
   maxTokens,
   agentMode,
   conversationId,
@@ -116,6 +117,7 @@ function buildRequestBody({
     apiKey,
     thinkingLevel,
     artifacts,
+    inlineViews,
   };
 
   if (maxTokens) body.max_tokens = maxTokens;
@@ -716,6 +718,7 @@ export const streamChatCompletion = async ({
   onComplete,
   thinkingLevel = DEFAULT_THINKING_LEVEL,
   artifacts = false,
+  inlineViews = false,
   tools = null,
   toolChoice = "auto",
   onToolCall = null,
@@ -750,6 +753,7 @@ export const streamChatCompletion = async ({
     apiKey,
     thinkingLevel,
     artifacts,
+    inlineViews,
     maxTokens,
     agentMode,
     conversationId,

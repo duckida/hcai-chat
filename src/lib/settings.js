@@ -119,6 +119,12 @@ export const SETTINGS = [
     parse: JSON_PARSE,
   },
   {
+    key: "inlineViewsEnabled",
+    storageKey: "inline_views_enabled",
+    default: true,
+    parse: JSON_PARSE,
+  },
+  {
     key: "webSearchEnabled",
     storageKey: "web_search_enabled",
     default: false,
