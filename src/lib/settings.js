@@ -107,6 +107,12 @@ export const SETTINGS = [
     parse: String,
   },
   {
+    key: "inlineViewModel",
+    storageKey: "inline_view_model",
+    default: "deepseek/deepseek-v4.1-flash",
+    parse: String,
+  },
+  {
     key: "thinkingLevel",
     storageKey: "thinking_level",
     default: DEFAULT_THINKING_LEVEL,

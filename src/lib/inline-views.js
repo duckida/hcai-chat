@@ -1,8 +1,11 @@
 /**
- * Inline views are small, self-contained HTML visuals the model embeds in a
- * reply as `<inline title="…">…</inline>`. Unlike artifacts — which are full
- * pages that open in the side panel — an inline view is rendered in place in
- * the message, so the surrounding prose keeps its order.
+ * Inline views are small, self-contained HTML visuals the model asks for in a
+ * reply as `<inline title="…">description</inline>`. The tag holds a *brief*,
+ * not the markup: a second, separately chosen model turns that brief into the
+ * HTML, so a long document never enters the conversation's context. Unlike
+ * artifacts — which are full pages that open in the side panel — an inline view
+ * is rendered in place in the message, so the surrounding prose keeps its
+ * order.
  *
  * This module is imported by the chat route as well as by client components,
  * so it must stay free of React and browser globals. The document builder is a
@@ -90,11 +93,11 @@ function findUnclosedOpen(tail) {
  *
  * An `<inline>` that has opened but not closed is a stream still arriving. Its
  * body is returned as `streamingView` and is deliberately *not* rendered: a
- * half-written document would flash a broken canvas before the script that
- * drives it exists. Text before the opening tag is still returned, so an
- * answer keeps streaming normally while the view is built.
+ * half-written brief is not something to show, and a placeholder for it would
+ * appear and disappear as the tag streams. Text before the opening tag is
+ * still returned, so an answer keeps streaming normally around it.
  *
- * @returns {{ parts: Array<{type: "text", text: string} | {type: "inline", html: string, title: string}>, streamingView: {html: string, title: string} | null }}
+ * @returns {{ parts: Array<{type: "text", text: string} | {type: "inline", prompt: string, title: string}>, streamingView: {prompt: string, title: string} | null }}
  */
 export function extractInlineViews(text) {
   if (!text) return { parts: [], streamingView: null };
@@ -108,13 +111,13 @@ export function extractInlineViews(text) {
     // groups 2 and 3 are the attributes and body of a real view.
     if (match[2] !== undefined) {
       pushText(parts, source.slice(cursor, match.index));
-      const html = match[3].trim();
+      const prompt = match[3].trim();
       parts.push({
         type: "inline",
-        html,
+        prompt,
         // An explicit `title` is the label the model chose for the card; the
-        // document's own `<title>` is only a fallback.
-        title: parseTitleAttribute(match[2]) || getInlineViewTitle(html),
+        // builder's own `<title>` is only a fallback.
+        title: parseTitleAttribute(match[2]) || getInlineViewTitle(prompt),
       });
       // Only a consumed view moves the cursor. A code span is skipped by the
       // matcher but stays part of the text, so it has to be included in the
@@ -128,14 +131,15 @@ export function extractInlineViews(text) {
   const open = findUnclosedOpen(rest);
   if (open) {
     pushText(parts, rest.slice(0, open.index));
-    const html = rest.slice(open.index + open.length).trim();
+    const prompt = rest.slice(open.index + open.length).trim();
     return {
       parts,
-      streamingView: html
+      streamingView: prompt
         ? {
-            html,
+            prompt,
             title:
-              parseTitleAttribute(open.attributes) || getInlineViewTitle(html),
+              parseTitleAttribute(open.attributes) ||
+              getInlineViewTitle(prompt),
           }
         : null,
     };
@@ -307,69 +311,89 @@ ${script}
 }
 
 /**
- * System-level instructions appended when inline views are enabled. The
- * template is deliberately concrete: the theme variables and helper classes
- * are the part a model cannot guess, and a view that hard-codes its own colors
- * is the one thing that would make these look foreign in the thread.
+ * System-level instructions appended when inline views are enabled. They teach
+ * the *brief*, not the markup: a separate builder model writes the HTML from
+ * it, so the chat model only spends a sentence on the visual and the document
+ * never enters this conversation's context.
  */
 export const INLINE_VIEW_INSTRUCTIONS = `
 ## Inline Views
 
-You can render small, self-contained HTML visuals directly inside your reply. Wrap each one in an \`<inline title="Short label">\` block. Use them for content that is easier to understand visually or interactively: charts, plots, diagrams, sliders, small simulations, calculators, or animated illustrations.
-
-Template:
+You can have a small visual rendered inline in your reply. You do not write the HTML: a separate builder model turns your description into the view, and the app shows a placeholder until it is ready. Write the description inside an \`<inline title="Short label">\` block:
 
 <inline title="Sine Wave">
-  <style>
-    .plot { width: 100%; height: 180px; background: var(--muted); border-radius: var(--radius); }
-    .controls { display: flex; align-items: center; gap: 12px; }
-    .controls input { flex: 1; }
-  </style>
-  <div class="hcai-view">
-    <canvas id="plot" class="plot"></canvas>
-    <div class="hcai-row controls">
-      <label for="freq" class="hcai-muted">Frequency</label>
-      <input id="freq" class="hcai-range" type="range" min="1" max="10" value="3">
-      <span id="value" class="hcai-value">3</span>
-    </div>
-  </div>
-  <script>
-    const canvas = document.getElementById("plot");
-    const ctx = canvas.getContext("2d");
-    const input = document.getElementById("freq");
-    const value = document.getElementById("value");
-    function draw() {
-      const ratio = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width * ratio;
-      canvas.height = rect.height * ratio;
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      ctx.clearRect(0, 0, rect.width, rect.height);
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--primary");
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      for (let x = 0; x <= rect.width; x++) {
-        const y = rect.height / 2 + Math.sin((x / rect.width) * Math.PI * 2 * input.value) * rect.height * 0.35;
-        if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-      value.textContent = input.value;
-    }
-    input.addEventListener("input", draw);
-    window.addEventListener("resize", draw);
-    draw();
-  </script>
+A canvas plot of a sine wave over one full period, with a frequency slider from 1 to 10 (default 3). Redraw on resize. Label the slider "Frequency" and show its current value beside it.
 </inline>
 
 Rules:
 - Most answers should have no view at all. Add one only when the content is genuinely visual or interactive and a view explains it better than prose — never as decoration, and never to fill space. Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
-- Put the opening and closing tags on their own lines, and keep each view under about 600px tall. The app sizes the card to the content and caps it, then scrolls inside.
-- The app supplies the page shell, theme tokens, and base styles. Do NOT include \`<html>\`, \`<head>\`, or \`<body>\`. All CSS and JavaScript must be inline; do not use external scripts, stylesheets, fonts, or network requests.
-- Style with the app's CSS variables instead of hard-coded colors: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--card-foreground)\`, \`var(--muted)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--primary)\`, \`var(--primary-foreground)\`, \`var(--accent)\`, \`var(--destructive)\`, \`var(--radius)\`, and \`var(--chart-1)\` through \`var(--chart-5)\`.
-- Helper classes are provided and match the app: \`.hcai-view\` (vertical stack), \`.hcai-row\` (horizontal row), \`.hcai-card\` (bordered surface), \`.hcai-muted\` (secondary text), \`.hcai-value\` (tabular number), \`.hcai-btn\` / \`.hcai-btn-secondary\` (buttons), and \`.hcai-range\` (slider).
-- Use a responsive \`canvas\` or \`svg\` for plots and simulations, and redraw on resize. Give controls visible labels and accessible names.
-- Give the view a short \`title\` of at most four words; the app shows it as the card's label.
+- The builder sees only what is inside the tag. State the values, labels, ranges and behavior it needs; it cannot see the conversation.
+- Keep the description under about 60 words. Say what the view shows and does, not how to code it.
+- Never put HTML, CSS, JavaScript, or a code fence inside the tag. The builder writes all of that.
+- Put the opening and closing tags on their own lines, one tag per view, with a title of at most four words.
 - Keep the surrounding explanation brief. Do not repeat the view's data in prose.
 - Use \`<inline>\` only for visual or interactive content. Code snippets, tables, lists, and ordinary prose belong in normal Markdown.
 - When artifacts are also available, use \`<artifact>\` for a complete standalone page or app and \`<inline>\` for a small visual embedded in the answer.
 `.trim();
+
+/**
+ * System prompt for the builder model that turns an inline-view brief into
+ * HTML. It owns the theme contract: the token names and helper classes are the
+ * part a model cannot guess, and a view that hard-codes its own colors is the
+ * one thing that would make these look foreign in the thread.
+ */
+export const INLINE_VIEW_GENERATOR_PROMPT = `
+You build one small, self-contained HTML visual for an inline card in a chat interface. The user message is a description of what the view should show; return the HTML that renders it.
+
+Output ONLY the HTML fragment — no markdown fences, no <html>, <head> or <body> wrappers, no explanation before or after.
+
+Rules:
+- The app supplies the page shell, theme tokens and base styles. Use them; do not ship a document of your own.
+- Style with the app's CSS variables instead of hard-coded colors: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--card-foreground)\`, \`var(--muted)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--primary)\`, \`var(--primary-foreground)\`, \`var(--accent)\`, \`var(--destructive)\`, \`var(--radius)\`, and \`var(--chart-1)\` through \`var(--chart-5)\`.
+- Helper classes are provided and match the app: \`.hcai-view\` (vertical stack), \`.hcai-row\` (horizontal row), \`.hcai-card\` (bordered surface), \`.hcai-muted\` (secondary text), \`.hcai-value\` (tabular number), \`.hcai-btn\` / \`.hcai-btn-secondary\` (buttons), and \`.hcai-range\` (slider).
+- All CSS and JavaScript must be inline; no external scripts, stylesheets, fonts, or network requests.
+- Use a responsive \`canvas\` or \`svg\` for plots and simulations, and redraw on resize. Give controls visible labels and accessible names.
+- Keep the whole view under about 600px tall, and make it work from 320px to 700px wide.
+- Do not add a heading or title that repeats the surrounding chat text; the card has no chrome of its own.
+`.trim();
+
+/**
+ * Clean up a builder model's reply: strip a markdown fence it was told not to
+ * add, and any prose before the first tag. Returns "" when nothing usable came
+ * back, so the caller can show a retry instead of an empty card.
+ */
+export function normalizeGeneratedInlineView(text) {
+  let html = String(text || "").trim();
+  if (!html) return "";
+  const fenced = /^```(?:html)?\s*\n([\s\S]*?)\n?```$/i.exec(html);
+  if (fenced) html = fenced[1].trim();
+  const firstTag = html.search(/<[a-z!/]/i);
+  if (firstTag > 0) html = html.slice(firstTag);
+  // Prose before the markup can carry its own fence: the reply opened with a
+  // sentence, so the whole-fence regex above did not match.
+  const trailingFence = html.lastIndexOf("```");
+  if (trailingFence > 0) html = html.slice(0, trailingFence).trimEnd();
+  // A reply with no tag at all is prose — a refusal, not a view. The caller
+  // shows a retry rather than rendering a sentence in the frame.
+  if (!/<[a-z!/]/i.test(html)) return "";
+  return html.trim();
+}
+
+/**
+ * Whether an `<inline>` body is already markup rather than a brief.
+ *
+ * Older conversations stored the full document in the tag, and a model that
+ * ignores the brief instruction can still emit one. Sending that to the
+ * builder would ask it to build a view *of* a view, so anything that clearly
+ * starts as a document is rendered as-is. A description that merely mentions
+ * a tag ("a <canvas> plot…") does not match, because it does not start with
+ * one.
+ */
+export function isInlineViewMarkup(text) {
+  const body = String(text || "").trimStart();
+  return (
+    /^<(?:!doctype|html|div|canvas|svg|style|script|section|main|body|table|figure|p)\b/i.test(
+      body,
+    ) || /<!doctype html/i.test(body)
+  );
+}

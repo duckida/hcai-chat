@@ -28,6 +28,8 @@ export default function SettingsModal({
   onSelectedModelChange,
   titleGenerationModel,
   onTitleGenerationModelChange,
+  inlineViewModel,
+  onInlineViewModelChange,
   openRouterProviders = {},
   onOpenRouterProvidersChange,
   theme: paletteTheme = "aurora",
@@ -129,6 +131,8 @@ export default function SettingsModal({
                 onSelectedModelChange={onSelectedModelChange}
                 titleGenerationModel={titleGenerationModel}
                 onTitleGenerationModelChange={onTitleGenerationModelChange}
+                inlineViewModel={inlineViewModel}
+                onInlineViewModelChange={onInlineViewModelChange}
                 maxTokens={maxTokens}
                 onMaxTokensChange={onMaxTokensChange}
                 openRouterProviders={openRouterProviders}

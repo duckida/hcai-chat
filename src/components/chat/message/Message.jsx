@@ -23,13 +23,21 @@ import useMessageText from "./useMessageText";
 const selectDisplaySettings = (state) => ({
   artifactsEnabled: state.artifactsEnabled,
   inlineViewsEnabled: state.inlineViewsEnabled,
+  inlineViewModel: state.inlineViewModel,
+  openRouterProviders: state.openRouterProviders,
   showThinking: state.showThinking,
   showMetrics: state.showMetrics,
 });
 
 const Message = memo(function Message({ message }) {
-  const { artifactsEnabled, inlineViewsEnabled, showThinking, showMetrics } =
-    useSettings(selectDisplaySettings);
+  const {
+    artifactsEnabled,
+    inlineViewsEnabled,
+    inlineViewModel,
+    openRouterProviders,
+    showThinking,
+    showMetrics,
+  } = useSettings(selectDisplaySettings);
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
@@ -109,8 +117,10 @@ const Message = memo(function Message({ message }) {
               part.type === "inline" ? (
                 <InlineView
                   key={part.key}
-                  html={part.html}
+                  prompt={part.prompt}
                   title={part.title}
+                  model={inlineViewModel}
+                  providerSlug={openRouterProviders?.[inlineViewModel] || null}
                 />
               ) : (
                 <Markdown key={part.key}>{part.text}</Markdown>

@@ -1,9 +1,28 @@
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import MessageList from "../MessageList";
+import { resetInlineViewCache } from "@/lib/inline-view-cache";
 import { resetSettings, settingsStore } from "@/stores/settings";
 import { resetTurn, turnStore } from "@/stores/turn";
+
+const generateInlineView = vi.fn(async () => "<div id='built'>built view</div>");
+vi.mock("@/lib/api-client", () => ({
+  // SandboxFiles also imports from this module; stub what it destructures so
+  // the mock does not take unrelated rows down with it.
+  getStoredE2bApiKey: () => null,
+  generateInlineView: (...args) => generateInlineView(...args),
+}));
+
+// The generated-document cache is a module-level singleton, like every store
+// here: one test's documents would otherwise answer the next test's view.
+beforeEach(() => {
+  resetInlineViewCache();
+  generateInlineView.mockReset();
+  generateInlineView.mockImplementation(
+    async () => "<div id='built'>built view</div>",
+  );
+});
 
 /**
  * The thread reads the turn and settings stores, so a test sets the world up
@@ -73,6 +92,8 @@ describe("MessageList", () => {
       settings: { inlineViewsEnabled: true },
     });
 
+    // The body is markup, so it renders directly without a builder request.
+    expect(generateInlineView).not.toHaveBeenCalled();
     const frame = screen.getByTitle("Demo");
     expect(frame).toHaveAttribute("sandbox", "allow-scripts");
     expect(frame.getAttribute("srcdoc")).toContain("hello view");
@@ -80,6 +101,82 @@ describe("MessageList", () => {
     const row = document.querySelector(".msg-row");
     expect(row.textContent).toContain("Before");
     expect(row.textContent).toContain("After");
+  });
+
+  it("placeholders a brief and renders the builder model's document", async () => {
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content:
+            'Before\n<inline title="Demo">A chart of monthly rainfall</inline>',
+        },
+      ],
+      settings: {
+        inlineViewsEnabled: true,
+        inlineViewModel: "qwen/qwen3.6-flash",
+      },
+    });
+
+    // The brief is not markup, so nothing renders until the builder answers.
+    expect(screen.queryByTitle("Demo")).not.toBeInTheDocument();
+    expect(document.querySelector("[aria-busy='true']")).toBeInTheDocument();
+
+    const frame = await screen.findByTitle("Demo");
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame.getAttribute("srcdoc")).toContain("built view");
+    // The builder got the brief and the model chosen for it, nothing else.
+    expect(generateInlineView).toHaveBeenCalledWith(
+      "A chart of monthly rainfall",
+      "qwen/qwen3.6-flash",
+      null,
+    );
+    // The brief itself must never render as prose.
+    const row = document.querySelector(".msg-row");
+    expect(row.textContent).not.toContain("monthly rainfall");
+  });
+
+  it("reuses a cached document instead of generating again", async () => {
+    const message = {
+      role: "assistant",
+      content: '<inline title="Demo">A chart of monthly rainfall</inline>',
+    };
+
+    const first = renderList({
+      messages: [message],
+      settings: { inlineViewsEnabled: true },
+    });
+    await screen.findByTitle("Demo");
+    first.unmount();
+
+    renderList({
+      messages: [message],
+      settings: { inlineViewsEnabled: true },
+    });
+    expect(screen.getByTitle("Demo")).toBeInTheDocument();
+    expect(generateInlineView).toHaveBeenCalledTimes(1);
+  });
+
+  it("offers a retry when the builder model fails", async () => {
+    generateInlineView.mockResolvedValueOnce(null);
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: '<inline title="Demo">A chart of monthly rainfall</inline>',
+        },
+      ],
+      settings: { inlineViewsEnabled: true },
+    });
+
+    expect(
+      await screen.findByText(/couldn't generate this view/i),
+    ).toBeInTheDocument();
+    expect(generateInlineView).toHaveBeenCalledTimes(1);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /retry/i }));
+    expect(await screen.findByTitle("Demo")).toBeInTheDocument();
+    expect(generateInlineView).toHaveBeenCalledTimes(2);
   });
 
   it("hides inline views when the setting is off and says so", () => {

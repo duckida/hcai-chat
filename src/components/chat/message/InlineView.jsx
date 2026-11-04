@@ -1,10 +1,26 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { Button } from "@/components/primitives/button";
+import {
+  getInlineViewEntry,
+  inlineViewKey,
+  requestInlineView,
+  retryInlineView,
+  subscribeInlineViews,
+} from "@/lib/inline-view-cache";
 import {
   buildInlineViewDocument,
   getInlineViewTitle,
   INLINE_VIEW_TOKENS,
+  isInlineViewMarkup,
 } from "@/lib/inline-views";
 
 const MIN_HEIGHT = 120;
@@ -53,23 +69,80 @@ function useInlineViewTheme() {
   return theme;
 }
 
+/** The card frame both the placeholder and the finished view sit in. */
+function ViewFrame({ children }) {
+  return (
+    <div className="my-1 overflow-hidden rounded-2xl border border-border bg-background">
+      {children}
+    </div>
+  );
+}
+
 /**
- * A single `<inline>` block rendered in the message. The frame is sandboxed
- * with scripts but without same-origin access, exactly like the artifact
- * preview: a generated view can animate and respond, but it cannot reach this
- * app's storage or DOM.
+ * Shown while the builder model is working. The bars are deliberately
+ * abstract: a skeleton that looked like a chart would read as content that
+ * failed to load. Opacity-only motion, and the global animations toggle stops
+ * it like every other animation.
  */
-export default function InlineView({ html, title }) {
+function ViewPlaceholder({ title }) {
+  return (
+    <ViewFrame>
+      <div aria-busy="true" className="space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
+          <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground">
+            {title ? `Generating ${title}…` : "Generating view…"}
+          </span>
+        </div>
+        <div className="h-24 animate-pulse rounded-xl bg-muted" />
+        <div className="flex items-center gap-2">
+          <div className="h-2 flex-1 animate-pulse rounded-full bg-muted" />
+          <div className="h-2 w-14 animate-pulse rounded-full bg-muted" />
+        </div>
+      </div>
+    </ViewFrame>
+  );
+}
+
+/**
+ * A single `<inline>` block rendered in the message.
+ *
+ * The tag holds a brief, not markup: the chat model never pays for the
+ * document, and the builder model — chosen in Settings > Models — turns the
+ * brief into HTML. The result is cached by (model, brief) so re-renders and
+ * reloads reuse it. The frame is sandboxed with scripts but without
+ * same-origin access, exactly like the artifact preview: a generated view can
+ * animate and respond, but it cannot reach this app's storage or DOM.
+ */
+export default function InlineView({ prompt, title, model, providerSlug }) {
   const theme = useInlineViewTheme();
   const frameRef = useRef(null);
   const [height, setHeight] = useState(null);
 
+  const markup = isInlineViewMarkup(prompt);
+  const key = useMemo(() => inlineViewKey(model, prompt), [model, prompt]);
+  const entry = useSyncExternalStore(
+    subscribeInlineViews,
+    () => getInlineViewEntry(key),
+    () => null,
+  );
+
+  useEffect(() => {
+    if (markup || !prompt) return;
+    if (getInlineViewEntry(key)) return;
+    requestInlineView({ key, prompt, model, providerSlug });
+  }, [key, markup, prompt, model, providerSlug]);
+
+  const html = markup ? prompt : entry?.status === "ready" ? entry.html : null;
+
   const documentSource = useMemo(
     () =>
-      buildInlineViewDocument(html, {
-        tokens: theme?.tokens,
-        colorScheme: theme?.colorScheme,
-      }),
+      html
+        ? buildInlineViewDocument(html, {
+            tokens: theme?.tokens,
+            colorScheme: theme?.colorScheme,
+          })
+        : "",
     [html, theme],
   );
 
@@ -92,10 +165,35 @@ export default function InlineView({ html, title }) {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  const label = title || getInlineViewTitle(html);
+  const label = title || getInlineViewTitle(html || prompt);
+
+  if (!html && entry?.status === "error") {
+    return (
+      <ViewFrame>
+        <div className="flex flex-wrap items-center gap-3 p-4">
+          <span className="min-w-0 flex-1 text-[12px] font-medium text-muted-foreground">
+            Couldn&apos;t generate this view.
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onPress={() =>
+              retryInlineView({ key, prompt, model, providerSlug })
+            }
+          >
+            <RefreshCw aria-hidden="true" />
+            Retry
+          </Button>
+        </div>
+      </ViewFrame>
+    );
+  }
+
+  if (!html) return <ViewPlaceholder title={label} />;
 
   return (
-    <div className="my-1 overflow-hidden rounded-2xl border border-border bg-background">
+    <ViewFrame>
       <iframe
         ref={frameRef}
         title={label}
@@ -106,6 +204,6 @@ export default function InlineView({ html, title }) {
         style={{ height: `${height ?? DEFAULT_HEIGHT}px` }}
         className="block w-full border-0 bg-background"
       />
-    </div>
+    </ViewFrame>
   );
 }

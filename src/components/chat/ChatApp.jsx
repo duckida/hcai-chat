@@ -496,6 +496,8 @@ export default function ChatApp({
         onTitleGenerationModelChange={(v) =>
           setSetting("titleGenerationModel", v)
         }
+        inlineViewModel={settings.inlineViewModel}
+        onInlineViewModelChange={(v) => setSetting("inlineViewModel", v)}
         openRouterProviders={settings.openRouterProviders}
         onOpenRouterProvidersChange={(v) =>
           setSetting("openRouterProviders", v)

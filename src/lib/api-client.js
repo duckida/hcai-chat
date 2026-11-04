@@ -1,3 +1,7 @@
+import {
+  INLINE_VIEW_GENERATOR_PROMPT,
+  normalizeGeneratedInlineView,
+} from "./inline-views";
 import { sanitizeMessages } from "./messages";
 import { createSseParser } from "./sse-parser";
 import { DEFAULT_THINKING_LEVEL } from "./thinking";
@@ -92,6 +96,48 @@ export const generateTitle = async (
   } catch (_e) {}
   // Fallback: use a truncated version of the user's message
   return `${message.slice(0, 30)}...`;
+};
+
+/**
+ * Ask the builder model to turn an inline-view brief into HTML. Returns null
+ * on any failure — the caller shows a retry rather than an empty card — and
+ * never throws, because it runs from a render effect.
+ *
+ * The request is a separate, non-streaming turn: the brief is the only thing
+ * this model sees, and the document it returns goes into the view's iframe, not
+ * into the conversation's messages.
+ */
+export const generateInlineView = async (
+  prompt,
+  model,
+  providerSlug = null,
+) => {
+  const apiKey = getStoredApiKey();
+  if (!apiKey || !prompt || !model) return null;
+
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: INLINE_VIEW_GENERATOR_PROMPT },
+          { role: "user", content: prompt },
+        ],
+        apiKey,
+        stream: false,
+        ...(providerSlug ? { providerSlug } : {}),
+      }),
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    const text = data.text || data.choices?.[0]?.message?.content || "";
+    return normalizeGeneratedInlineView(text) || null;
+  } catch (_e) {
+    return null;
+  }
 };
 
 function buildRequestBody({

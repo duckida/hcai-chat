@@ -17,6 +17,8 @@ const selectDisplaySettings = (state) => ({
   agentModeEnabled: state.agentModeEnabled,
   artifactsEnabled: state.artifactsEnabled,
   inlineViewsEnabled: state.inlineViewsEnabled,
+  inlineViewModel: state.inlineViewModel,
+  openRouterProviders: state.openRouterProviders,
   showThinking: state.showThinking,
 });
 
@@ -43,6 +45,8 @@ const StreamingMessage = memo(function StreamingMessage({
     agentModeEnabled,
     artifactsEnabled,
     inlineViewsEnabled,
+    inlineViewModel,
+    openRouterProviders,
     showThinking,
   } = useSettings(selectDisplaySettings);
   // A level of "off" is the old toggle's off; any other level renders
@@ -78,8 +82,10 @@ const StreamingMessage = memo(function StreamingMessage({
               part.type === "inline" ? (
                 <InlineView
                   key={part.key}
-                  html={part.html}
+                  prompt={part.prompt}
                   title={part.title}
+                  model={inlineViewModel}
+                  providerSlug={openRouterProviders?.[inlineViewModel] || null}
                 />
               ) : (
                 <Markdown key={part.key} mode="stream" streaming caret="circle">

@@ -24,6 +24,7 @@ describe("settings registry", () => {
       "e2bApiKey",
       "selectedModel",
       "titleGenerationModel",
+      "inlineViewModel",
       "thinkingLevel",
       "artifactsEnabled",
       "inlineViewsEnabled",
@@ -46,6 +47,9 @@ describe("settings registry", () => {
   it("exposes SSR-safe defaults", () => {
     expect(getDefaultSetting("selectedModel")).toBe(DEFAULT_MODEL);
     expect(getDefaultSetting("titleGenerationModel")).toBe(DEFAULT_TITLE_MODEL);
+    expect(getDefaultSetting("inlineViewModel")).toBe(
+      "deepseek/deepseek-v4.1-flash",
+    );
     expect(getDefaultSetting("thinkingLevel")).toBe("medium");
     expect(getDefaultSetting("artifactsEnabled")).toBe(false);
     expect(getDefaultSetting("inlineViewsEnabled")).toBe(true);

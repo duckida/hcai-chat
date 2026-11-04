@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  generateInlineView,
   generateTitle,
   getErrorMessage,
   getStoredApiKey,
@@ -1331,5 +1332,68 @@ describe("generateTitle", () => {
     );
     expect(result.endsWith("...")).toBe(true);
     expect(result.length).toBeLessThanOrEqual(33);
+  });
+});
+
+describe("generateInlineView", () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns null without an API key or brief", async () => {
+    expect(await generateInlineView("A chart", "m")).toBe(null);
+    setStoredApiKey("k");
+    expect(await generateInlineView("", "m")).toBe(null);
+  });
+
+  it("sends only the builder prompt and the brief, and normalizes the reply", async () => {
+    setStoredApiKey("k");
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          text: "Here it is:\n\n```html\n<div id='v'>chart</div>\n```",
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const html = await generateInlineView("A chart of rainfall", "m", "p");
+    expect(html).toBe("<div id='v'>chart</div>");
+
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(body.model).toBe("m");
+    expect(body.providerSlug).toBe("p");
+    expect(body.stream).toBe(false);
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0].role).toBe("system");
+    // The builder owns the theme contract: the tokens and helper classes must
+    // reach it, because the chat prompt no longer carries them.
+    expect(body.messages[0].content).toContain("var(--primary)");
+    expect(body.messages[1]).toEqual({
+      role: "user",
+      content: "A chart of rainfall",
+    });
+  });
+
+  it("returns null when the builder refuses or fails", async () => {
+    setStoredApiKey("k");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ text: "I cannot do that." }),
+      }),
+    );
+    expect(await generateInlineView("A chart", "m")).toBe(null);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    expect(await generateInlineView("A chart", "m")).toBe(null);
+
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
+    expect(await generateInlineView("A chart", "m")).toBe(null);
   });
 });

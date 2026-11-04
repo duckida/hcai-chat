@@ -14,6 +14,8 @@ export default function ModelsSection({
   onSelectedModelChange,
   titleGenerationModel,
   onTitleGenerationModelChange,
+  inlineViewModel,
+  onInlineViewModelChange,
   maxTokens,
   onMaxTokensChange,
   openRouterProviders = {},
@@ -102,6 +104,22 @@ export default function ModelsSection({
           triggerClassName="w-full justify-between border-border bg-muted rounded-xl px-4 h-12 font-medium text-sm"
           emptyLabel="Select Model"
           ariaLabelledBy="title-model-label"
+        />
+      </div>
+
+      <div className="space-y-3">
+        <SectionLabel
+          id="inline-view-model-label"
+          description="Builds the HTML for inline views in replies."
+        >
+          Inline View Model
+        </SectionLabel>
+        <ModelPicker
+          value={inlineViewModel}
+          onChange={onInlineViewModelChange}
+          triggerClassName="w-full justify-between border-border bg-muted rounded-xl px-4 h-12 font-medium text-sm"
+          emptyLabel="Select Model"
+          ariaLabelledBy="inline-view-model-label"
         />
       </div>
 
