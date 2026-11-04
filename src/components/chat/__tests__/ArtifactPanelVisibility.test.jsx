@@ -24,7 +24,7 @@ const artifactConversation = () => ({
   createdAt: "2026-01-01T00:00:00.000Z",
   messages: [
     { role: "user", content: "make me a page" },
-    { role: "assistant", content: `Here:\n\`\`\`html\n${ARTIFACT}\n\`\`\`` },
+    { role: "assistant", content: `Here:\n<artifact>\n${ARTIFACT}\n</artifact>` },
   ],
   model: "xiaomi/mimo-v2.5",
   contextUsage: 0,
@@ -216,7 +216,7 @@ describe("artifact panel follows the conversation", () => {
       { role: "user", content: "make a page and run it" },
       {
         role: "assistant",
-        content: `Done:\n\`\`\`html\n${ARTIFACT}\n\`\`\``,
+        content: `Done:\n<artifact>\n${ARTIFACT}\n</artifact>`,
         sandboxResults: [
           {
             tool: "run_command",

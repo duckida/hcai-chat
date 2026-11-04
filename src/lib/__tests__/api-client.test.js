@@ -331,6 +331,11 @@ describe("streamChatCompletion", () => {
       "Full answer, complete",
       "content",
     );
+    // A cut that happened while the model was still reasoning must resume the
+    // reasoning, not start the answer early.
+    expect(legBody.messages[2].content).toContain(
+      "If you were still thinking when it stopped, continue only in thinking",
+    );
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(onError).not.toHaveBeenCalled();
   });

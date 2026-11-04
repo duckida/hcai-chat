@@ -118,4 +118,12 @@ describe("INLINE_VIEW_INSTRUCTIONS", () => {
     expect(INLINE_VIEW_INSTRUCTIONS).toContain(".hcai-view");
     expect(INLINE_VIEW_INSTRUCTIONS).toContain("Do NOT include");
   });
+
+  it("tells the model not to add views or mention them unless relevant", () => {
+    expect(INLINE_VIEW_INSTRUCTIONS).toContain("Most answers should have no view");
+    expect(INLINE_VIEW_INSTRUCTIONS).toContain("never as decoration");
+    expect(INLINE_VIEW_INSTRUCTIONS).toContain(
+      "unless the user asks about that capability",
+    );
+  });
 });

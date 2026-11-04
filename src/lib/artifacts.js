@@ -1,6 +1,11 @@
 /**
- * Extracts <artifact> blocks and legacy HTML code blocks from text content.
- * Returns the list of HTML artifacts and the text with those blocks removed.
+ * Extracts `<artifact>` blocks from text content. Returns the list of HTML
+ * artifacts and the text with those blocks removed.
+ *
+ * Only the explicit tag counts. An ```html fence is ordinary code the user
+ * asked to see — extracting it made a pasted example open the side panel and
+ * hide the code that was the actual answer. The tag is the model's signal that
+ * a block is a deliverable page.
  *
  * During streaming, if an <artifact> tag is opened but not yet closed,
  * the partial content is returned as `streamingArtifact` and the tag
@@ -19,7 +24,12 @@ export function extractHtmlArtifacts(text) {
     const bodyStart = lastOpenTag.index + lastOpenTag[0].length;
     const closeTag = /<\/artifact\s*>/i.exec(text.slice(bodyStart));
     if (!closeTag) {
-      streamingArtifact = text.slice(bodyStart).trimEnd();
+      // The tag ends at the newline the body starts on; that newline is
+      // formatting, not document content (the old fence form consumed it too).
+      streamingArtifact = text
+        .slice(bodyStart)
+        .replace(/^\r?\n/, "")
+        .trimEnd();
       remainingText = text.slice(0, lastOpenTag.index).trimEnd();
     }
   }
@@ -30,26 +40,7 @@ export function extractHtmlArtifacts(text) {
   }
   remainingText = remainingText.replace(completeRegex, "");
 
-  if (!streamingArtifact) {
-    const openFenceRegex = /```html\s*\n/i;
-    const openFence = openFenceRegex.exec(remainingText);
-    if (openFence) {
-      const bodyStart = openFence.index + openFence[0].length;
-      if (!remainingText.slice(bodyStart).includes("```")) {
-        streamingArtifact = remainingText.slice(bodyStart).trimEnd();
-        remainingText = remainingText.slice(0, openFence.index).trimEnd();
-      }
-    }
-  }
-
-  // Keep artifacts already saved in conversations visible after the format change.
-  const legacyRegex = /```html\s*\n([\s\S]*?)```/gi;
-  match = legacyRegex.exec(remainingText);
-  while (match) {
-    artifacts.push(match[1].trim());
-    match = legacyRegex.exec(remainingText);
-  }
-  let cleanedText = remainingText.replace(legacyRegex, "").trim();
+  let cleanedText = remainingText.trim();
   cleanedText = cleanedText.replace(/\n{3,}/g, "\n\n");
   return { artifacts, cleanedText, streamingArtifact };
 }
@@ -72,21 +63,14 @@ export function getArtifactTitle(html, fallback = "Untitled artifact") {
 
 export function updateArtifactAt(text, artifactIndex, update) {
   let index = 0;
-  const blockRegex =
-    /<artifact\s*>([\s\S]*?)<\/artifact\s*>|```html\s*\n([\s\S]*?)```/gi;
-  return String(text || "").replace(
-    blockRegex,
-    (block, taggedHtml, fencedHtml) => {
-      const currentIndex = index++;
-      if (currentIndex !== artifactIndex) return block;
-      const html = taggedHtml ?? fencedHtml;
-      const result = update(html.trim());
-      if (result == null) return "";
-      return taggedHtml !== undefined
-        ? `<artifact>${result}</artifact>`
-        : `\`\`\`html\n${result}\`\`\``;
-    },
-  );
+  const blockRegex = /<artifact\s*>([\s\S]*?)<\/artifact\s*>/gi;
+  return String(text || "").replace(blockRegex, (block, html) => {
+    const currentIndex = index++;
+    if (currentIndex !== artifactIndex) return block;
+    const result = update(html.trim());
+    if (result == null) return "";
+    return `<artifact>${result}</artifact>`;
+  });
 }
 
 export function renameArtifact(html, title) {

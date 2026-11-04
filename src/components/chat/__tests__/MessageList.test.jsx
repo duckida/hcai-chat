@@ -203,15 +203,27 @@ describe("MessageList", () => {
     expect(screen.getByText("user message")).toBeInTheDocument();
   });
 
-  it("renders an assistant message containing HTML artifacts", () => {
+  it("renders an assistant message containing an artifact block", () => {
+    const content = "Here:\n<artifact>\n<div>hi</div>\n</artifact>";
+    renderList({
+      messages: [{ role: "assistant", content }],
+      settings: { artifactsEnabled: true },
+    });
+    // The artifact body is removed from visible text
+    expect(screen.queryByText("<div>hi</div>")).not.toBeInTheDocument();
+    expect(screen.getByText("Here:")).toBeInTheDocument();
+  });
+
+  it("keeps an html code fence as code when artifacts are enabled", () => {
     const content = "Here:\n```html\n<div>hi</div>\n```";
     renderList({
       messages: [{ role: "assistant", content }],
       settings: { artifactsEnabled: true },
     });
-    // The HTML block is removed from visible text
-    expect(screen.queryByText("<div>hi</div>")).not.toBeInTheDocument();
-    expect(screen.getByText("Here:")).toBeInTheDocument();
+    // A fence is code the user asked to see, not a deliverable page. If the
+    // extractor ever treats it as one again, "hi" disappears from the thread
+    // and this check goes red.
+    expect(document.querySelector(".msg-row")?.textContent).toContain("hi");
   });
 
   it("does not strip HTML fences when artifacts are disabled", () => {
@@ -239,10 +251,21 @@ describe("MessageList", () => {
   it("shows the generating artifact state only when artifacts are enabled", () => {
     renderList({
       messages: [],
-      turn: { streamingContent: "```html\n<div>partial</div>" },
+      turn: { streamingContent: "<artifact>\n<div>partial</div>" },
       settings: { artifactsEnabled: true },
     });
     expect(screen.getByText("Generating artifact...")).toBeInTheDocument();
+  });
+
+  it("does not show the generating artifact state for an html fence", () => {
+    renderList({
+      messages: [],
+      turn: { streamingContent: "```html\n<div>partial" },
+      settings: { artifactsEnabled: true },
+    });
+    expect(
+      screen.queryByText("Generating artifact..."),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the Web Search indicator when webSearchEnabled is set during streaming", () => {

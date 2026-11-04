@@ -96,15 +96,6 @@ export default function InlineView({ html, title }) {
 
   return (
     <div className="my-1 overflow-hidden rounded-2xl border border-border bg-background">
-      <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-2">
-        <span className="h-2 w-2 shrink-0 rounded-full bg-primary shadow-sm" />
-        <span className="min-w-0 truncate font-mono text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
-          {label}
-        </span>
-        <span className="ml-auto shrink-0 text-[10px] font-medium text-muted-foreground/70">
-          Inline view
-        </span>
-      </div>
       <iframe
         ref={frameRef}
         title={label}

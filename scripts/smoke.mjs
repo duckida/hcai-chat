@@ -738,7 +738,7 @@ async function main() {
       // Assembled from pieces: a markdown fence inside a template literal needs
       // its own escaping, and one wrong escape here is a syntax error in the
       // page rather than anything that looks like a failed check.
-      const ARTIFACT_FENCE = ['\`\`\`html', '<div id="artifact">seeded</div>', '\`\`\`'].join(String.fromCharCode(10));
+      const ARTIFACT = ['<artifact>', '<div id="artifact">seeded</div>', '</artifact>'].join(String.fromCharCode(10));
       const db = await new Promise((resolve, reject) => {
         const request = indexedDB.open('hcai-chat', 1);
         request.onsuccess = () => resolve(request.result);
@@ -758,7 +758,7 @@ async function main() {
             { role: 'user', content: 'make me a page' },
             {
               role: 'assistant',
-              content: 'Here it is.\\n\\n' + ARTIFACT_FENCE,
+              content: 'Here it is.\\n\\n' + ARTIFACT,
             },
           ],
         });

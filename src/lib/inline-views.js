@@ -362,6 +362,7 @@ Template:
 </inline>
 
 Rules:
+- Most answers should have no view at all. Add one only when the content is genuinely visual or interactive and a view explains it better than prose — never as decoration, and never to fill space. Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
 - Put the opening and closing tags on their own lines, and keep each view under about 600px tall. The app sizes the card to the content and caps it, then scrolls inside.
 - The app supplies the page shell, theme tokens, and base styles. Do NOT include \`<html>\`, \`<head>\`, or \`<body>\`. All CSS and JavaScript must be inline; do not use external scripts, stylesheets, fonts, or network requests.
 - Style with the app's CSS variables instead of hard-coded colors: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--card-foreground)\`, \`var(--muted)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--primary)\`, \`var(--primary-foreground)\`, \`var(--accent)\`, \`var(--destructive)\`, \`var(--radius)\`, and \`var(--chart-1)\` through \`var(--chart-5)\`.

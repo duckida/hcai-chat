@@ -474,7 +474,7 @@ async function replayOnce(body, model, handlers, mirror) {
  * restarts the answer is what the overlap filter below exists to absorb.
  */
 const CONTINUE_PROMPT =
-  "Your previous response was cut off before it finished. Continue it exactly where it stopped — start with the very next word. Do not repeat, restart, summarize, or acknowledge this message.";
+  "Your previous response was cut off before it finished. Continue it exactly where it stopped — start with the very next word. Do not repeat, restart, summarize, or acknowledge this message. If you were still thinking when it stopped, continue only in thinking — do not begin the main answer.";
 
 /** Total continuation legs, counting legs that delivered nothing. */
 const MAX_CONTINUE_LEGS = 3;

@@ -29,7 +29,7 @@ describe("extractHtmlArtifacts", () => {
     });
   });
 
-  it("returns text unchanged when there are no html fences", () => {
+  it("returns text unchanged when there are no artifacts", () => {
     const text = "Just a regular response with no artifacts.";
     const result = extractHtmlArtifacts(text);
     expect(result.artifacts).toEqual([]);
@@ -37,39 +37,40 @@ describe("extractHtmlArtifacts", () => {
     expect(result.streamingArtifact).toBe(null);
   });
 
-  it("extracts a single complete html artifact", () => {
-    const text = 'Here is code:\n\n```html\n<!DOCTYPE html>\n<html></html>\n```\n\nDone.';
+  it("extracts a single complete artifact", () => {
+    const text =
+      "Here is code:\n\n<artifact>\n<!DOCTYPE html>\n<html></html>\n</artifact>\n\nDone.";
     const result = extractHtmlArtifacts(text);
     expect(result.artifacts).toEqual(["<!DOCTYPE html>\n<html></html>"]);
     expect(result.cleanedText).toBe("Here is code:\n\nDone.");
     expect(result.streamingArtifact).toBe(null);
   });
 
-  it("extracts multiple html artifacts", () => {
+  it("extracts multiple artifacts", () => {
     const text = [
       "First:",
-      "```html",
+      "<artifact>",
       "<div>One</div>",
-      "```",
+      "</artifact>",
       "",
       "Second:",
-      "```html",
+      "<artifact>",
       "<div>Two</div>",
-      "```",
+      "</artifact>",
     ].join("\n");
     const result = extractHtmlArtifacts(text);
     expect(result.artifacts).toEqual(["<div>One</div>", "<div>Two</div>"]);
     expect(result.cleanedText).toBe("First:\n\nSecond:");
   });
 
-  it("handles case-insensitive html language identifier", () => {
-    const text = "```HTML\n<div>Hi</div>\n```";
+  it("handles a case-insensitive artifact tag", () => {
+    const text = "<ARTIFACT><div>Hi</div></ARTIFACT>";
     const result = extractHtmlArtifacts(text);
     expect(result.artifacts).toEqual(["<div>Hi</div>"]);
   });
 
-  it("captures an unclosed html fence as a streaming artifact", () => {
-    const text = 'Intro line.\n\n```html\n<div>partial';
+  it("captures an unclosed artifact tag as a streaming artifact", () => {
+    const text = "Intro line.\n\n<artifact>\n<div>partial";
     const result = extractHtmlArtifacts(text);
     expect(result.streamingArtifact).toBe("<div>partial");
     expect(result.cleanedText).toBe("Intro line.");
@@ -77,7 +78,7 @@ describe("extractHtmlArtifacts", () => {
   });
 
   it("trims trailing whitespace from the streaming artifact", () => {
-    const text = "```html\n<div>content   \n\n";
+    const text = "<artifact>\n<div>content   \n\n";
     const result = extractHtmlArtifacts(text);
     expect(result.streamingArtifact).toBe("<div>content");
   });
@@ -88,6 +89,25 @@ describe("extractHtmlArtifacts", () => {
     expect(result.cleanedText).toBe("Line 1\n\nLine 2");
   });
 
+  // The negative control for the rule this module now enforces: a fence is
+  // code the user asked to see. If a complete or partial fence ever starts
+  // opening the side panel again, this fails.
+  it("never treats an html code fence as an artifact", () => {
+    const complete = "Here is code:\n\n```html\n<div>Hi</div>\n```\n\nDone.";
+    expect(extractHtmlArtifacts(complete)).toEqual({
+      artifacts: [],
+      cleanedText: complete,
+      streamingArtifact: null,
+    });
+
+    const streaming = "Intro line.\n\n```html\n<div>partial";
+    expect(extractHtmlArtifacts(streaming)).toEqual({
+      artifacts: [],
+      cleanedText: streaming,
+      streamingArtifact: null,
+    });
+  });
+
   it("does not extract non-html code fences", () => {
     const text = "```js\nconst x = 1;\n```";
     const result = extractHtmlArtifacts(text);
@@ -96,7 +116,8 @@ describe("extractHtmlArtifacts", () => {
   });
 
   it("preserves content order when multiple complete blocks are present", () => {
-    const text = "```html\n<p>A</p>\n```middle```html\n<p>B</p>\n```end";
+    const text =
+      "<artifact><p>A</p></artifact>middle<artifact><p>B</p></artifact>end";
     const result = extractHtmlArtifacts(text);
     expect(result.artifacts).toEqual(["<p>A</p>", "<p>B</p>"]);
     expect(result.cleanedText).toBe("middleend");
