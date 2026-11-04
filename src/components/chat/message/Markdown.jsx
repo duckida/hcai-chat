@@ -17,8 +17,8 @@ export const STREAMDOWN_ANIMATED = {
  * The reading column every message body is set in. Streaming and committed
  * text share it on purpose: an answer that rewraps at the moment it is saved
  * reads as a different answer. Text color is deliberately not set here — the
- * body inherits it, so the user message bubble can recolor it to
- * `text-primary-foreground`.
+ * body inherits it, so the user message bubble can tint behind it while the
+ * text keeps the normal foreground color.
  */
 export const MESSAGE_BODY_CLASS =
   "max-w-none break-words leading-[1.8] text-[15.5px] font-[450] selection:bg-accent overflow-x-auto";

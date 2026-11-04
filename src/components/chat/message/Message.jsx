@@ -79,22 +79,24 @@ const Message = memo(function Message({ message }) {
           </div>
         )}
 
-        {!isAssistant && (
-          <div className="flex flex-wrap gap-2.5">
-            {contentImages.map((src, i) => (
-              <ImageAttachment
-                key={src || i}
-                src={src}
-                alt={`Image ${i + 1}`}
-              />
-            ))}
-            {attachments
-              ?.filter((f) => !f.type?.startsWith("image/"))
-              .map((file) => (
-                <FileBubble key={file.id} file={file} />
+        {!isAssistant &&
+          (contentImages.length > 0 ||
+            attachments?.some((f) => !f.type?.startsWith("image/"))) && (
+            <div className="flex flex-wrap gap-2.5">
+              {contentImages.map((src, i) => (
+                <ImageAttachment
+                  key={src || i}
+                  src={src}
+                  alt={`Image ${i + 1}`}
+                />
               ))}
-          </div>
-        )}
+              {attachments
+                ?.filter((f) => !f.type?.startsWith("image/"))
+                .map((file) => (
+                  <FileBubble key={file.id} file={file} />
+                ))}
+            </div>
+          )}
 
         {isAssistant ? (
           <div className={MESSAGE_BODY_CLASS}>
@@ -107,11 +109,11 @@ const Message = memo(function Message({ message }) {
           </div>
         ) : (
           (renderedText || artifacts.length > 0) && (
-            <div className="w-fit max-w-full rounded-3xl bg-primary px-4 py-2.5 text-primary-foreground">
+            <div className="w-fit max-w-full rounded-3xl border border-primary/25 bg-[color-mix(in_oklab,var(--primary)_14%,var(--background))] px-4 py-2.5">
               <div className={MESSAGE_BODY_CLASS}>
                 {renderedText && <Markdown>{renderedText}</Markdown>}
                 {!renderedText && artifacts.length > 0 && (
-                  <p className="text-sm text-primary-foreground/70 italic">
+                  <p className="text-sm text-muted-foreground italic">
                     Artifact generated
                   </p>
                 )}
