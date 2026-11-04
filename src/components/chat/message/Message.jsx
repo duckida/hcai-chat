@@ -96,14 +96,29 @@ const Message = memo(function Message({ message }) {
           </div>
         )}
 
-        <div className={MESSAGE_BODY_CLASS}>
-          {renderedText && <Markdown>{renderedText}</Markdown>}
-          {!renderedText && artifacts.length > 0 && (
-            <p className="text-sm text-muted-foreground italic">
-              Artifact generated
-            </p>
-          )}
-        </div>
+        {isAssistant ? (
+          <div className={MESSAGE_BODY_CLASS}>
+            {renderedText && <Markdown>{renderedText}</Markdown>}
+            {!renderedText && artifacts.length > 0 && (
+              <p className="text-sm text-muted-foreground italic">
+                Artifact generated
+              </p>
+            )}
+          </div>
+        ) : (
+          (renderedText || artifacts.length > 0) && (
+            <div className="w-fit max-w-full rounded-3xl bg-primary px-4 py-2.5 text-primary-foreground">
+              <div className={MESSAGE_BODY_CLASS}>
+                {renderedText && <Markdown>{renderedText}</Markdown>}
+                {!renderedText && artifacts.length > 0 && (
+                  <p className="text-sm text-primary-foreground/70 italic">
+                    Artifact generated
+                  </p>
+                )}
+              </div>
+            </div>
+          )
+        )}
 
         {isAssistant && hasSources && (
           <SourcesBlock sources={message.sources} />
