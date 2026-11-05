@@ -1,3 +1,4 @@
+import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import {
   buildInlineViewDocument,
@@ -169,6 +170,52 @@ describe("buildInlineViewDocument", () => {
       '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk">',
     );
   });
+
+  // The frame around the iframe is the view's only box (see ViewFrame). A
+  // builder that wraps its output in `.hcai-card` — a helper this shell hands
+  // it — otherwise draws a second box inside the first, with the body's 16px
+  // padding as the gap.
+  it("takes the outermost surface away from the view's own root", () => {
+    const doc = buildInlineViewDocument(
+      '<div class="hcai-card" style="border: 1px solid var(--border); background-color: rgb(23, 23, 23); padding: 12px">hi</div>',
+      {},
+    );
+
+    const dom = new JSDOM(doc);
+    // The height script is a sibling of the root, so the selector has to look
+    // past it to find the one element the rule is about.
+    const root = dom.window.document.body.firstElementChild;
+    expect(root.className).toBe("hcai-card");
+    const style = dom.window.getComputedStyle(root);
+    expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(style.paddingLeft).toBe("0px");
+    // jsdom's cascade never computes `border-*` out of a stylesheet rule, so
+    // the half of the rule that draws the line is pinned as text.
+    expect(doc).toContain("border: 0 !important");
+  });
+
+  it("takes the surface off a panel that is the only thing inside a wrapper", () => {
+    const doc = buildInlineViewDocument(
+      '<div class="hcai-view"><div class="hcai-card" style="background-color: rgb(23, 23, 23); padding: 12px">hi</div></div>',
+      {},
+    );
+
+    const dom = new JSDOM(doc);
+    const panel = dom.window.document.querySelector(".hcai-card");
+    const style = dom.window.getComputedStyle(panel);
+    expect(style.backgroundColor).toBe("rgba(0, 0, 0, 0)");
+    expect(style.paddingLeft).toBe("0px");
+    // A panel that has siblings is an inner panel, and keeps its box.
+    const siblings = buildInlineViewDocument(
+      '<div class="hcai-view"><div class="hcai-card" style="background-color: rgb(23, 23, 23)">a</div><div class="hcai-card" style="background-color: rgb(23, 23, 23)">b</div></div>',
+      {},
+    );
+    const withSibling = new JSDOM(siblings);
+    const siblingStyle = withSibling.window.getComputedStyle(
+      withSibling.window.document.querySelector(".hcai-card"),
+    );
+    expect(siblingStyle.backgroundColor).toBe("rgb(23, 23, 23)");
+  });
 });
 
 describe("INLINE_VIEW_INSTRUCTIONS", () => {
@@ -201,5 +248,13 @@ describe("INLINE_VIEW_GENERATOR_PROMPT", () => {
     expect(INLINE_VIEW_GENERATOR_PROMPT).toContain(".hcai-view");
     expect(INLINE_VIEW_GENERATOR_PROMPT).toContain("Output ONLY the HTML");
     expect(INLINE_VIEW_GENERATOR_PROMPT).toContain("no external scripts");
+  });
+
+  it("tells the builder not to draw a box around the whole view", () => {
+    // The shell strips the outermost surface regardless, but a builder that
+    // is told its card is only for inner panels does not have to be corrected
+    // after the fact.
+    expect(INLINE_VIEW_GENERATOR_PROMPT).toContain("box inside a box");
+    expect(INLINE_VIEW_GENERATOR_PROMPT).toContain("never the root element");
   });
 });

@@ -210,6 +210,22 @@ canvas, svg { display: block; max-width: 100%; }
   border-radius: var(--radius);
   padding: 12px;
 }
+/* The frame the view is rendered in is its only box, and the body's 16px
+   padding is the gap around the content. A builder that wraps its whole
+   output in \`.hcai-card\` — the helper declared right above — puts a second
+   box inside the first, so the outermost surface is taken away here instead
+   of being left to the prompt: this block is the app's, and \`!important\` is
+   what lets it win over the style block the builder ships after it.
+   \`:only-of-type\` keeps the rule on the view's own root while the injected
+   height script is a sibling; only the root and its single child are touched,
+   so panels further in keep their border, and interactive elements are
+   excluded so a view that is just a button keeps its fill. */
+body > *:only-of-type, body > *:only-of-type > *:only-of-type:not(button, a, input, select, textarea, canvas, svg, img) {
+  border: 0 !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  padding: 0 !important;
+}
 .hcai-muted { color: var(--muted-foreground); }
 .hcai-value { font-variant-numeric: tabular-nums; font-weight: 700; }
 .hcai-btn {
@@ -368,7 +384,8 @@ Output ONLY the HTML fragment — no markdown fences, no <html>, <head> or <body
 Rules:
 - The app supplies the page shell, theme tokens and base styles. Use them; do not ship a document of your own.
 - Style with the app's CSS variables instead of hard-coded colors: \`var(--background)\`, \`var(--foreground)\`, \`var(--card)\`, \`var(--card-foreground)\`, \`var(--muted)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--primary)\`, \`var(--primary-foreground)\`, \`var(--accent)\`, \`var(--destructive)\`, \`var(--radius)\`, and \`var(--chart-1)\` through \`var(--chart-5)\`.
-- Helper classes are provided and match the app: \`.hcai-view\` (vertical stack), \`.hcai-row\` (horizontal row), \`.hcai-card\` (bordered surface), \`.hcai-muted\` (secondary text), \`.hcai-value\` (tabular number), \`.hcai-btn\` / \`.hcai-btn-secondary\` (buttons), and \`.hcai-range\` (slider).
+- Helper classes are provided and match the app: \`.hcai-view\` (vertical stack), \`.hcai-row\` (horizontal row), \`.hcai-card\` (bordered surface for a panel *inside* the view — controls, a legend — never the root element), \`.hcai-muted\` (secondary text), \`.hcai-value\` (tabular number), \`.hcai-btn\` / \`.hcai-btn-secondary\` (buttons), and \`.hcai-range\` (slider).
+- Do not wrap the view in a bordered or filled panel of its own: the app already draws the frame around it, so a card around everything lands a box inside a box. Let the view sit directly on the frame.
 - All CSS and JavaScript must be inline; no external scripts, stylesheets, fonts, or network requests.
 - Use a responsive \`canvas\` or \`svg\` for plots and simulations, and redraw on resize. Give controls visible labels and accessible names.
 - Keep the whole view under about 600px tall, and make it work from 320px to 700px wide.
