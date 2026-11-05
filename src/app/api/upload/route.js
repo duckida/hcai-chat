@@ -1,15 +1,3 @@
-const SUPPORTED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "application/pdf",
-  "text/plain",
-  "text/csv",
-  "application/json",
-  "text/markdown",
-];
-
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 function sanitizeFilename(name) {
@@ -24,15 +12,10 @@ export async function POST(request) {
       return Response.json({ error: "No file provided" }, { status: 400 });
     }
 
-    if (!SUPPORTED_TYPES.includes(file.type)) {
-      return Response.json(
-        {
-          error: `Unsupported file type: ${file.type}. Allowed types: ${SUPPORTED_TYPES.join(", ")}`,
-        },
-        { status: 400 },
-      );
-    }
-
+    // Any file type is accepted: the composer lets every type attach, and this
+    // route is the one place that would otherwise silently turn a rejected
+    // upload into "nothing happened". The only gates left are the ones that
+    // protect the service — a file has to be there, and it has to fit.
     if (file.size > MAX_FILE_SIZE) {
       return Response.json(
         {

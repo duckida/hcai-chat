@@ -25,6 +25,24 @@ describe("/api/upload POST", () => {
     expect(data.error).toBe("No file provided");
   });
 
+  // The composer attaches everything, so this route must not be the place a
+  // type gets turned into a 400 the user sees as "nothing happened".
+  it.each([
+    ["application/zip", "archive.zip"],
+    ["video/mp4", "clip.mp4"],
+    ["", "mystery"],
+  ])("uploads a file of type %j (%s)", async (type, name) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve("https://imgutil.example/abc/file"),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await POST(makeFormReq(new File(["bytes"], name, { type })));
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("https://imgutil.example/abc/file");
+  });
+
   it("uploads to bucky and returns the URL as text", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

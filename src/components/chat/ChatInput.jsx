@@ -29,24 +29,121 @@ function resizeImage(dataUrl, maxDim = 2048) {
   });
 }
 
-const SUPPORTED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "application/pdf",
-  "text/plain",
-  "text/csv",
-  "application/json",
-  "text/markdown",
-];
-
+/**
+ * Every file type attaches: the picker, the drop target, the paste handler and
+ * `/api/upload` all let anything through. What is decided below is narrower —
+ * which files are *inlined into the message as text*, so the model reads the
+ * contents directly, and which are handed over as uploaded bytes instead.
+ */
 const TEXT_FILE_TYPES = new Set([
   "text/plain",
   "text/csv",
-  "application/json",
   "text/markdown",
+  "text/html",
+  "text/css",
+  "text/xml",
+  "text/tab-separated-values",
+  "application/json",
+  "application/xml",
+  "application/javascript",
+  "application/yaml",
+  "application/x-sh",
+  "application/sql",
 ]);
+
+// MIME types carry a `+json`/`+xml`/`+yaml` suffix (application/vnd.api+json,
+// application/…+yaml), and browsers report code and config files under a dozen
+// names, so the check below matches a suffix rather than a list of those names.
+const TEXT_TYPE_SUFFIXES = ["+json", "+xml", "+yaml"];
+
+const TEXT_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "yaml",
+  "yml",
+  "xml",
+  "log",
+  "ini",
+  "conf",
+  "cfg",
+  "toml",
+  "env",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "py",
+  "rb",
+  "go",
+  "rs",
+  "java",
+  "c",
+  "h",
+  "cpp",
+  "hpp",
+  "cs",
+  "php",
+  "sh",
+  "sql",
+  "html",
+  "htm",
+  "css",
+  "scss",
+]);
+
+/**
+ * The MIME types browsers do not derive from the OS for us. A file dragged out
+ * of an archive, saved by an odd tool, or copied between machines often arrives
+ * with `type: ""` — an image with no type used to fail every list check and
+ * silently not attach, so the extension is what identifies it.
+ */
+const IMAGE_EXTENSIONS = new Map([
+  ["png", "image/png"],
+  ["jpg", "image/jpeg"],
+  ["jpeg", "image/jpeg"],
+  ["gif", "image/gif"],
+  ["webp", "image/webp"],
+  ["avif", "image/avif"],
+  ["bmp", "image/bmp"],
+  ["svg", "image/svg+xml"],
+  ["ico", "image/x-icon"],
+]);
+
+/**
+ * Past this a text file is not read into the message: a 50 MB log would
+ * otherwise become one user turn larger than any context window. The file
+ * still attaches and travels as uploaded bytes, the way a PDF does.
+ */
+const MAX_INLINE_TEXT_BYTES = 128 * 1024;
+
+const extensionOf = (name) => {
+  const text = String(name || "");
+  const dot = text.lastIndexOf(".");
+  return dot > 0 ? text.slice(dot + 1).toLowerCase() : "";
+};
+
+const isTextFile = (file) => {
+  const type = String(file.type || "").toLowerCase();
+  if (type.startsWith("text/")) return true;
+  if (
+    TEXT_FILE_TYPES.has(type) ||
+    TEXT_TYPE_SUFFIXES.some((suffix) => type.endsWith(suffix))
+  ) {
+    return true;
+  }
+  // A MIME type that says something ("application/zip") is an answer, and only
+  // the empty one — or the "who knows" octet-stream — falls back to the
+  // extension the file was saved with.
+  if (type && type !== "application/octet-stream") return false;
+  return TEXT_EXTENSIONS.has(extensionOf(file.name));
+};
 
 const FilePreview = ({ file, onRemove }) => {
   // An image whose data URL could not be read still attaches, via its raw
@@ -118,15 +215,17 @@ export default function ChatInput({ onSend, isLoading }) {
    */
   const processFile = async (file) => {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const type =
+      file.type || IMAGE_EXTENSIONS.get(extensionOf(file.name)) || "";
     const base = {
       id,
       name: file.name,
-      type: file.type,
+      type,
       size: file.size,
       rawFile: file,
     };
 
-    if (file.type.startsWith("image/")) {
+    if (type.startsWith("image/")) {
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = async (event) => {
@@ -144,7 +243,8 @@ export default function ChatInput({ onSend, isLoading }) {
       });
     }
 
-    if (TEXT_FILE_TYPES.has(file.type)) {
+    if (isTextFile({ type, name: file.name })) {
+      if (file.size > MAX_INLINE_TEXT_BYTES) return base;
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (event) =>
@@ -201,9 +301,7 @@ export default function ChatInput({ onSend, isLoading }) {
       return;
     }
 
-    const fileItems = Array.from(e.clipboardData?.files ?? []).filter((f) =>
-      SUPPORTED_TYPES.includes(f.type),
-    );
+    const fileItems = Array.from(e.clipboardData?.files ?? []);
     if (fileItems.length > 0) {
       e.preventDefault();
       const processed = await Promise.all(fileItems.map(processFile));
@@ -242,9 +340,8 @@ export default function ChatInput({ onSend, isLoading }) {
     dragCounter.current = 0;
 
     const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter((f) => SUPPORTED_TYPES.includes(f.type));
-    if (validFiles.length === 0) return;
-    const processed = await Promise.all(validFiles.map(processFile));
+    if (files.length === 0) return;
+    const processed = await Promise.all(files.map(processFile));
     setFiles((prev) => [...prev, ...processed]);
   };
 
@@ -262,10 +359,7 @@ export default function ChatInput({ onSend, isLoading }) {
 
   const handleFileSelect = async (e) => {
     const selectedFiles = Array.from(e.target.files);
-    const validFiles = selectedFiles.filter((f) =>
-      SUPPORTED_TYPES.includes(f.type),
-    );
-    const filesData = await Promise.all(validFiles.map(processFile));
+    const filesData = await Promise.all(selectedFiles.map(processFile));
     setFiles((prev) => [...prev, ...filesData]);
     e.target.value = "";
   };
@@ -315,7 +409,6 @@ export default function ChatInput({ onSend, isLoading }) {
             ref={fileInputRef}
             type="file"
             multiple
-            accept={SUPPORTED_TYPES.join(",")}
             onChange={handleFileSelect}
             className="hidden"
           />

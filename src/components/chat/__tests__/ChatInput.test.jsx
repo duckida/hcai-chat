@@ -182,13 +182,25 @@ describe("ChatInput", () => {
     expect(screen.queryByText(/drop files here/i)).not.toBeInTheDocument();
   });
 
-  it("renders a file input with supported accept types", () => {
+  it("renders a file input that offers every file type", () => {
     render(<ChatInput onSend={vi.fn()} />);
     const fileInput = document.querySelector('input[type="file"]');
     expect(fileInput).toBeInTheDocument();
-    expect(fileInput.accept).toContain("image/png");
-    expect(fileInput.accept).toContain("application/pdf");
-    expect(fileInput.accept).toContain("text/plain");
+    // No accept list: the OS picker must not pre-filter what can be attached.
+    expect(fileInput.hasAttribute("accept")).toBe(false);
+  });
+
+  it("attaches a file of a type no list mentions, picked from the dialog", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    const file = new File(["PK"], "archive.zip", { type: "application/zip" });
+    render(<ChatInput onSend={onSend} />);
+    const input = document.querySelector('input[type="file"]');
+    await user.upload(input, file);
+
+    expect(await screen.findByText("archive.zip")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    expect(onSend.mock.calls[0][1][0].name).toBe("archive.zip");
   });
 
   it("adds files via the file input", async () => {
@@ -288,13 +300,81 @@ describe("ChatInput", () => {
     expect(screen.queryByText(/hello world/)).not.toBeInTheDocument();
   });
 
-  it("ignores pasted files whose type is not supported", () => {
+  it("attaches a pasted file of a type no list mentions", async () => {
     const file = new File(["x"], "archive.zip", { type: "application/zip" });
     const { container } = render(<ChatInput onSend={vi.fn()} />);
     const root = container.firstChild;
 
     fireEvent.paste(root, { clipboardData: makeClipboardData({ files: [file] }) });
 
-    expect(screen.queryByText("archive.zip")).not.toBeInTheDocument();
+    expect(await screen.findByText("archive.zip")).toBeInTheDocument();
+  });
+
+  it("attaches a dropped file of a type no list mentions", async () => {
+    const file = new File(["x"], "clip.mp4", { type: "video/mp4" });
+    const { container } = render(<ChatInput onSend={vi.fn()} />);
+
+    fireEvent.drop(container.firstChild, {
+      dataTransfer: { files: [file] },
+    });
+
+    expect(await screen.findByText("clip.mp4")).toBeInTheDocument();
+  });
+
+  it("reads a file the browser reported no type for as text by extension", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    const file = new File(["# notes"], "notes.md", { type: "" });
+    render(<ChatInput onSend={onSend} />);
+    const input = document.querySelector('input[type="file"]');
+    await user.upload(input, file);
+
+    expect(await screen.findByText("notes.md")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    // It attaches *and* reaches the model as contents, not as a dead link.
+    expect(onSend.mock.calls[0][1][0].text).toContain("# notes");
+  });
+
+  it("recognises an image the browser reported no type for", async () => {
+    // Same decode-failure stub the test above uses: jsdom never loads images,
+    // so the downscale step has to fail for the file to attach at all.
+    class FailingImage {
+      set src(value) {
+        this._src = value;
+        queueMicrotask(() => this.onerror?.(new Error("decode failed")));
+      }
+    }
+    globalThis.Image = FailingImage;
+
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    const file = new File(["png bytes"], "shot.png", { type: "" });
+    render(<ChatInput onSend={onSend} />);
+    const input = document.querySelector('input[type="file"]');
+    await user.upload(input, file);
+
+    expect(await screen.findByText("shot.png")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    // An image with no MIME type must still travel as an image, or it would
+    // be handed to the model as a file part with no media type at all.
+    expect(onSend.mock.calls[0][1][0].type).toBe("image/png");
+  });
+
+  it("keeps a text file larger than the inline cap out of the message", async () => {
+    const onSend = vi.fn();
+    const user = userEvent.setup();
+    const file = new File(["x".repeat(128 * 1024 + 1)], "huge.log", {
+      type: "text/plain",
+    });
+    render(<ChatInput onSend={onSend} />);
+    const input = document.querySelector('input[type="file"]');
+    await user.upload(input, file);
+
+    expect(await screen.findByText("huge.log")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /send/i }));
+    const attached = onSend.mock.calls[0][1][0];
+    // Still attached — it just goes up as bytes instead of as text.
+    expect(attached.text).toBeUndefined();
+    expect(attached.rawFile).toBe(file);
   });
 });
