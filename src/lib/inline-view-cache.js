@@ -23,6 +23,8 @@ const MAX_TOTAL_CHARS = 2_000_000;
 const entries = new Map(); // key -> { status: "loading" | "ready" | "error", html? }
 const listeners = new Set();
 let hydrated = false;
+let storageVersion = 0;
+let syncedVersion = 0;
 
 /** FNV-1a, run twice with different seeds so a 64-bit key is unlikely to collide. */
 function hash(text, seed) {
@@ -39,23 +41,54 @@ export function inlineViewKey(model, prompt) {
   return `${hash(source, 0x811c9dc5)}${hash(source, 0x9e3779b9)}`;
 }
 
+function readStored() {
+  if (typeof localStorage === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    // A corrupt cache is not worth a crash; the views regenerate on demand.
+    return null;
+  }
+}
+
+/**
+ * Merge anything another tab (or an earlier page) persisted. Called on a
+ * memory miss as well as at startup: a document generated after this tab
+ * hydrated is still in storage, and reading only once would leave this tab
+ * showing a placeholder that a reload would resolve — exactly the "switching
+ * chats loses the view, refreshing brings it back" asymmetry.
+ */
+function syncFromStorage() {
+  if (syncedVersion === storageVersion) return;
+  syncedVersion = storageVersion;
+  const parsed = readStored();
+  if (!parsed) return;
+  let changed = false;
+  for (const [key, html] of Object.entries(parsed)) {
+    if (typeof html !== "string" || !html.trim()) continue;
+    if (entries.get(key)?.status === "ready") continue;
+    entries.set(key, { status: "ready", html });
+    changed = true;
+  }
+  if (changed) notify();
+}
+
 function hydrate() {
   if (hydrated) return;
   hydrated = true;
-  if (typeof localStorage === "undefined") return;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return;
-    for (const [key, html] of Object.entries(parsed)) {
-      if (typeof html === "string" && html.trim()) {
-        entries.set(key, { status: "ready", html });
-      }
-    }
-  } catch {
-    // A corrupt cache is not worth a crash; the views regenerate on demand.
-  }
+  storageVersion += 1;
+  syncFromStorage();
+  if (typeof window === "undefined") return;
+  // Another tab may finish a build while this one is open; its write is the
+  // only notification we get.
+  window.addEventListener("storage", (event) => {
+    if (event.key !== STORAGE_KEY) return;
+    storageVersion += 1;
+    syncFromStorage();
+  });
 }
 
 function persist() {
@@ -92,7 +125,18 @@ export function subscribeInlineViews(listener) {
 
 export function getInlineViewEntry(key) {
   hydrate();
-  return entries.get(key) || null;
+  const entry = entries.get(key);
+  if (entry) return entry;
+  // A miss is the moment to look past memory. The storage cache is the only
+  // copy that survives a page load, and reading it here (once per key) means
+  // a conversation switch can never show less than a refresh would.
+  const html = readStored()?.[key];
+  if (typeof html === "string" && html.trim()) {
+    const ready = { status: "ready", html };
+    entries.set(key, ready);
+    return ready;
+  }
+  return null;
 }
 
 /** Ask for a view's document if it is not cached and not already in flight. */
@@ -131,6 +175,8 @@ export function resetInlineViewCache() {
   entries.clear();
   listeners.clear();
   hydrated = false;
+  storageVersion = 0;
+  syncedVersion = 0;
   if (typeof localStorage !== "undefined") {
     try {
       localStorage.removeItem(STORAGE_KEY);

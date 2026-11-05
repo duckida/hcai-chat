@@ -156,6 +156,19 @@ describe("buildInlineViewDocument", () => {
     );
     expect(doc).toContain("<p>x</p>");
   });
+
+  it("carries the app's font faces and custom font link into the shell", () => {
+    const doc = buildInlineViewDocument("<div>hi</div>", {
+      fontCss: '@font-face { font-family: Inter; src: url("data:font/woff2;base64,AA"); }',
+      fontLinks: ["https://fonts.googleapis.com/css2?family=Space+Grotesk"],
+    });
+
+    expect(doc).toContain("data-hcai-inline-font");
+    expect(doc).toContain('font-family: Inter');
+    expect(doc).toContain(
+      '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk">',
+    );
+  });
 });
 
 describe("INLINE_VIEW_INSTRUCTIONS", () => {
@@ -174,7 +187,8 @@ describe("INLINE_VIEW_INSTRUCTIONS", () => {
     expect(INLINE_VIEW_INSTRUCTIONS).toContain(
       "Most answers should have no view",
     );
-    expect(INLINE_VIEW_INSTRUCTIONS).toContain("never as decoration");
+    expect(INLINE_VIEW_INSTRUCTIONS).toContain("adds significant value");
+    expect(INLINE_VIEW_INSTRUCTIONS).toContain("Never as decoration");
     expect(INLINE_VIEW_INSTRUCTIONS).toContain(
       "unless the user asks about that capability",
     );

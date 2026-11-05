@@ -268,14 +268,32 @@ const HEIGHT_SCRIPT = `
 
 /**
  * Wrap a view's HTML in the page shell it is rendered in: the app's theme
- * tokens, a small set of base classes that match the interface, and the
- * height reporter. A model that ignores the "no document wrappers" rule still
- * gets its own `<head>`/`<body>` respected — the shell is injected into them
- * rather than nested inside them.
+ * tokens, the app's font faces, a small set of base classes that match the
+ * interface, and the height reporter. A model that ignores the "no document
+ * wrappers" rule still gets its own `<head>`/`<body>` respected — the shell is
+ * injected into them rather than nested inside them.
+ *
+ * `fontCss`/`fontLinks` come from the parent document: an iframe with an
+ * opaque origin cannot reach the parent's `@font-face` rules or load its
+ * self-hosted files (no CORS), so the faces are copied in, same-origin files
+ * inlined as data URLs by the caller. Without them the view falls back to a
+ * generic sans and stops matching the thread.
  */
-export function buildInlineViewDocument(html, { tokens, colorScheme } = {}) {
+export function buildInlineViewDocument(
+  html,
+  { tokens, colorScheme, fontCss, fontLinks } = {},
+) {
   const source = String(html || "").trim();
-  const style = `<style data-hcai-inline-base>${baseStyles(tokens, colorScheme)}</style>`;
+  const fontStyle = fontCss
+    ? `<style data-hcai-inline-font>${fontCss}</style>`
+    : "";
+  const fontLinkTags = (fontLinks || [])
+    .map(
+      (href) =>
+        `<link rel="stylesheet" href="${String(href).replace(/"/g, "&quot;")}">`,
+    )
+    .join("");
+  const style = `${fontStyle}${fontLinkTags}<style data-hcai-inline-base>${baseStyles(tokens, colorScheme)}</style>`;
   const script = HEIGHT_SCRIPT;
 
   if (/<html[\s>]/i.test(source)) {
@@ -326,7 +344,7 @@ A canvas plot of a sine wave over one full period, with a frequency slider from 
 </inline>
 
 Rules:
-- Most answers should have no view at all. Add one only when the content is genuinely visual or interactive and a view explains it better than prose — never as decoration, and never to fill space. Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
+- Most answers should have no view at all. Add one only when it adds significant value to the answer — when a visual or interactive view genuinely explains the content better than prose. Never as decoration, never to fill space, and never for something a sentence or a short list already says clearly. Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
 - The builder sees only what is inside the tag. State the values, labels, ranges and behavior it needs; it cannot see the conversation.
 - Keep the description under about 60 words. Say what the view shows and does, not how to code it.
 - Never put HTML, CSS, JavaScript, or a code fence inside the tag. The builder writes all of that.

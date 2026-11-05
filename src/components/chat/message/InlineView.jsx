@@ -16,6 +16,7 @@ import {
   retryInlineView,
   subscribeInlineViews,
 } from "@/lib/inline-view-cache";
+import { readInlineViewFontSources } from "@/lib/inline-view-font";
 import {
   buildInlineViewDocument,
   getInlineViewTitle,
@@ -51,19 +52,33 @@ function readTheme() {
  * (including a custom accent) instead of shipping its own colors. A
  * MutationObserver keeps an open view in step when the user changes theme or
  * dark mode.
+ *
+ * The font faces are collected separately and asynchronously because they
+ * need their same-origin files inlined; a view renders with the theme first
+ * and reloads once the faces are ready. The document is only rebuilt when the
+ * sources actually change, and the collection itself is cached.
  */
 function useInlineViewTheme() {
   const [theme, setTheme] = useState(null);
 
   useEffect(() => {
-    const update = () => setTheme(readTheme());
+    let cancelled = false;
+    const update = async () => {
+      const next = readTheme();
+      if (!cancelled) setTheme((current) => ({ ...current, ...next }));
+      const fonts = await readInlineViewFontSources();
+      if (!cancelled) setTheme((current) => ({ ...current, ...fonts }));
+    };
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["class", "style"],
     });
-    return () => observer.disconnect();
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
   }, []);
 
   return theme;
@@ -79,27 +94,20 @@ function ViewFrame({ children }) {
 }
 
 /**
- * Shown while the builder model is working. The bars are deliberately
- * abstract: a skeleton that looked like a chart would read as content that
- * failed to load. Opacity-only motion, and the global animations toggle stops
- * it like every other animation.
+ * Shown while the builder model is working. It is deliberately just a box
+ * with a slow gray sweep — no title and no "generating" copy. A skeleton that
+ * looked like a chart would read as content that failed to load, and the
+ * title belongs to the surrounding prose, not to the card. The global
+ * animations toggle stops the sweep like every other animation.
  */
-function ViewPlaceholder({ title }) {
+function ViewPlaceholder() {
   return (
     <ViewFrame>
-      <div aria-busy="true" className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
-          <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
-          <span className="min-w-0 truncate text-[12px] font-medium text-muted-foreground">
-            {title ? `Generating ${title}…` : "Generating view…"}
-          </span>
-        </div>
-        <div className="h-24 animate-pulse rounded-xl bg-muted" />
-        <div className="flex items-center gap-2">
-          <div className="h-2 flex-1 animate-pulse rounded-full bg-muted" />
-          <div className="h-2 w-14 animate-pulse rounded-full bg-muted" />
-        </div>
-      </div>
+      <output
+        aria-busy="true"
+        aria-label="Generating inline view"
+        className="block h-[260px] w-full animate-hcai-shimmer bg-[linear-gradient(90deg,var(--muted)_0%,var(--border)_50%,var(--muted)_100%)] bg-[length:200%_100%]"
+      />
     </ViewFrame>
   );
 }
@@ -141,6 +149,8 @@ export default function InlineView({ prompt, title, model, providerSlug }) {
         ? buildInlineViewDocument(html, {
             tokens: theme?.tokens,
             colorScheme: theme?.colorScheme,
+            fontCss: theme?.fontCss,
+            fontLinks: theme?.fontLinks,
           })
         : "",
     [html, theme],
@@ -190,7 +200,7 @@ export default function InlineView({ prompt, title, model, providerSlug }) {
     );
   }
 
-  if (!html) return <ViewPlaceholder title={label} />;
+  if (!html) return <ViewPlaceholder />;
 
   return (
     <ViewFrame>
@@ -199,7 +209,6 @@ export default function InlineView({ prompt, title, model, providerSlug }) {
         title={label}
         sandbox="allow-scripts"
         referrerPolicy="no-referrer"
-        loading="lazy"
         srcDoc={documentSource}
         style={{ height: `${height ?? DEFAULT_HEIGHT}px` }}
         className="block w-full border-0 bg-background"

@@ -109,7 +109,7 @@ export const SETTINGS = [
   {
     key: "inlineViewModel",
     storageKey: "inline_view_model",
-    default: "deepseek/deepseek-v4.1-flash",
+    default: "openai/gpt-6-luna",
     parse: String,
   },
   {

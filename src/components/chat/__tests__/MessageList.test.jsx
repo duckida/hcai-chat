@@ -157,6 +157,39 @@ describe("MessageList", () => {
     expect(generateInlineView).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a view across a conversation switch", async () => {
+    // The bug this pins: switching chats showed a placeholder (or nothing) for
+    // a view the reader had already seen, while a refresh brought it back.
+    // Both views must survive leaving and returning.
+    const conversationA = [
+      { role: "user", content: "hi" },
+      { role: "assistant", content: '<inline title="Demo">A chart</inline>' },
+    ];
+    const conversationB = [
+      { role: "user", content: "other" },
+      { role: "assistant", content: '<inline title="Other">A diagram</inline>' },
+    ];
+
+    const { rerender } = renderList({
+      messages: conversationA,
+      activeConversation: "a",
+      settings: { inlineViewsEnabled: true },
+    });
+    await screen.findByTitle("Demo");
+
+    act(() => {
+      rerender(<MessageList messages={conversationB} activeConversation="b" />);
+    });
+    await screen.findByTitle("Other");
+    expect(screen.queryByTitle("Demo")).not.toBeInTheDocument();
+
+    act(() => {
+      rerender(<MessageList messages={conversationA} activeConversation="a" />);
+    });
+    expect(screen.getByTitle("Demo")).toBeInTheDocument();
+    expect(generateInlineView).toHaveBeenCalledTimes(2);
+  });
+
   it("offers a retry when the builder model fails", async () => {
     generateInlineView.mockResolvedValueOnce(null);
     renderList({

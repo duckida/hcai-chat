@@ -199,6 +199,8 @@
  * re-layout behind. These replaced `tw-animate-css`, whose `animate-in` /
  * `fade-in-0` pairing also offered the `zoom-in-95` the tooltip was using.
  * Named `hcai-` so it can never collide with a library's keyframes again.
+ * The one exception, `hcai-shimmer`, animates `background-position` inside a
+ * fixed-size box — no transform, no layout.
  */
 @theme {
   --animate-hcai-fade-in: hcai-fade-in 200ms ease-out both;
@@ -206,6 +208,9 @@
   /* Overlays (dialog, menu, popover, select, tooltip) fade in at 100ms. */
   --animate-hcai-fade-in-fast: hcai-fade-in 100ms ease-out both;
   --animate-hcai-fade-out: hcai-fade-out 100ms ease-in both;
+  /* The inline-view placeholder's sweep. Background-position only: the box
+     itself never moves, so the thread behind it never re-lays out. */
+  --animate-hcai-shimmer: hcai-shimmer 1.6s ease-in-out infinite;
 }
 
 @keyframes hcai-fade-in {
@@ -223,6 +228,15 @@
   }
   to {
     opacity: 0;
+  }
+}
+
+@keyframes hcai-shimmer {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
   }
 }
 
