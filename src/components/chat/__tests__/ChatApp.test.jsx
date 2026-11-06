@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import ChatApp from "@/components/chat/ChatApp";
 import { useChatTurn } from "@/hooks/use-chat-turn";
 import {
+  activeConversationRef,
   conversationsRef,
   resetConversations,
 } from "@/stores/conversations";
@@ -92,6 +93,20 @@ function stubFetch() {
   );
 }
 
+/** Like stubFetch, but keeps every /api/chat body so a test can read it. */
+function stubChatBodies(bodies) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url, options) => {
+      if (typeof url === "string" && url.includes("/api/chat")) {
+        bodies.push(JSON.parse(options.body));
+        return streamResponse("search answer");
+      }
+      return { ok: true, status: 200, json: async () => ({ models: [] }) };
+    }),
+  );
+}
+
 /**
  * A `/api/models` response for the given catalog rows.
  *
@@ -151,6 +166,72 @@ describe("ChatApp initial query", () => {
       },
       { timeout: 5000 },
     );
+  });
+
+  // The query arriving is only half of what /search?q=...&search=true promises:
+  // the request has to advertise the search tool, or the route silently sends
+  // an ordinary chat and the user gets no search at all.
+  it("sends the query with web search actually switched on", async () => {
+    const bodies = [];
+    stubChatBodies(bodies);
+
+    render(<ChatApp initialQuery="deep learning" initialSearchEnabled />);
+
+    await waitFor(
+      () => {
+        expect(bodies.length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
+
+    expect(bodies[0].tools.map((t) => t.function.name)).toContain(
+      "web_search",
+    );
+  });
+
+  // The flag demands search, it does not replace the setting: /search?q=...
+  // opened without ?search=true has to honour the toggle the user left on,
+  // the same way a message they type does.
+  it("still honours the stored toggle when the URL does not ask", async () => {
+    setSetting("webSearchEnabled", true);
+    const bodies = [];
+    stubChatBodies(bodies);
+
+    render(<ChatApp initialQuery="deep learning" />);
+
+    await waitFor(
+      () => {
+        expect(bodies.length).toBeGreaterThan(0);
+      },
+      { timeout: 5000 },
+    );
+
+    expect(bodies[0].tools.map((t) => t.function.name)).toContain(
+      "web_search",
+    );
+  });
+
+  // /search promises a clean thread whether or not it arrived with a query.
+  // A route that quietly lands on the user's last conversation is not a new
+  // search, and nothing else in the app claims a chat on the user's behalf.
+  it("opens a chat of its own even when the URL carries no query", async () => {
+    render(<ChatApp forceNewChat />);
+
+    await waitFor(
+      () => {
+        expect(conversationsRef.current).toHaveLength(2);
+      },
+      { timeout: 5000 },
+    );
+
+    const opened = conversationsRef.current.find((c) => c.id !== EXISTING_ID);
+    expect(opened.messages).toEqual([]);
+    expect(activeConversationRef.current).toBe(opened.id);
+
+    const restored = conversationsRef.current.find(
+      (c) => c.id === EXISTING_ID,
+    );
+    expect(restored.messages).toEqual([EXISTING_MESSAGE]);
   });
 });
 

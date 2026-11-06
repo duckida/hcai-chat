@@ -178,12 +178,16 @@ export function useChatTurn({
   }, []);
 
   const send = useCallback(
-    async (content, files = []) => {
+    async (content, files = [], options = {}) => {
       if (!content?.trim() && files.length === 0) return;
       if (isSubmittingRef.current) return;
       isSubmittingRef.current = true;
 
-      const needsWebSearch = webSearchEnabled;
+      // A caller can demand web search for this one send (/search?search=true)
+      // without waiting for the settings write to come back around; a model
+      // that cannot call tools still wins over both.
+      const needsWebSearch =
+        (options.webSearch ?? webSearchEnabled) && toolsSupported;
       const needsAgentMode = agentModeEnabled;
 
       if (needsAgentMode && !getStoredE2bApiKey()) {

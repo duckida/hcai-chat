@@ -105,6 +105,29 @@ describe("the home page still forwards what /search needs", () => {
     );
   });
 
+  // forceNewChat was passed by /search and silently dropped by both links in
+  // the chain, so a search with no query opened the user's last conversation
+  // instead of a clean one — with no error anywhere to say so.
+  it("forwards forceNewChat the same way", () => {
+    const home = readFileSync(path.join(SRC, "app", "page.js"), "utf8");
+    expect(home).toMatch(/forceNewChat\s*=\s*false/);
+    expect(home).toMatch(/<ChatApp[\s\S]*forceNewChat=\{forceNewChat\}/);
+
+    const search = readFileSync(
+      path.join(SRC, "app", "search", "page.js"),
+      "utf8",
+    );
+    expect(search).toMatch(/forceNewChat(\s|\/|>)/);
+
+    const chatApp = readFileSync(
+      path.join(SRC, "components", "chat", "ChatApp.jsx"),
+      "utf8",
+    );
+    expect(chatApp).toMatch(/forceNewChat\s*=\s*false/);
+    // and it is acted on, not just accepted
+    expect(chatApp).toMatch(/if \(!forceNewChat && !initialQuery\) return;/);
+  });
+
   it("is the component /search renders, with the query string plumbed", () => {
     const source = readFileSync(path.join(SRC, "app", "search", "page.js"), "utf8");
     expect(source).toMatch(/import Home from "@\/app\/page"/);

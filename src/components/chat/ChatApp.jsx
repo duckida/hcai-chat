@@ -28,6 +28,7 @@ import { hydrateSettings, setSetting, useSettings } from "@/stores/settings";
 export default function ChatApp({
   initialQuery = null,
   initialSearchEnabled = false,
+  forceNewChat = false,
 } = {}) {
   const settings = useSettings();
 
@@ -76,8 +77,12 @@ export default function ChatApp({
   const [panelDismissed, setPanelDismissed] = useState(false);
 
   const initialSearchEnabledRef = useRef(initialSearchEnabled);
+  const hasClaimedRef = useRef(false);
   const hasAutoSentRef = useRef(false);
   const hadStreamingArtifactRef = useRef(false);
+  // Flips one render *after* the claim effect has run, so the send is
+  // scheduled into the render that follows the claim instead of its tick.
+  const [chatClaimed, setChatClaimed] = useState(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
@@ -375,29 +380,46 @@ export default function ChatApp({
     [conversations],
   );
 
-  // Auto-send initial query from URL params (/search?q=...). Web search is
-  // forced on for this send when the page was opened with ?search=true.
-  // Intentionally depends only on the query (stream.send identity changes
-  // with model/tools state; the timer must not re-fire on every switch).
+  // /search opens a chat of its own — with a query to send, or just to start
+  // from a clean thread. The claim waits for hydration: a conversation created
+  // before IndexedDB resolves is overwritten by the restore, which puts the
+  // thread back on the user's last chat and leaves the send aimed at a
+  // conversation nobody is looking at. A fixed delay was the old answer to
+  // this and only won the race when the disk was quick.
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
   useEffect(() => {
-    if (!initialQuery || hasAutoSentRef.current) return;
-    const timer = setTimeout(() => {
-      if (!hasAutoSentRef.current && initialQuery) {
-        hasAutoSentRef.current = true;
-        if (initialSearchEnabledRef.current) {
-          setSetting("webSearchEnabled", true);
-        }
-        // send() resolves its target from the conversations store at call
-        // time, which is whichever conversation hydration restored. The search
-        // page opens its own chat, so claim one first instead of appending an
-        // unrelated query to the user's most recent conversation.
-        handleNewChat();
-        stream.send(initialQuery, []);
-      }
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [initialQuery]);
+    if (!conversations.hydrated || hasClaimedRef.current) return;
+    if (!forceNewChat && !initialQuery) return;
+    hasClaimedRef.current = true;
+    handleNewChat();
+    setChatClaimed(true);
+  }, [conversations.hydrated, forceNewChat, initialQuery]);
+
+  // The send runs one render after the claim. Claiming changes
+  // activeConversation, and the effect that resets the turn for a newly
+  // activated chat is declared far above this one — so in the render the
+  // claim triggers, that reset runs first and the send's beginTurn survives
+  // it, instead of being wiped the tick it started.
+  // Intentionally depends only on the claim (stream.send identity changes
+  // with model/tools state; it must not re-fire on every switch).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (!chatClaimed || !initialQuery || hasAutoSentRef.current) return;
+    hasAutoSentRef.current = true;
+    if (initialSearchEnabledRef.current) {
+      setSetting("webSearchEnabled", true);
+    }
+    // ?search=true has to reach *this* request: setSetting writes the store,
+    // but the send below was built from the previous render and would read
+    // the old toggle, so it is demanded explicitly. Without the flag nothing
+    // is forced — the stored toggle decides, exactly as it does for a message
+    // the user typed.
+    stream.send(
+      initialQuery,
+      [],
+      initialSearchEnabledRef.current ? { webSearch: true } : {},
+    );
+  }, [chatClaimed, initialQuery]);
 
   return (
     <>
