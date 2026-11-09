@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GET, OPTIONS, POST } from "../route";
 
 const originalFetch = globalThis.fetch;
 
-const makeReq = (body) => ({
-  json: () => Promise.resolve(body),
-});
+// The route keeps a module-level cache. Re-importing the module per test is
+// what gives each case a clean cache without exporting a test-only hook.
+let GET;
+let OPTIONS;
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.restoreAllMocks();
+  vi.resetModules();
+  ({ GET, OPTIONS } = await import("../route"));
 });
 
 afterEach(() => {
@@ -18,7 +20,7 @@ afterEach(() => {
 });
 
 describe("/api/models GET", () => {
-  it("returns models filtered to text-only output_modalities", async () => {
+  it("returns text-only models trimmed to the fields the client reads", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
@@ -26,7 +28,13 @@ describe("/api/models GET", () => {
           data: [
             {
               id: "google/gemini-3.1-flash-lite",
+              name: "Google: Gemini 3.1 Flash Lite",
+              context_length: 1048576,
+              supported_parameters: ["tools"],
+              reasoning: { supported_efforts: ["low", "high"] },
+              description: "a long description the client never reads",
               architecture: { output_modalities: ["text"] },
+              endpoints: [{ provider: "google", pricing: {} }],
             },
             {
               id: "multimodal",
@@ -44,11 +52,18 @@ describe("/api/models GET", () => {
     const res = await GET();
     expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.data).toHaveLength(1);
-    expect(data.data[0].id).toBe("google/gemini-3.1-flash-lite");
+    expect(data.data).toEqual([
+      {
+        id: "google/gemini-3.1-flash-lite",
+        name: "Google: Gemini 3.1 Flash Lite",
+        context_length: 1048576,
+        supported_parameters: ["tools"],
+        reasoning: { supported_efforts: ["low", "high"] },
+      },
+    ]);
   });
 
-  it("handles the response being an array (no `data` wrapper)", async () => {
+  it("normalizes a bare array response into a `data` wrapper", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -57,25 +72,72 @@ describe("/api/models GET", () => {
           Promise.resolve([
             {
               id: "google/gemini-3.1-flash-lite",
+              name: "Gemini",
               architecture: { output_modalities: ["text"] },
+            },
+            {
+              id: "image-only",
+              architecture: { output_modalities: ["image"] },
             },
           ]),
       }),
     );
+
     const res = await GET();
     const data = await res.json();
-    // Due to how route.js handles arrays (setting .data on an Array object),
-    // the returned JSON will just be the original array without filtering.
-    // We just test that it returns the array successfully.
-    expect(Array.isArray(data)).toBe(true);
-    expect(data).toHaveLength(1);
+    // The old code assigned `.data` to the array itself, which JSON
+    // serialization dropped — the client then saw an empty catalog.
+    expect(data.data).toHaveLength(1);
+    expect(data.data[0].id).toBe("google/gemini-3.1-flash-lite");
   });
 
-  it("returns 5xx on fetch failure", async () => {
-    const fetchMock = vi.fn().mockRejectedValue(new Error("network"));
+  it("reuses one upstream response for repeated requests", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: "google/gemini-3.1-flash-lite",
+              architecture: { output_modalities: ["text"] },
+            },
+          ],
+        }),
+    });
     vi.stubGlobal("fetch", fetchMock);
+
+    await GET();
+    await GET();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not cache an empty catalog", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ data: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await GET();
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+    await GET();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 5xx on fetch failure and does not cache it", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
     const res = await GET();
     expect(res.status).toBe(500);
+    expect(res.headers.get("Cache-Control")).toBe("no-store");
+  });
+
+  it("reports an upstream timeout as 504", async () => {
+    const timeout = new Error("The operation was aborted due to timeout");
+    timeout.name = "TimeoutError";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeout));
+    const res = await GET();
+    expect(res.status).toBe(504);
   });
 
   it("returns the upstream status code on non-OK response", async () => {
@@ -89,15 +151,24 @@ describe("/api/models GET", () => {
     expect(res.status).toBe(502);
   });
 
-  it("returns CORS headers", async () => {
+  it("returns CORS and cache headers", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ data: [] }),
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: "google/gemini-3.1-flash-lite",
+              architecture: { output_modalities: ["text"] },
+            },
+          ],
+        }),
     });
     vi.stubGlobal("fetch", fetchMock);
     const res = await GET();
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
     expect(res.headers.get("Access-Control-Allow-Methods")).toContain("GET");
+    expect(res.headers.get("Cache-Control")).toContain("max-age=300");
   });
 });
 

@@ -5,6 +5,13 @@ import { createStore, useStore } from "@/lib/store";
 const MODELS_ENDPOINT = "/api/models";
 const DEFAULT_CONTEXT_WINDOW = 128000;
 
+// A request that hangs is indistinguishable from one that will never finish,
+// and the picker used to sit on "Loading models..." forever in that case. One
+// retry covers the transient proxy resets the chat stream already guards
+// against; the abort turns a dead connection into a visible error instead.
+const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_ATTEMPTS = 2;
+
 /**
  * A model's display name is either `Provider: Name` (when the catalog
  * includes a colon) or derived from its id slug.
@@ -75,10 +82,43 @@ export const modelsStore = createStore(initialState);
 
 let inflight = null;
 
+async function requestCatalog() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(MODELS_ENDPOINT, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const error = new Error(`models request failed: ${response.status}`);
+      // A 4xx will not improve on a retry; a 5xx (or a dead connection) might.
+      error.retryable = response.status >= 500;
+      throw error;
+    }
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCatalog() {
+  let lastError;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await requestCatalog();
+    } catch (error) {
+      lastError = error;
+      if (error?.retryable === false) break;
+    }
+  }
+  throw lastError;
+}
+
 /**
  * Fetch the catalog once per session. Concurrent callers share a single
  * request, and a loaded catalog is not refetched — `resetModels` is the
- * escape hatch tests use for isolation.
+ * escape hatch tests use for isolation. A failed load leaves `status: "error"`
+ * so a later call (the picker's retry row, the settings modal) can try again.
  */
 export function loadModels() {
   if (inflight) return inflight;
@@ -87,11 +127,7 @@ export function loadModels() {
   modelsStore.setState({ status: "loading" });
   inflight = (async () => {
     try {
-      const response = await fetch(MODELS_ENDPOINT);
-      if (!response.ok) {
-        throw new Error(`models request failed: ${response.status}`);
-      }
-      const data = await response.json();
+      const data = await fetchCatalog();
       modelsStore.setState({ ...normalizeModelCatalog(data), status: "ready" });
     } catch {
       if (modelsStore.getState().status !== "ready") {

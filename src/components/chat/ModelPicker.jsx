@@ -10,8 +10,12 @@ import {
   MenuTrigger,
 } from "@/components/primitives/menu";
 import { cn } from "@/lib/utils";
-import { useModels } from "@/stores/models";
+import { loadModels, useModels } from "@/stores/models";
 import { toggleFavoriteModel, useSettings } from "@/stores/settings";
+
+// One stable id for the loading/error row: React Aria refuses to change an
+// item's id in place, and retrying swaps that row's text without replacing it.
+const STATUS_ID = "__status";
 
 // The press events that would otherwise start a row press, plus the click that
 // would otherwise run the row's action. Down *and* up: React Aria's menu-item
@@ -145,6 +149,7 @@ export default function ModelPicker({
   ariaLabelledBy,
 }) {
   const groupedModels = useModels((s) => s.grouped);
+  const status = useModels((s) => s.status);
   const favoriteIds = useSettings((s) => s.favoriteModels) || [];
   const hasModels = Object.keys(groupedModels).length > 0;
   const allModels = Object.values(groupedModels).flat();
@@ -175,7 +180,13 @@ export default function ModelPicker({
       <MenuContent
         align={align}
         ariaLabel="Models"
-        onAction={(id) => onChange?.(fromItemId(id))}
+        onAction={(id) => {
+          if (id === STATUS_ID && status === "error") {
+            loadModels();
+            return;
+          }
+          onChange?.(fromItemId(id));
+        }}
         className="rounded-2xl border border-border shadow-2xl p-1 min-w-[220px] max-h-[60vh]"
       >
         {hasModels ? (
@@ -206,9 +217,17 @@ export default function ModelPicker({
               </MenuGroup>
             ))}
           </>
+        ) : status === "error" ? (
+          <MenuItem
+            id={STATUS_ID}
+            textValue="Could not load models"
+            className="text-[13px] rounded-lg py-2.5 px-4"
+          >
+            Couldn't load models — retry
+          </MenuItem>
         ) : (
           <MenuItem
-            id="__loading"
+            id={STATUS_ID}
             isDisabled
             textValue="Loading models"
             className="text-[13px] rounded-lg py-2.5 px-4"

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { modelsStore, resetModels } from "@/stores/models";
 import { hydrateSettings, resetSettings } from "@/stores/settings";
@@ -31,6 +31,10 @@ beforeEach(() => {
   resetModels();
   resetSettings();
   localStorage.clear();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe("ModelPicker", () => {
@@ -211,6 +215,39 @@ describe("ModelPicker", () => {
         screen.getByRole("button", { name: /GPT-4o/ }),
       ).toHaveAttribute("aria-expanded", "false"),
     );
+  });
+
+  it("offers a retry row after a failed load, and retries on press", async () => {
+    const user = userEvent.setup();
+    modelsStore.setState({ status: "error" });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          data: [
+            {
+              id: "openai/gpt-4o",
+              name: "OpenAI: GPT-4o",
+              architecture: { output_modalities: ["text"] },
+            },
+          ],
+        }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <ModelPicker
+        value="openai/gpt-4o"
+        onChange={vi.fn()}
+        emptyLabel="Select Model"
+      />,
+    );
+
+    const menu = await openPicker(user);
+    await user.click(within(menu).getByText("Couldn't load models — retry"));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
   });
 
   it("shows a loading row while the catalog is empty", async () => {

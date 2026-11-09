@@ -154,7 +154,10 @@ describe("loadModels", () => {
       await loadModels();
     });
 
-    expect(fetchMock).toHaveBeenCalledWith("/api/models");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/models",
+      expect.objectContaining({ signal: expect.anything() }),
+    );
     expect(modelsStore.getState().status).toBe("ready");
     expect(Object.keys(modelsStore.getState().grouped)).toContain("OpenAI");
   });
@@ -188,11 +191,46 @@ describe("loadModels", () => {
   });
 
   it("records an error status when the network throws", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    vi.stubGlobal("fetch", fetchMock);
     await act(async () => {
       await loadModels();
     });
     expect(modelsStore.getState().status).toBe("error");
+    // A dead connection is retried once before the picker shows the error.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry a client error", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: () => Promise.resolve({}),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => {
+      await loadModels();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(modelsStore.getState().status).toBe("error");
+  });
+
+  it("recovers when the retry succeeds", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 502, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(CATALOG),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    await act(async () => {
+      await loadModels();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(modelsStore.getState().status).toBe("ready");
+    expect(Object.keys(modelsStore.getState().grouped)).toContain("OpenAI");
   });
 
   it("retries after a failed load instead of staying latched", async () => {

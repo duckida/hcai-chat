@@ -184,7 +184,10 @@ describe("SettingsModal", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderModal();
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/models");
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/models",
+        expect.objectContaining({ signal: expect.anything() }),
+      );
     });
   });
 
