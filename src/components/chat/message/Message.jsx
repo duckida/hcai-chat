@@ -5,6 +5,7 @@ import { memo, useMemo } from "react";
 import { getMessageText, getUserText } from "@/lib/messages";
 import { useSettings } from "@/stores/settings";
 import ResponseMetrics from "../ResponseMetrics";
+import DisplayedFiles from "./DisplayedFiles";
 import InlineView from "./InlineView";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import ImageAttachment, { FileBubble } from "./MessageParts";
@@ -66,6 +67,7 @@ const Message = memo(function Message({ message }) {
     (attachments && attachments.length > 0) ||
     !!message.thinking ||
     (message.thinkingChips && message.thinkingChips.length > 0) ||
+    (message.displayedFiles && message.displayedFiles.length > 0) ||
     hasSources ||
     !!message.webSearch ||
     (showMetrics && !!message.metrics);
@@ -163,6 +165,8 @@ const Message = memo(function Message({ message }) {
             </div>
           )
         )}
+
+        {isAssistant && <DisplayedFiles files={message.displayedFiles} />}
 
         {isAssistant && hasSources && (
           <SourcesBlock sources={message.sources} />

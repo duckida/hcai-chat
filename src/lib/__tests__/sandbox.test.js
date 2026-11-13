@@ -356,3 +356,146 @@ describe("readFile", () => {
     ).rejects.toThrow("outside the sandbox workspace");
   });
 });
+
+describe("uploadFiles", () => {
+  const bytes = (text) => new TextEncoder().encode(text).buffer;
+
+  it("writes attachments under /workspace/uploads and reports each path", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-up", {
+      apiKey: "k",
+    });
+    client.files.exists = vi.fn().mockResolvedValue(false);
+
+    const out = await sandbox.uploadFiles(
+      "c-up",
+      [{ name: "data.csv", data: bytes("a,b") }],
+      { apiKey: "k" },
+    );
+
+    expect(client.files.write).toHaveBeenCalledWith(
+      `${WORKSPACE}/uploads/data.csv`,
+      expect.anything(),
+    );
+    expect(out.files).toEqual([
+      { name: "data.csv", path: `${WORKSPACE}/uploads/data.csv`, size: 3 },
+    ]);
+    expect(out.sandboxId).toBe("sandbox-1");
+  });
+
+  it("never overwrites an earlier upload of the same name", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-dup", {
+      apiKey: "k",
+    });
+    const taken = new Set([`${WORKSPACE}/uploads/a.txt`]);
+    client.files.exists = vi.fn(async (p) => taken.has(p));
+
+    const out = await sandbox.uploadFiles(
+      "c-dup",
+      [{ name: "a.txt", data: bytes("x") }],
+      { apiKey: "k" },
+    );
+
+    expect(out.files[0].path).toBe(`${WORKSPACE}/uploads/a (1).txt`);
+  });
+
+  it("keeps a hostile name inside the uploads directory", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-evil", {
+      apiKey: "k",
+    });
+    client.files.exists = vi.fn().mockResolvedValue(false);
+
+    const out = await sandbox.uploadFiles(
+      "c-evil",
+      [{ name: "../../etc/passwd", data: bytes("x") }],
+      { apiKey: "k" },
+    );
+
+    expect(out.files[0].path).toBe(`${WORKSPACE}/uploads/passwd`);
+  });
+
+  it("reports one failing file without losing the others", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-fail", {
+      apiKey: "k",
+    });
+    client.files.exists = vi.fn().mockResolvedValue(false);
+    client.files.write.mockRejectedValueOnce(new Error("disk full"));
+
+    const out = await sandbox.uploadFiles(
+      "c-fail",
+      [
+        { name: "a.txt", data: bytes("x") },
+        { name: "b.txt", data: bytes("y") },
+      ],
+      { apiKey: "k" },
+    );
+
+    expect(out.files[0]).toEqual({ name: "a.txt", error: "disk full" });
+    expect(out.files[1].path).toBe(`${WORKSPACE}/uploads/b.txt`);
+  });
+
+  it("requires an E2B key", async () => {
+    await expect(sandbox.uploadFiles("c", [], {})).rejects.toThrow(
+      E2B_MISSING_KEY_MSG,
+    );
+  });
+});
+
+describe("statFile", () => {
+  it("describes a workspace file by its relative path", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-stat", {
+      apiKey: "k",
+    });
+    client.files.getInfo = vi.fn().mockResolvedValue({ type: "file", size: 12 });
+
+    const info = await sandbox.statFile("c-stat", "out/r.csv", { apiKey: "k" });
+
+    expect(client.files.getInfo).toHaveBeenCalledWith(
+      `${WORKSPACE}/out/r.csv`,
+    );
+    expect(info).toEqual({
+      name: "r.csv",
+      path: "out/r.csv",
+      size: 12,
+      sandboxId: "sandbox-1",
+    });
+  });
+
+  it("accepts an absolute path inside the workspace", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-abs", {
+      apiKey: "k",
+    });
+    client.files.getInfo = vi.fn().mockResolvedValue({ type: "file", size: 1 });
+    const info = await sandbox.statFile("c-abs", `${WORKSPACE}/x.txt`, {
+      apiKey: "k",
+    });
+    expect(info.path).toBe("x.txt");
+  });
+
+  it("rejects paths outside the workspace", async () => {
+    await expect(
+      sandbox.statFile("c-out", "../etc/passwd", { apiKey: "k" }),
+    ).rejects.toThrow(/outside the sandbox workspace/);
+  });
+
+  it("reports a missing file plainly", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-miss", {
+      apiKey: "k",
+    });
+    const err = new Error("path not found");
+    err.name = "FileNotFoundError";
+    client.files.getInfo = vi.fn().mockRejectedValue(err);
+    await expect(
+      sandbox.statFile("c-miss", "nope.txt", { apiKey: "k" }),
+    ).rejects.toThrow("File not found: nope.txt");
+  });
+
+  it("refuses a directory", async () => {
+    const { client } = await sandbox.getOrCreateSandbox("c-dir", {
+      apiKey: "k",
+    });
+    client.files.getInfo = vi.fn().mockResolvedValue({ type: "dir", size: 0 });
+    await expect(
+      sandbox.statFile("c-dir", "out", { apiKey: "k" }),
+    ).rejects.toThrow("Not a file: out");
+  });
+});

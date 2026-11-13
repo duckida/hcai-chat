@@ -7,6 +7,7 @@ const initialState = {
   streamingError: null,
   streamingSandboxTools: [],
   streamingToolChips: [],
+  streamingFiles: [],
   streamingConversationId: null,
   contextUsage: 0,
 };
@@ -134,6 +135,19 @@ export function updateSandboxTools(updater) {
 }
 
 /**
+ * Files the model has handed to the user with `display_file_to_user` during
+ * the live turn. The same list is committed on the message when the turn ends;
+ * a file shown twice (the model repeating itself) is one card.
+ */
+export function appendTurnFile(file) {
+  turnStore.setState((state) =>
+    state.streamingFiles.some((f) => f.path === file.path)
+      ? state
+      : { streamingFiles: [...state.streamingFiles, file] },
+  );
+}
+
+/**
  * Tool calls that belong in the thinking block, as chips pinned to the offset
  * they arrived at in the reasoning. Like the sandbox tools these write the
  * store directly rather than riding a frame: a turn makes a handful of tool
@@ -229,6 +243,7 @@ function parseChipLabel(args) {
     if (parsed && typeof parsed === "object") {
       if (typeof parsed.expression === "string") return parsed.expression;
       if (typeof parsed.query === "string") return parsed.query;
+      if (typeof parsed.path === "string") return parsed.path;
     }
   } catch {}
   return undefined;

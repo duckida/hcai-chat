@@ -98,6 +98,25 @@ export const TOOLS = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "display_file_to_user",
+      description:
+        "Show a file from the sandbox to the user as a download card they can click to save. Use this once a file you created or edited in /workspace is ready for them (a report, a CSV, an image, an archive). Only the files you pass here are shown — nothing else in the sandbox is listed to the user, so call it for each deliverable. Do not use it for scratch or intermediate files.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description:
+              "Path of the file, relative to /workspace (e.g. 'report.pdf' or 'out/data.csv') or absolute inside /workspace.",
+          },
+        },
+        required: ["path"],
+      },
+    },
+  },
 ];
 
 function tokenizeExpression(expression) {
@@ -477,7 +496,7 @@ export function getTools(options = {}) {
       return false;
     }
 
-    if (!includeAgentTools && SANDBOX_TOOL_NAMES.includes(tool.function.name)) {
+    if (!includeAgentTools && AGENT_TOOL_NAMES.includes(tool.function.name)) {
       return false;
     }
 
@@ -485,4 +504,11 @@ export function getTools(options = {}) {
   });
 }
 
+// Tools that run commands in the sandbox and belong to the terminal transcript.
 export const SANDBOX_TOOL_NAMES = ["execute_code", "run_command"];
+
+// Shows one file as a download card in the thread; deliberately not a
+// SANDBOX_TOOL_NAMES member, because it runs no command and has no terminal row.
+export const DISPLAY_FILE_TOOL_NAME = "display_file_to_user";
+
+export const AGENT_TOOL_NAMES = [...SANDBOX_TOOL_NAMES, DISPLAY_FILE_TOOL_NAME];

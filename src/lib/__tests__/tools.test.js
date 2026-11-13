@@ -312,6 +312,14 @@ describe("getTools", () => {
     expect(names).toContain("javascript_calculator");
     expect(names).not.toContain("execute_code");
     expect(names).not.toContain("run_command");
+    expect(names).not.toContain("display_file_to_user");
+  });
+
+  it("includes display_file_to_user with the agent tools", () => {
+    const names = getTools({ includeAgentTools: true }).map(
+      (t) => t.function.name,
+    );
+    expect(names).toContain("display_file_to_user");
   });
 
   it("returns all tools when includeAgentTools is true", () => {

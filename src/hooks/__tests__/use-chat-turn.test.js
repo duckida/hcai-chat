@@ -1205,6 +1205,178 @@ describe("useChatTurn", () => {
     expect(conv.sandboxId).toBe("sbx-1");
   });
 
+  describe("agent mode attachments and displayed files", () => {
+    const attach = (name, text) => ({
+      id: name,
+      name,
+      type: "text/csv",
+      size: text.length,
+      text,
+      rawFile: new File([text], name, { type: "text/csv" }),
+    });
+
+    // One fetch for everything the send touches: bucky, the sandbox upload,
+    // and the chat rounds.
+    const uploadFetch = (sandboxUpload) =>
+      vi.fn().mockImplementation(async (url, init) => {
+        if (url === "/api/upload") return new Response("https://bucky/x");
+        if (url === "/api/sandbox") return sandboxUpload(init);
+        if (url === "/api/chat")
+          return makeStreamResponse([delta("ok"), "data: [DONE]\n\n"]);
+        throw new Error(`unexpected fetch: ${url}`);
+      });
+
+    it("copies attachments into the sandbox and tells the model where they are", async () => {
+      const fetchMock = uploadFetch(async () =>
+        Response.json({
+          sandboxId: "sbx-9",
+          files: [
+            { name: "data.csv", path: "/workspace/uploads/data.csv", size: 3 },
+          ],
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: true });
+
+      await act(async () => {
+        await result.result.current.stream.send("look", [
+          attach("data.csv", "a,b"),
+        ]);
+      });
+
+      const upload = fetchMock.mock.calls.find(
+        ([url, init]) => url === "/api/sandbox" && init.body instanceof FormData,
+      );
+      expect(upload).toBeDefined();
+      const form = upload[1].body;
+      expect(form.get("e2bApiKey")).toBe("e2b-test-key");
+      expect(form.getAll("files").map((f) => f.name)).toEqual(["data.csv"]);
+
+      const chatBody = JSON.parse(
+        fetchMock.mock.calls.find(([url]) => url === "/api/chat")[1].body,
+      );
+      const userParts = chatBody.messages.at(-1).content;
+      expect(JSON.stringify(userParts)).toContain(
+        "[Uploaded to the sandbox: /workspace/uploads/data.csv]",
+      );
+      const conv = result.result.current.conversations.conversations.find(
+        (c) => c.id === result.result.current.conversations.activeConversation,
+      );
+      expect(conv.sandboxId).toBe("sbx-9");
+    });
+
+    it("does not touch the sandbox when Agent Mode is off", async () => {
+      const fetchMock = uploadFetch(async () => {
+        throw new Error("sandbox must not be called");
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: false });
+
+      await act(async () => {
+        await result.result.current.stream.send("look", [
+          attach("data.csv", "a,b"),
+        ]);
+      });
+
+      expect(
+        fetchMock.mock.calls.some(([url]) => url === "/api/sandbox"),
+      ).toBe(false);
+    });
+
+    it("still sends the message when the sandbox upload fails", async () => {
+      const fetchMock = uploadFetch(async () =>
+        Response.json({ error: "no sandbox" }, { status: 500 }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: true });
+
+      await act(async () => {
+        await result.result.current.stream.send("look", [
+          attach("data.csv", "a,b"),
+        ]);
+      });
+
+      expect(finalAssistantOf(result).content).toBe("ok");
+      const chatBody = JSON.parse(
+        fetchMock.mock.calls.find(([url]) => url === "/api/chat")[1].body,
+      );
+      expect(JSON.stringify(chatBody.messages.at(-1))).not.toContain(
+        "Uploaded to the sandbox",
+      );
+    });
+
+    it("display_file_to_user shows only the named file, committed on the message", async () => {
+      const fetchMock = mockLoopFetch({
+        chatRounds: [
+          [
+            toolCall(0, "call_1", "display_file_to_user", '{"path":"out/r.csv"}'),
+            "data: [DONE]\n\n",
+          ],
+          [delta("Here it is."), usageFrame(60, 9), "data: [DONE]\n\n"],
+        ],
+        sandboxResponse: Response.json({
+          name: "r.csv",
+          path: "out/r.csv",
+          size: 42,
+          sandboxId: "sbx-1",
+          action: "file_info",
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: true });
+
+      await act(async () => {
+        await result.result.current.stream.send("make a csv", []);
+      });
+
+      expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+        action: "file_info",
+        file: "out/r.csv",
+        e2bApiKey: "e2b-test-key",
+      });
+      const finalMessage = finalAssistantOf(result);
+      expect(finalMessage.displayedFiles).toEqual([
+        expect.objectContaining({
+          name: "r.csv",
+          path: "out/r.csv",
+          size: 42,
+          sandboxId: "sbx-1",
+        }),
+      ]);
+      // Not a terminal row: it ran no command.
+      expect(finalMessage.sandboxResults).toBeUndefined();
+      expect(result.result.current.stream.streamingSandboxTools).toEqual([]);
+    });
+
+    it("tells the model when the file does not exist and shows nothing", async () => {
+      const fetchMock = mockLoopFetch({
+        chatRounds: [
+          [
+            toolCall(0, "call_1", "display_file_to_user", '{"path":"nope.txt"}'),
+            "data: [DONE]\n\n",
+          ],
+          [delta("Sorry."), "data: [DONE]\n\n"],
+        ],
+        sandboxResponse: Response.json(
+          { error: "File not found: nope.txt" },
+          { status: 500 },
+        ),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await setup({ agentModeEnabled: true });
+
+      await act(async () => {
+        await result.result.current.stream.send("show it", []);
+      });
+
+      const secondRound = JSON.parse(fetchMock.mock.calls[2][1].body);
+      expect(secondRound.messages[2].content).toBe(
+        "Error: File not found: nope.txt",
+      );
+      expect(finalAssistantOf(result).displayedFiles).toBeUndefined();
+    });
+  });
+
   it("sums usage across rounds into the final message", async () => {
     const fetchMock = mockLoopFetch({
       chatRounds: [

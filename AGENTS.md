@@ -193,6 +193,19 @@ silently the way it did before. Mechanics to know before touching it:
   receive a `usage` frame), a client-side cut does not abort server-side
   generation, and `finish_reason` is never forwarded.
 
+### Sandbox files: uploads in, `display_file_to_user` out
+In Agent Mode `send()` uploads each attachment's **original** `rawFile` (not the
+downscaled composer preview) to `/api/sandbox` as multipart, alongside the bucky
+upload. They land in `/workspace/uploads`, names sanitised and de-duplicated
+server-side, so the real path is only known from the response — `send()` appends
+an `[Uploaded to the sandbox: …]` text part so the model can find them. A failed
+sandbox copy toasts and the message still sends.
+`display_file_to_user` is an agent tool but **not** in `SANDBOX_TOOL_NAMES`: it
+runs no command, so it has no terminal row. It calls `file_info`, and only a
+file that exists becomes a download card (`displayedFiles` on the message,
+`streamingFiles` in the turn store). Nothing lists the whole sandbox to the user
+any more — the old "Generated Files" strip (`SandboxFiles`) is gone on purpose.
+
 ### Storage and schema are contracts
 `contracts.test.js` pins the eighteen `localStorage` storage keys, the
 IndexedDB database name / store / `keyPath`, and the rule that the E2B key never

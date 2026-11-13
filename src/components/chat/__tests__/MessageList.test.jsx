@@ -8,8 +8,8 @@ import { resetTurn, turnStore } from "@/stores/turn";
 
 const generateInlineView = vi.fn(async () => "<div id='built'>built view</div>");
 vi.mock("@/lib/api-client", () => ({
-  // SandboxFiles also imports from this module; stub what it destructures so
-  // the mock does not take unrelated rows down with it.
+  // The download cards import this module; stub what they destructure so the
+  // mock does not take unrelated rows down with it.
   getStoredE2bApiKey: () => null,
   generateInlineView: (...args) => generateInlineView(...args),
 }));

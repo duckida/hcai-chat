@@ -344,4 +344,80 @@ export async function readFile(conversationId, relativePath, options = {}) {
   return Buffer.from(data);
 }
 
+const UPLOAD_DIR = `${WORKSPACE}/uploads`;
+
+function safeUploadName(name) {
+  const base = path.posix.basename(String(name ?? "").replace(/\\/g, "/"));
+  const cleaned = base
+    .replace(/[^a-zA-Z0-9._ -]/g, "_")
+    .trim()
+    .slice(0, 200);
+  return cleaned && cleaned !== "." && cleaned !== ".." ? cleaned : "file";
+}
+
+async function uniqueUploadPath(client, name) {
+  const ext = path.posix.extname(name);
+  const stem = ext ? name.slice(0, -ext.length) : name;
+  for (let n = 0; n < 1000; n += 1) {
+    const candidate = `${UPLOAD_DIR}/${n === 0 ? name : `${stem} (${n})${ext}`}`;
+    if (!(await client.files.exists(candidate))) return candidate;
+  }
+  return `${UPLOAD_DIR}/${crypto.randomUUID()}-${name}`;
+}
+
+/**
+ * Copy user attachments into the conversation's sandbox, under
+ * /workspace/uploads. A name that is already taken gets a numeric suffix
+ * rather than overwriting an earlier upload. One file failing does not take
+ * the others down — each entry reports its own outcome.
+ */
+export async function uploadFiles(conversationId, files, options = {}) {
+  const client = await getSandboxClient(conversationId, options);
+  const { sandboxId } = sandboxes.get(conversationId) ?? {};
+  const results = [];
+  for (const file of files) {
+    try {
+      const target = await uniqueUploadPath(client, safeUploadName(file.name));
+      await client.files.write(target, file.data);
+      results.push({
+        name: file.name,
+        path: target,
+        size: file.data.byteLength,
+      });
+    } catch (err) {
+      results.push({ name: file.name, error: err.message });
+    }
+  }
+  return { files: results, sandboxId };
+}
+
+/**
+ * Confirm a path names a regular file in the workspace and describe it. This
+ * is what `display_file_to_user` runs: the model is told about a missing file
+ * immediately instead of the user finding a dead download card later.
+ */
+export async function statFile(conversationId, relativePath, options = {}) {
+  const client = await getSandboxClient(conversationId, options);
+  const absolutePath = resolveWorkspacePath(relativePath);
+  let info;
+  try {
+    info = await client.files.getInfo(absolutePath);
+  } catch (err) {
+    if (err?.name === "FileNotFoundError" || /not found/i.test(err?.message)) {
+      throw new Error(`File not found: ${relativePath}`);
+    }
+    throw err;
+  }
+  if (info.type !== "file") {
+    throw new Error(`Not a file: ${relativePath}`);
+  }
+  const { sandboxId } = sandboxes.get(conversationId) ?? {};
+  return {
+    name: path.posix.basename(absolutePath),
+    path: absolutePath.slice(WORKSPACE.length + 1),
+    size: info.size,
+    sandboxId,
+  };
+}
+
 export { WORKSPACE };

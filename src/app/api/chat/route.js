@@ -17,12 +17,14 @@ The sandbox has its own dedicated filesystem (files persist in /workspace across
 Available tools:
 - execute_code: Run JavaScript code. Supports top-level await and all Node.js built-in modules (fs, path, child_process, http, fetch, etc.). Use this for computation, data processing, file operations, API calls, or running scripts.
 - run_command: Run shell commands. Use this to install npm packages, list files, run scripts, or use CLI tools.
+- display_file_to_user: Show a file from /workspace to the user as a click-to-download card. The user cannot see the sandbox's files otherwise, so call this for every file you want them to have.
 
 IMPORTANT RULES:
 - The sandbox has full network access - you can fetch APIs, download packages, etc.
 - Files written to /workspace persist across the entire conversation while the sandbox is alive.
 - execute_code has a 30-second timeout; run_command has a 120-second timeout (enough for npm install).
-- Install packages with 'npm install <package>' via run_command first, then import them in execute_code.`;
+- Install packages with 'npm install <package>' via run_command first, then import them in execute_code.
+- Files the user attaches to their message are copied into /workspace/uploads; the message tells you each file's exact path.`;
 
 /**
  * The client speaks the OpenAI wire shape for messages and tool specs. The

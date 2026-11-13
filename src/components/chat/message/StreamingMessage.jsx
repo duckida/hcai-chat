@@ -4,6 +4,7 @@ import { memo } from "react";
 import { isThinkingOn } from "@/lib/thinking";
 import { useSettings } from "@/stores/settings";
 import ThinkingIndicator from "../ThinkingIndicator";
+import DisplayedFiles from "./DisplayedFiles";
 import InlineView from "./InlineView";
 import Markdown, { MESSAGE_BODY_CLASS } from "./Markdown";
 import { AgentIndicator, WebSearchIndicator } from "./MessageParts";
@@ -38,6 +39,7 @@ const StreamingMessage = memo(function StreamingMessage({
   streamingContent,
   streamingThinking,
   streamingToolChips,
+  streamingFiles,
 }) {
   const {
     thinkingLevel,
@@ -114,6 +116,7 @@ const StreamingMessage = memo(function StreamingMessage({
             )}
           </div>
         )}
+        <DisplayedFiles files={streamingFiles} />
       </MessageRow>
     </div>
   );

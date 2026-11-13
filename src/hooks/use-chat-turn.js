@@ -9,8 +9,13 @@ import {
   streamChatCompletion,
 } from "@/lib/api-client";
 import { dataUrlToBlob, uploadFileToBucky } from "@/lib/bucky";
+import { uploadFilesToSandbox } from "@/lib/sandbox-upload";
 import { resolveThinkingLevel } from "@/lib/thinking";
-import { getTools, SANDBOX_TOOL_NAMES } from "@/lib/tools";
+import {
+  DISPLAY_FILE_TOOL_NAME,
+  getTools,
+  SANDBOX_TOOL_NAMES,
+} from "@/lib/tools";
 import {
   activeConversationRef,
   conversationsActions,
@@ -21,6 +26,7 @@ import {
   appendTurnChip,
   appendTurnChipArgs,
   appendTurnDelta,
+  appendTurnFile,
   beginTurn,
   clearTurnDeltas,
   fillLastSearchChip,
@@ -90,6 +96,28 @@ async function executeClientTool(
   }
 
   try {
+    if (call.name === DISPLAY_FILE_TOOL_NAME) {
+      if (!input.path || typeof input.path !== "string") {
+        return { error: "path is required" };
+      }
+      const res = await fetch("/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "file_info",
+          conversationId,
+          e2bApiKey,
+          sandboxId,
+          file: input.path,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        return { error: data.error || `File lookup failed (${res.status})` };
+      }
+      return { kind: "file", data };
+    }
+
     if (SANDBOX_TOOL_NAMES.includes(call.name)) {
       const action = call.name === "execute_code" ? "execute" : "run_command";
       const res = await fetch("/api/sandbox", {
@@ -218,14 +246,17 @@ export function useChatTurn({
       predictedOutputTokensRef.current = 0;
 
       const e2bApiKey = getStoredE2bApiKey();
-      const sandboxId =
+      let sandboxId =
         conversationsRef.current.find((c) => c.id === currentId)?.sandboxId ||
         null;
 
-      // Upload files to bucky
+      // Upload files to bucky, and — in Agent Mode — into the sandbox too, so
+      // the model can open them with its tools. Both run together; neither
+      // blocks the other.
       let fileUrls = [];
+      let sandboxPaths = [];
       if (files.length > 0) {
-        const results = await Promise.allSettled(
+        const uploadToBucky = Promise.allSettled(
           files.map(async (file) => {
             if (file.type.startsWith("image/") && file.dataUrl) {
               const blob = dataUrlToBlob(file.dataUrl);
@@ -238,9 +269,45 @@ export function useChatTurn({
             return null;
           }),
         );
-        fileUrls = results.map((r) =>
+        const uploadToSandbox = needsAgentMode
+          ? uploadFilesToSandbox({
+              conversationId: currentId,
+              // The original bytes, not the downscaled preview an image
+              // carries for the composer.
+              files: files.map((f) => f.rawFile).filter(Boolean),
+              e2bApiKey,
+              sandboxId,
+            }).catch((error) => ({ error: error.message }))
+          : Promise.resolve(null);
+        const [buckyResults, sandboxUpload] = await Promise.all([
+          uploadToBucky,
+          uploadToSandbox,
+        ]);
+        fileUrls = buckyResults.map((r) =>
           r.status === "fulfilled" ? r.value : null,
         );
+        if (sandboxUpload?.error) {
+          toast.error(
+            `Could not copy files to the sandbox — ${sandboxUpload.error}`,
+          );
+        } else if (sandboxUpload) {
+          if (sandboxUpload.sandboxId) {
+            sandboxId = sandboxUpload.sandboxId;
+            conversationsActions.patchConversation(currentId, { sandboxId });
+          }
+          // Results come back in the order sent, which skipped files with no
+          // rawFile; walk both lists together to pair them up again.
+          let next = 0;
+          sandboxPaths = files.map((f) =>
+            f.rawFile ? (sandboxUpload.files[next++] ?? null) : null,
+          );
+          const failed = sandboxPaths.filter((r) => r?.error);
+          if (failed.length > 0) {
+            toast.error(
+              `Could not copy ${failed.map((r) => r.name).join(", ")} to the sandbox — ${failed[0].error}`,
+            );
+          }
+        }
       }
 
       let userMessage;
@@ -276,9 +343,20 @@ export function useChatTurn({
               filename: file.name,
               mediaType: file.type,
             });
-          } else {
+          } else if (!sandboxPaths[i]?.path) {
             failedUploads.push(file.name);
           }
+        }
+        // Tell the model where each attachment landed. It is the only way it
+        // can know: the sandbox path is chosen server-side (names are
+        // sanitised and de-duplicated).
+        const placed = sandboxPaths.filter((r) => r?.path);
+        if (placed.length > 0 && contentParts.length > 0) {
+          contentParts.push({
+            type: "text",
+            text: `[Uploaded to the sandbox: ${placed.map((r) => r.path).join(", ")}]`,
+            isFileAttachment: true,
+          });
         }
         if (failedUploads.length > 0) {
           toast.error(
@@ -317,6 +395,7 @@ export function useChatTurn({
       let metrics = null;
       let totalMetrics = null;
       const sandboxResults = [];
+      const displayedFiles = [];
       // Every round's tool calls and results, committed alongside the merged
       // assistant message so the *next* turn's request carries the search and
       // sandbox context the model actually saw this turn. Tool records are
@@ -421,6 +500,7 @@ export function useChatTurn({
             content: partialContent,
             ...(partialThinking ? { thinking: partialThinking } : {}),
             error: { title: "API Error", details: error.message },
+            ...(displayedFiles.length > 0 ? { displayedFiles } : {}),
           };
           commitMessages([errorMessage]);
         };
@@ -487,6 +567,7 @@ export function useChatTurn({
                 }
               : {}),
             ...(sandboxResults.length > 0 ? { sandboxResults } : {}),
+            ...(displayedFiles.length > 0 ? { displayedFiles } : {}),
             // The merged message keeps the turn's tool calls so the tool
             // records committed with it stay a valid pair on the wire — the
             // next turn's request then carries the search/sandbox output the
@@ -832,7 +913,27 @@ export function useChatTurn({
               continue;
             }
 
-            if (result.kind === "sandbox") {
+            if (result.kind === "file") {
+              const file = {
+                name: result.data.name,
+                path: result.data.path,
+                size: result.data.size,
+                sandboxId: result.data.sandboxId || sandboxId,
+                conversationId: currentId,
+              };
+              if (!displayedFiles.some((f) => f.path === file.path)) {
+                displayedFiles.push(file);
+              }
+              appendTurnFile(file);
+              toolMessages.push({
+                role: "tool",
+                content: JSON.stringify({
+                  success: true,
+                  message: `${file.path} is now shown to the user as a download.`,
+                }),
+                tool_call_id: call.id,
+              });
+            } else if (result.kind === "sandbox") {
               onSandboxResult({
                 tool: call.name,
                 code: result.data.code || result.data.command || "",

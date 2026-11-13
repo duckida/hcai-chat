@@ -74,6 +74,7 @@ describe("turn store", () => {
       streamingError: null,
       streamingSandboxTools: [],
       streamingToolChips: [],
+      streamingFiles: [],
       streamingConversationId: null,
       contextUsage: 0,
     });
@@ -92,6 +93,7 @@ describe("turn store", () => {
       streamingError: null,
       streamingSandboxTools: [],
       streamingToolChips: [],
+      streamingFiles: [],
       streamingConversationId: "conv-1",
       contextUsage: 0,
     });

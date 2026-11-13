@@ -1,10 +1,11 @@
 "use client";
 
-import { Calculator, Search, Wrench } from "lucide-react";
+import { Calculator, FileDown, Search, Wrench } from "lucide-react";
 
 const TOOL_META = {
   web_search: { name: "Search", Icon: Search },
   javascript_calculator: { name: "Calculator", Icon: Calculator },
+  display_file_to_user: { name: "Show file", Icon: FileDown },
 };
 
 /**

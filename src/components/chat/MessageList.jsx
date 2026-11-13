@@ -11,7 +11,6 @@ import EmptyState from "./message/EmptyState";
 import ErrorMessage from "./message/ErrorMessage";
 import Message from "./message/Message";
 import MessageRow from "./message/MessageRow";
-import SandboxFiles from "./message/SandboxFiles";
 import StreamingMessage from "./message/StreamingMessage";
 import ThinkingBlock from "./message/ThinkingBlock";
 
@@ -38,6 +37,7 @@ export default function MessageList({ messages, activeConversation = null }) {
     streamingError,
     streamingSandboxTools,
     streamingToolChips,
+    streamingFiles,
     streamingConversationId,
   } = useTurn();
   const { thinkingLevel, showThinking } = useSettings(
@@ -79,6 +79,11 @@ export default function MessageList({ messages, activeConversation = null }) {
     [streamVisible, streamingToolChips],
   );
 
+  const liveFiles = useMemo(
+    () => (isStreaming ? streamingFiles : []),
+    [isStreaming, streamingFiles],
+  );
+
   const { scrollRef, userScrolledAway, handleScroll, scrollToBottom } =
     useThreadScroll({ isStreaming });
 
@@ -88,9 +93,8 @@ export default function MessageList({ messages, activeConversation = null }) {
     !!renderedStreamingThinking ||
     liveSandboxTools.length > 0 ||
     liveToolChips.length > 0 ||
+    liveFiles.length > 0 ||
     !!liveStreamingError;
-
-  const completedTool = liveSandboxTools.find((t) => t.status === "complete");
 
   return (
     <div className="flex-1 h-full relative min-h-0 min-w-0">
@@ -153,11 +157,13 @@ export default function MessageList({ messages, activeConversation = null }) {
               {(renderedStreamingContent ||
                 renderedStreamingThinking ||
                 liveSandboxTools.length > 0 ||
-                liveToolChips.length > 0) && (
+                liveToolChips.length > 0 ||
+                liveFiles.length > 0) && (
                 <StreamingMessage
                   streamingContent={renderedStreamingContent}
                   streamingThinking={renderedStreamingThinking}
                   streamingToolChips={liveToolChips}
+                  streamingFiles={liveFiles}
                 />
               )}
 
@@ -175,18 +181,6 @@ export default function MessageList({ messages, activeConversation = null }) {
                       />
                     </MessageRow>
                   </div>
-                )}
-
-              {completedTool?.conversationId &&
-                !isLoading &&
-                !renderedStreamingContent &&
-                !renderedStreamingThinking && (
-                  <SandboxFiles
-                    key={completedTool.conversationId}
-                    conversationId={completedTool.conversationId}
-                    sandboxId={completedTool.sandboxId}
-                    autoFetch
-                  />
                 )}
             </>
           )}

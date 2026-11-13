@@ -98,5 +98,6 @@ export function hasRenderableContent(message) {
   // hasSendableContent — chips are display-only, and an empty assistant turn
   // must still never be sent to the provider.
   if (message.thinkingChips && message.thinkingChips.length > 0) return true;
+  if (message.displayedFiles && message.displayedFiles.length > 0) return true;
   return false;
 }
