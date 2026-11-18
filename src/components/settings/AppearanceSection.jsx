@@ -14,6 +14,10 @@ import {
   SectionLabel,
   SwitchRow,
 } from "@/components/settings/chrome";
+import {
+  INLINE_VIEW_FORMAT_OPTIONS,
+  INLINE_VIEW_FREQUENCY_OPTIONS,
+} from "@/lib/inline-view-options";
 import { GOOGLE_FONT_FAMILIES, sanitizeGoogleFont } from "@/lib/settings";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +73,59 @@ function DarkModeSelector() {
   );
 }
 
+function SegmentedChoice({
+  name,
+  label,
+  description,
+  options,
+  value,
+  onChange,
+}) {
+  const selected = options.find((option) => option.value === value);
+  return (
+    <div className="space-y-2">
+      <SectionLabel id={`${name}-label`} description={description}>
+        {label}
+      </SectionLabel>
+      <div
+        role="radiogroup"
+        aria-labelledby={`${name}-label`}
+        className="flex items-center gap-1 rounded-xl border border-border bg-muted p-1"
+      >
+        {options.map((option) => {
+          const active = value === option.value;
+          return (
+            <label
+              key={option.value}
+              className={cn(
+                "flex h-9 flex-1 cursor-pointer select-none items-center justify-center rounded-lg px-2 text-[12px] font-semibold transition-all",
+                active
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={option.value}
+                checked={active}
+                onChange={() => onChange?.(option.value)}
+                className="sr-only"
+              />
+              <span>{option.label}</span>
+            </label>
+          );
+        })}
+      </div>
+      {selected?.description && (
+        <p className="pl-1 text-xs leading-relaxed text-muted-foreground">
+          {selected.description}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AppearanceSection({
   theme: paletteTheme,
   onThemeChange,
@@ -80,8 +137,10 @@ export default function AppearanceSection({
   onShowThinkingChange,
   showMetrics,
   onShowMetricsChange,
-  inlineViewsEnabled = true,
-  onInlineViewsEnabledChange,
+  inlineViewFrequency = "sometimes",
+  onInlineViewFrequencyChange,
+  inlineViewFormat = "json-render",
+  onInlineViewFormatChange,
   animationsEnabled = true,
   onAnimationsEnabledChange,
 }) {
@@ -220,13 +279,26 @@ export default function AppearanceSection({
           onChange={onShowMetricsChange}
         />
 
-        <SwitchRow
-          id="inline-views-enabled"
-          label="Inline Views"
-          description="Render interactive HTML — charts, graphs, simulations — inside replies."
-          checked={inlineViewsEnabled}
-          onChange={onInlineViewsEnabledChange}
-        />
+        <div className="space-y-4 rounded-2xl border border-border bg-muted/30 p-4">
+          <SegmentedChoice
+            name="inline-view-frequency"
+            label="Inline Views"
+            description="How often a reply may include an interactive chart, graph, or simulation."
+            options={INLINE_VIEW_FREQUENCY_OPTIONS}
+            value={inlineViewFrequency}
+            onChange={onInlineViewFrequencyChange}
+          />
+          {inlineViewFrequency !== "off" && (
+            <SegmentedChoice
+              name="inline-view-format"
+              label="View Output"
+              description="What the chat model writes for each view."
+              options={INLINE_VIEW_FORMAT_OPTIONS}
+              value={inlineViewFormat}
+              onChange={onInlineViewFormatChange}
+            />
+          )}
+        </div>
 
         <SwitchRow
           id="animations-enabled"

@@ -182,7 +182,8 @@ describe("streamChatCompletion", () => {
     expect(body.messages).toEqual(messages);
     expect(body.apiKey).toBe("key");
     expect(body.artifacts).toBe(false);
-    expect(body.inlineViews).toBe(false);
+    expect(body.inlineViewFrequency).toBe("sometimes");
+    expect(body.inlineViewFormat).toBe("json-render");
     expect(body.thinkingLevel).toBe("medium");
   });
 

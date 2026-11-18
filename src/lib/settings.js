@@ -10,6 +10,12 @@
  * inside a mount effect, never during render.
  */
 
+import {
+  DEFAULT_INLINE_VIEW_FORMAT,
+  DEFAULT_INLINE_VIEW_FREQUENCY,
+  normalizeInlineViewFormat,
+  normalizeInlineViewFrequency,
+} from "@/lib/inline-view-options";
 import { DEFAULT_THINKING_LEVEL, isThinkingLevel } from "@/lib/thinking";
 
 const JSON_PARSE = (value) => JSON.parse(value);
@@ -125,10 +131,16 @@ export const SETTINGS = [
     parse: JSON_PARSE,
   },
   {
-    key: "inlineViewsEnabled",
+    key: "inlineViewFrequency",
     storageKey: "inline_views_enabled",
-    default: true,
-    parse: JSON_PARSE,
+    default: DEFAULT_INLINE_VIEW_FREQUENCY,
+    parse: normalizeInlineViewFrequency,
+  },
+  {
+    key: "inlineViewFormat",
+    storageKey: "inline_view_format",
+    default: DEFAULT_INLINE_VIEW_FORMAT,
+    parse: normalizeInlineViewFormat,
   },
   {
     key: "webSearchEnabled",

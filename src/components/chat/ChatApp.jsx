@@ -55,7 +55,8 @@ export default function ChatApp({
     thinkingLevel: settings.thinkingLevel,
     modelReasoning,
     artifactsEnabled: settings.artifactsEnabled,
-    inlineViewsEnabled: settings.inlineViewsEnabled,
+    inlineViewFrequency: settings.inlineViewFrequency,
+    inlineViewFormat: settings.inlineViewFormat,
     webSearchEnabled: settings.webSearchEnabled,
     agentModeEnabled: settings.agentModeEnabled,
     maxTokens: settings.maxTokens,
@@ -534,8 +535,12 @@ export default function ChatApp({
         onShowThinkingChange={(v) => setSetting("showThinking", v)}
         showMetrics={settings.showMetrics}
         onShowMetricsChange={(v) => setSetting("showMetrics", v)}
-        inlineViewsEnabled={settings.inlineViewsEnabled}
-        onInlineViewsEnabledChange={(v) => setSetting("inlineViewsEnabled", v)}
+        inlineViewFrequency={settings.inlineViewFrequency}
+        onInlineViewFrequencyChange={(v) =>
+          setSetting("inlineViewFrequency", v)
+        }
+        inlineViewFormat={settings.inlineViewFormat}
+        onInlineViewFormatChange={(v) => setSetting("inlineViewFormat", v)}
         animationsEnabled={settings.animationsEnabled}
         onAnimationsEnabledChange={(v) => setSetting("animationsEnabled", v)}
         maxTokens={settings.maxTokens}

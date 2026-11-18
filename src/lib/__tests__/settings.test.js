@@ -27,7 +27,8 @@ describe("settings registry", () => {
       "inlineViewModel",
       "thinkingLevel",
       "artifactsEnabled",
-      "inlineViewsEnabled",
+      "inlineViewFrequency",
+      "inlineViewFormat",
       "webSearchEnabled",
       "agentModeEnabled",
       "showThinking",
@@ -50,7 +51,8 @@ describe("settings registry", () => {
     expect(getDefaultSetting("inlineViewModel")).toBe("openai/gpt-6-luna");
     expect(getDefaultSetting("thinkingLevel")).toBe("medium");
     expect(getDefaultSetting("artifactsEnabled")).toBe(false);
-    expect(getDefaultSetting("inlineViewsEnabled")).toBe(true);
+    expect(getDefaultSetting("inlineViewFrequency")).toBe("sometimes");
+    expect(getDefaultSetting("inlineViewFormat")).toBe("json-render");
     expect(getDefaultSetting("webSearchEnabled")).toBe(false);
     expect(getDefaultSetting("agentModeEnabled")).toBe(false);
     expect(getDefaultSetting("showThinking")).toBe(false);
@@ -155,4 +157,27 @@ describe("settings registry", () => {
     expect(readSetting("thinkingLevel")).toBe("medium");
   });
 
+  it("keeps an old inline views opt-out when upgrading to frequencies", () => {
+    // The boolean used to live under this exact key. Someone who turned views
+    // off must stay off, not be opted back in by the new default.
+    localStorage.setItem("inline_views_enabled", "false");
+    expect(readSetting("inlineViewFrequency")).toBe("off");
+
+    localStorage.setItem("inline_views_enabled", "true");
+    expect(readSetting("inlineViewFrequency")).toBe("sometimes");
+  });
+
+  it("normalizes an unknown inline view frequency", () => {
+    localStorage.setItem("inline_views_enabled", "wall-to-wall");
+    expect(readSetting("inlineViewFrequency")).toBe("sometimes");
+  });
+
+  it("round-trips the inline view format and defaults unknown values", () => {
+    writeSetting("inlineViewFormat", "html");
+    expect(localStorage.getItem("inline_view_format")).toBe("html");
+    expect(readSetting("inlineViewFormat")).toBe("html");
+
+    localStorage.setItem("inline_view_format", "teapot");
+    expect(readSetting("inlineViewFormat")).toBe("json-render");
+  });
 });

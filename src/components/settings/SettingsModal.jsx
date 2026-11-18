@@ -42,8 +42,10 @@ export default function SettingsModal({
   onShowThinkingChange,
   showMetrics = true,
   onShowMetricsChange,
-  inlineViewsEnabled = true,
-  onInlineViewsEnabledChange,
+  inlineViewFrequency = "sometimes",
+  onInlineViewFrequencyChange,
+  inlineViewFormat = "json-render",
+  onInlineViewFormatChange,
   animationsEnabled = true,
   onAnimationsEnabledChange,
   maxTokens = 32000,
@@ -152,8 +154,10 @@ export default function SettingsModal({
                 onShowThinkingChange={onShowThinkingChange}
                 showMetrics={showMetrics}
                 onShowMetricsChange={onShowMetricsChange}
-                inlineViewsEnabled={inlineViewsEnabled}
-                onInlineViewsEnabledChange={onInlineViewsEnabledChange}
+                inlineViewFrequency={inlineViewFrequency}
+                onInlineViewFrequencyChange={onInlineViewFrequencyChange}
+                inlineViewFormat={inlineViewFormat}
+                onInlineViewFormatChange={onInlineViewFormatChange}
                 animationsEnabled={animationsEnabled}
                 onAnimationsEnabledChange={onAnimationsEnabledChange}
               />

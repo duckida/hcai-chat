@@ -25,6 +25,7 @@ describe("persistence contracts", () => {
       "thinking_level",
       "artifacts_enabled",
       "inline_views_enabled",
+      "inline_view_format",
       "web_search_enabled",
       "agent_mode_enabled",
       "show_thinking",

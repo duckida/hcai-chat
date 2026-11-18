@@ -223,19 +223,35 @@ describe("SettingsModal", () => {
     expect(onShowMetricsChange).toHaveBeenCalledWith(true);
   });
 
-  it("toggles the inline views switch", async () => {
+  it("changes the inline view frequency", async () => {
     const user = userEvent.setup();
-    const onInlineViewsEnabledChange = vi.fn();
+    const onInlineViewFrequencyChange = vi.fn();
     renderModal({
-      inlineViewsEnabled: true,
-      onInlineViewsEnabledChange,
+      inlineViewFrequency: "sometimes",
+      onInlineViewFrequencyChange,
     });
     await goToSection(user, "Appearance");
-    await screen.findByText(/^inline views$/i);
-    const label = screen.getByText(/^inline views$/i);
-    const outerRow = label.parentElement.parentElement;
-    fireEvent.click(outerRow.querySelector("button"));
-    expect(onInlineViewsEnabledChange).toHaveBeenCalledWith(false);
+    const group = await screen.findByRole("radiogroup", {
+      name: /inline views/i,
+    });
+    fireEvent.click(within(group).getByRole("radio", { name: /^often$/i }));
+    expect(onInlineViewFrequencyChange).toHaveBeenCalledWith("often");
+  });
+
+  it("changes the inline view output format", async () => {
+    const user = userEvent.setup();
+    const onInlineViewFormatChange = vi.fn();
+    renderModal({
+      inlineViewFrequency: "sometimes",
+      inlineViewFormat: "json-render",
+      onInlineViewFormatChange,
+    });
+    await goToSection(user, "Appearance");
+    const group = await screen.findByRole("radiogroup", {
+      name: /view output/i,
+    });
+    fireEvent.click(within(group).getByRole("radio", { name: /^html$/i }));
+    expect(onInlineViewFormatChange).toHaveBeenCalledWith("html");
   });
 
   it("renders a dark mode selector with three options", async () => {

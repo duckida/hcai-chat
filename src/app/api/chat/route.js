@@ -3,7 +3,8 @@ import {
   ARTIFACT_AGENT_MODE_INSTRUCTIONS,
   ARTIFACT_INSTRUCTIONS,
 } from "@/lib/artifacts";
-import { INLINE_VIEW_INSTRUCTIONS } from "@/lib/inline-views";
+import { normalizeInlineViewFormat } from "@/lib/inline-view-options";
+import { buildInlineViewInstructions } from "@/lib/inline-views";
 import { getMessageText, sanitizeMessages } from "@/lib/messages";
 import { calcApiCost, getModelPricingMap } from "@/lib/model-pricing";
 import { isValidOpenRouterProviderSlug } from "@/lib/openrouter-provider";
@@ -171,6 +172,8 @@ export async function POST(req) {
       apiKey,
       artifacts,
       inlineViews,
+      inlineViewFrequency,
+      inlineViewFormat,
       tools: clientTools,
       stream,
       thinkingLevel,
@@ -217,11 +220,19 @@ export async function POST(req) {
       systemPrompt += `\n\n${ARTIFACT_INSTRUCTIONS}`;
     }
 
-    if (inlineViews) {
+    const inlineViewInstructions = buildInlineViewInstructions(
+      // A request that says nothing about inline views is not a chat request
+      // that opted in — title generation and other internal calls must not get
+      // the prompt. `inlineViews` is the pre-frequency boolean; normalizing
+      // accepts it so a cached client build keeps working.
+      inlineViewFrequency ?? inlineViews ?? "off",
+      normalizeInlineViewFormat(inlineViewFormat),
+    );
+    if (inlineViewInstructions) {
       // Appended after the artifact rules on purpose: when both are on, the
       // later, more specific instruction decides that a small chart belongs
       // inline and a full standalone page belongs in an artifact.
-      systemPrompt += `\n\n${INLINE_VIEW_INSTRUCTIONS}`;
+      systemPrompt += `\n\n${inlineViewInstructions}`;
     }
 
     if (agentMode) {

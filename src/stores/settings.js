@@ -1,6 +1,10 @@
 "use client";
 
 import {
+  normalizeInlineViewFormat,
+  normalizeInlineViewFrequency,
+} from "@/lib/inline-view-options";
+import {
   getDefaultSetting,
   readSetting,
   SETTING_KEYS,
@@ -82,6 +86,9 @@ export function hydrateSettings() {
 }
 
 export function setSetting(key, value) {
+  if (key === "inlineViewFrequency")
+    value = normalizeInlineViewFrequency(value);
+  if (key === "inlineViewFormat") value = normalizeInlineViewFormat(value);
   settingsStore.setState({ [key]: value });
   writeSetting(key, value);
   if (

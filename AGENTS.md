@@ -206,8 +206,28 @@ file that exists becomes a download card (`displayedFiles` on the message,
 `streamingFiles` in the turn store). Nothing lists the whole sandbox to the user
 any more — the old "Generated Files" strip (`SandboxFiles`) is gone on purpose.
 
+### Inline views: frequency and three body formats
+`inlineViewFrequency` (`off` / `sometimes` / `often`) decides whether the
+system prompt asks for views at all; it deliberately keeps the legacy
+`inline_views_enabled` storage key so an existing opt-out stays off. The
+format setting (`inline_view_format`) decides what the model writes:
+
+- `description` keeps the builder-model path and the content-addressed HTML
+  cache.
+- `json-render` is a **complete** json-render spec inside the tag, parsed and
+  validated by `inline-view-catalog.js` and rendered by `JsonInlineView.jsx`
+  with a closed catalog. Only `setState` is allowed, state paths are JSON
+  pointers, and the tree is depth/count bounded; an invalid spec renders
+  nothing rather than reaching app state.
+- `html` is the markup itself in the sandboxed iframe.
+
+`resolveInlineViewFormat()` classifies the **body**, not the current setting,
+so old messages and a model that ignores the attribute keep the path their
+content needs. Frequency only changes prompt guidance; turning views off is
+what hides already-rendered views.
+
 ### Storage and schema are contracts
-`contracts.test.js` pins the eighteen `localStorage` storage keys, the
+`contracts.test.js` pins the twenty-two `localStorage` storage keys, the
 IndexedDB database name / store / `keyPath`, and the rule that the E2B key never
 appears in a URL. **None of these fail loudly if broken** — a renamed key reads
 back as a default, a renamed store reads back as an empty history. A deliberate

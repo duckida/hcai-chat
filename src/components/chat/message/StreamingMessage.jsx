@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import { isInlineViewsEnabled } from "@/lib/inline-view-options";
 import { isThinkingOn } from "@/lib/thinking";
 import { useSettings } from "@/stores/settings";
 import ThinkingIndicator from "../ThinkingIndicator";
@@ -17,7 +18,7 @@ const selectDisplaySettings = (state) => ({
   webSearchEnabled: state.webSearchEnabled,
   agentModeEnabled: state.agentModeEnabled,
   artifactsEnabled: state.artifactsEnabled,
-  inlineViewsEnabled: state.inlineViewsEnabled,
+  inlineViewFrequency: state.inlineViewFrequency,
   inlineViewModel: state.inlineViewModel,
   openRouterProviders: state.openRouterProviders,
   showThinking: state.showThinking,
@@ -46,11 +47,12 @@ const StreamingMessage = memo(function StreamingMessage({
     webSearchEnabled,
     agentModeEnabled,
     artifactsEnabled,
-    inlineViewsEnabled,
+    inlineViewFrequency,
     inlineViewModel,
     openRouterProviders,
     showThinking,
   } = useSettings(selectDisplaySettings);
+  const inlineViewsEnabled = isInlineViewsEnabled(inlineViewFrequency);
   // A level of "off" is the old toggle's off; any other level renders
   // reasoning exactly as it did before levels existed.
   const thinkingOn = isThinkingOn(thinkingLevel);
@@ -86,6 +88,7 @@ const StreamingMessage = memo(function StreamingMessage({
                   key={part.key}
                   prompt={part.prompt}
                   title={part.title}
+                  format={part.format}
                   model={inlineViewModel}
                   providerSlug={openRouterProviders?.[inlineViewModel] || null}
                 />

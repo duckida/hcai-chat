@@ -1,11 +1,25 @@
+import {
+  INLINE_VIEW_COMPONENT_GUIDE,
+  looksLikeJsonRenderSpec,
+} from "@/lib/inline-view-catalog";
+import {
+  normalizeInlineViewFormat,
+  normalizeInlineViewFrequency,
+} from "@/lib/inline-view-options";
+
 /**
- * Inline views are small, self-contained HTML visuals the model asks for in a
- * reply as `<inline title="…">description</inline>`. The tag holds a *brief*,
- * not the markup: a second, separately chosen model turns that brief into the
- * HTML, so a long document never enters the conversation's context. Unlike
- * artifacts — which are full pages that open in the side panel — an inline view
- * is rendered in place in the message, so the surrounding prose keeps its
- * order.
+ * Inline views are small visuals the model asks for in a reply as
+ * `<inline title="…">…</inline>`. The body is one of three formats:
+ *
+ * - `description`: a brief. A second, separately chosen model turns it into
+ *   HTML, so a long document never enters the conversation's context.
+ * - `json-render`: a complete json-render spec, rendered by a closed catalog of
+ *   React components.
+ * - `html`: the markup itself.
+ *
+ * Unlike artifacts — which are full pages that open in the side panel — an
+ * inline view is rendered in place in the message, so the surrounding prose
+ * keeps its order.
  *
  * This module is imported by the chat route as well as by client components,
  * so it must stay free of React and browser globals. The document builder is a
@@ -23,12 +37,51 @@
 const SEGMENT =
   /(```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)|`[^`\n]*`)|<inline\b([^>]*)>([\s\S]*?)<\/inline\s*>/gi;
 
+function parseAttribute(attributes, name) {
+  const match = new RegExp(
+    `${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+    "i",
+  ).exec(attributes || "");
+  const value = match?.[1] ?? match?.[2] ?? match?.[3] ?? "";
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function parseTitleAttribute(attributes) {
-  const match = /title\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(
-    attributes || "",
+  return parseAttribute(attributes, "title").slice(0, 80);
+}
+
+const FORMAT_ALIASES = {
+  description: "description",
+  brief: "description",
+  "json-render": "json-render",
+  jsonrender: "json-render",
+  json: "json-render",
+  html: "html",
+};
+
+function parseFormatAttribute(attributes) {
+  return (
+    FORMAT_ALIASES[parseAttribute(attributes, "format").toLowerCase()] || null
   );
-  const title = match?.[1] ?? match?.[2] ?? match?.[3] ?? "";
-  return title.replace(/\s+/g, " ").trim().slice(0, 80);
+}
+
+/**
+ * Decide how a completed view body is rendered.
+ *
+ * The `format` attribute is the model's statement of intent, but the body wins
+ * over a stale or missing one: JSON must never be sent to the description
+ * builder as prose, and markup must never be parsed as a spec. This is also
+ * what keeps old conversations — written before the format attribute existed —
+ * rendering on the path their body actually needs.
+ */
+export function resolveInlineViewFormat(body, explicitFormat) {
+  const format = FORMAT_ALIASES[explicitFormat] || explicitFormat || null;
+  const looksJson = looksLikeJsonRenderSpec(body);
+  if (format === "html") return "html";
+  if (format === "json-render") return "json-render";
+  if (looksJson) return "json-render";
+  if (isInlineViewMarkup(body)) return "html";
+  return "description";
 }
 
 export function getInlineViewTitle(html, fallback = "Inline view") {
@@ -97,7 +150,7 @@ function findUnclosedOpen(tail) {
  * appear and disappear as the tag streams. Text before the opening tag is
  * still returned, so an answer keeps streaming normally around it.
  *
- * @returns {{ parts: Array<{type: "text", text: string} | {type: "inline", prompt: string, title: string}>, streamingView: {prompt: string, title: string} | null }}
+ * @returns {{ parts: Array<{type: "text", text: string} | {type: "inline", prompt: string, title: string, format: string}>, streamingView: {prompt: string, title: string, format: string} | null }}
  */
 export function extractInlineViews(text) {
   if (!text) return { parts: [], streamingView: null };
@@ -118,6 +171,7 @@ export function extractInlineViews(text) {
         // An explicit `title` is the label the model chose for the card; the
         // builder's own `<title>` is only a fallback.
         title: parseTitleAttribute(match[2]) || getInlineViewTitle(prompt),
+        format: resolveInlineViewFormat(prompt, parseFormatAttribute(match[2])),
       });
       // Only a consumed view moves the cursor. A code span is skipped by the
       // matcher but stays part of the text, so it has to be included in the
@@ -140,6 +194,10 @@ export function extractInlineViews(text) {
             title:
               parseTitleAttribute(open.attributes) ||
               getInlineViewTitle(prompt),
+            format: resolveInlineViewFormat(
+              prompt,
+              parseFormatAttribute(open.attributes),
+            ),
           }
         : null,
     };
@@ -345,30 +403,106 @@ ${script}
 }
 
 /**
- * System-level instructions appended when inline views are enabled. They teach
- * the *brief*, not the markup: a separate builder model writes the HTML from
- * it, so the chat model only spends a sentence on the visual and the document
- * never enters this conversation's context.
+ * How much the model should reach for a view. Frequency changes guidance only;
+ * whether a view renders is decided by its own format once it exists.
  */
-export const INLINE_VIEW_INSTRUCTIONS = `
-## Inline Views
+function frequencyRule(frequency) {
+  if (frequency === "often") {
+    return "Include an inline view whenever the answer contains data, a comparison, a process, or anything that is easier to see than to read. It is normal for a useful answer to have one; never add a view that only repeats a point already made, and never use one as decoration.";
+  }
+  return "Most answers should have no view at all. Add one only when it adds significant value to the answer — when a visual or interactive view genuinely explains the content better than prose. Never as decoration, never to fill space, and never for something a sentence or a short list already says clearly.";
+}
 
-You can have a small visual rendered inline in your reply. You do not write the HTML: a separate builder model turns your description into the view, and the app shows a placeholder until it is ready. Write the description inside an \`<inline title="Short label">\` block:
+const INLINE_VIEW_COMMON_RULES = `
+- Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
+- Put the opening and closing tags on their own lines, one tag per view, with a title of at most four words.
+- Keep the surrounding explanation brief. Do not repeat the view's data in prose.
+- Use \`<inline>\` only for visual or interactive content. Code snippets, plain tables, lists, and ordinary prose belong in normal Markdown.
+- When artifacts are also available, use \`<artifact>\` for a complete standalone page or app and \`<inline>\` for a small visual embedded in the answer.`;
+
+const INLINE_VIEW_DESCRIPTION_BODY = `
+The body is a short brief, not markup. A separate builder model turns the brief into the view, and the app shows a placeholder until it is ready.
 
 <inline title="Sine Wave">
 A canvas plot of a sine wave over one full period, with a frequency slider from 1 to 10 (default 3). Redraw on resize. Label the slider "Frequency" and show its current value beside it.
 </inline>
 
 Rules:
-- Most answers should have no view at all. Add one only when it adds significant value to the answer — when a visual or interactive view genuinely explains the content better than prose. Never as decoration, never to fill space, and never for something a sentence or a short list already says clearly. Do not mention inline views, the \`<inline>\` tag, or that you can render visuals unless the user asks about that capability.
 - The builder sees only what is inside the tag. State the values, labels, ranges and behavior it needs; it cannot see the conversation.
 - Keep the description under about 60 words. Say what the view shows and does, not how to code it.
-- Never put HTML, CSS, JavaScript, or a code fence inside the tag. The builder writes all of that.
-- Put the opening and closing tags on their own lines, one tag per view, with a title of at most four words.
-- Keep the surrounding explanation brief. Do not repeat the view's data in prose.
-- Use \`<inline>\` only for visual or interactive content. Code snippets, tables, lists, and ordinary prose belong in normal Markdown.
-- When artifacts are also available, use \`<artifact>\` for a complete standalone page or app and \`<inline>\` for a small visual embedded in the answer.
-`.trim();
+- Never put HTML, CSS, JavaScript, or a code fence inside the tag. The builder writes all of that.`;
+
+const INLINE_VIEW_JSON_RENDER_BODY = `
+The body is one complete json-render spec. The app renders it with a fixed, safe component catalog, so do not write HTML.
+
+<inline title="Monthly rainfall" format="json-render">
+{"root":"root","elements":{"root":{"type":"Stack","props":{},"children":["heading","chart"]},"heading":{"type":"Heading","props":{"text":"Monthly rainfall"}},"chart":{"type":"BarGraph","props":{"data":[{"label":"Jan","value":12},{"label":"Feb","value":18},{"label":"Mar","value":9}]}}}}
+</inline>
+
+Spec shape:
+{"root":"key","elements":{"key":{"type":"Name","props":{},"children":["child-key"]}},"state":{}}
+
+Components:
+${INLINE_VIEW_COMPONENT_GUIDE.join("\n")}
+
+Rules:
+- \`root\` names the top element. Every key listed in \`children\` must exist in \`elements\`; omit \`children\` on components that take none.
+- \`props\` must match the component signature exactly. Use only the components above.
+- Bind form controls with {"$bindState":"/path"} and change state only with {"action":"setState","params":{"statePath":"/path","value":…}} on the component's event. State paths start with "/". There are no other actions and no network access.
+- \`Text\` accepts {"$template":"… \${/path} …"}, and any element accepts a \`visible\` condition such as {"$state":"/path"}.
+- Keep the view small and focused: one visual, about twelve elements at most. Use real values from the conversation, not placeholders.
+- Do not wrap the JSON in a code fence, HTML, or Markdown, and do not write anything else inside the tag.`;
+
+const INLINE_VIEW_HTML_BODY = `
+The body is the HTML fragment itself.
+
+<inline title="Sine Wave" format="html">
+<div class="hcai-view">
+  <canvas id="wave"></canvas>
+  <input class="hcai-range" type="range" min="1" max="10" value="3">
+</div>
+</inline>
+
+Rules:
+- Output only a self-contained fragment: no markdown fence, no \`<html>\`, \`<head>\` or \`<body>\` wrappers, and no prose inside the tag.
+- All CSS and JavaScript must be inline; no external scripts, stylesheets, fonts, or network requests.
+- Style with the app's CSS variables instead of hard-coded colors: \`var(--foreground)\`, \`var(--muted-foreground)\`, \`var(--border)\`, \`var(--primary)\`, and \`var(--chart-1)\` through \`var(--chart-5)\`.
+- Helper classes are available: \`.hcai-view\` (vertical stack), \`.hcai-row\` (horizontal row), \`.hcai-card\` (an inner panel, never the root), \`.hcai-muted\`, \`.hcai-value\`, \`.hcai-btn\`, \`.hcai-btn-secondary\`, and \`.hcai-range\`.
+- Do not wrap the whole view in a bordered or filled panel; the app already draws the frame around it.
+- Use a responsive \`canvas\` or \`svg\` for plots, redraw on resize, and give controls visible labels and accessible names.
+- Keep the view under about 600px tall, and make it work from 320px to 700px wide.`;
+
+/**
+ * System-level instructions appended when inline views are enabled. The format
+ * block teaches how the body is produced; the frequency block teaches whether
+ * to reach for one at all.
+ */
+export function buildInlineViewInstructions(frequency, format) {
+  const selectedFrequency = normalizeInlineViewFrequency(frequency);
+  const selectedFormat = normalizeInlineViewFormat(format);
+  if (selectedFrequency === "off") return "";
+  const body =
+    selectedFormat === "html"
+      ? INLINE_VIEW_HTML_BODY
+      : selectedFormat === "json-render"
+        ? INLINE_VIEW_JSON_RENDER_BODY
+        : INLINE_VIEW_DESCRIPTION_BODY;
+  return `## Inline Views
+
+You can have a small visual rendered inline in your reply.
+
+${frequencyRule(selectedFrequency)}
+${body}
+
+Rules:
+${INLINE_VIEW_COMMON_RULES}`;
+}
+
+/** The description-mode, sometimes-frequency prompt; the original wording. */
+export const INLINE_VIEW_INSTRUCTIONS = buildInlineViewInstructions(
+  "sometimes",
+  "description",
+);
 
 /**
  * System prompt for the builder model that turns an inline-view brief into

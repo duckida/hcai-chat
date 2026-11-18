@@ -2,6 +2,7 @@ import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import {
   buildInlineViewDocument,
+  buildInlineViewInstructions,
   extractInlineViews,
   getInlineViewTitle,
   INLINE_VIEW_GENERATOR_PROMPT,
@@ -22,7 +23,12 @@ describe("extractInlineViews", () => {
     expect(extractInlineViews(text)).toEqual({
       parts: [
         { type: "text", text: "Before" },
-        { type: "inline", prompt: "A chart of monthly rainfall", title: "Demo" },
+        {
+          type: "inline",
+          prompt: "A chart of monthly rainfall",
+          title: "Demo",
+          format: "description",
+        },
         { type: "text", text: "After" },
       ],
       streamingView: null,
@@ -33,7 +39,11 @@ describe("extractInlineViews", () => {
     const text = 'Intro\n<inline title="Live">A sine wave with a slider';
     expect(extractInlineViews(text)).toEqual({
       parts: [{ type: "text", text: "Intro" }],
-      streamingView: { prompt: "A sine wave with a slider", title: "Live" },
+      streamingView: {
+        prompt: "A sine wave with a slider",
+        title: "Live",
+        format: "description",
+      },
     });
   });
 
@@ -67,6 +77,34 @@ describe("extractInlineViews", () => {
       '<inline title="Explicit"><title>Ignored</title>brief</inline>',
     );
     expect(parts[0].title).toBe("Explicit");
+  });
+
+  it("reads an explicit format attribute", () => {
+    const { parts } = extractInlineViews(
+      '<inline title="Html" format="html">\n<div>hi</div>\n</inline>\n<inline title="Json" format="json-render">{"root":"r","elements":{}}</inline>',
+    );
+    expect(parts[0].format).toBe("html");
+    expect(parts[1].format).toBe("json-render");
+  });
+
+  it("recognizes JSON and markup without a format attribute", () => {
+    // Old conversations have no attribute and must keep rendering on the path
+    // their body actually needs.
+    const { parts } = extractInlineViews(
+      '<inline title="Json">{"root":"r","elements":{}}</inline>\n<inline title="Html"><div>hi</div></inline>\n<inline title="Brief">A chart</inline>',
+    );
+    expect(parts.map((part) => part.format)).toEqual([
+      "json-render",
+      "html",
+      "description",
+    ]);
+  });
+
+  it("marks a still-streaming view with the format it has so far", () => {
+    const { streamingView } = extractInlineViews(
+      '<inline title="Live" format="json-render">{"root":"r",',
+    );
+    expect(streamingView.format).toBe("json-render");
   });
 });
 
@@ -239,6 +277,40 @@ describe("INLINE_VIEW_INSTRUCTIONS", () => {
     expect(INLINE_VIEW_INSTRUCTIONS).toContain(
       "unless the user asks about that capability",
     );
+  });
+});
+
+describe("buildInlineViewInstructions", () => {
+  it("returns nothing when views are off", () => {
+    expect(buildInlineViewInstructions("off", "json-render")).toBe("");
+  });
+
+  it("changes how often a view is suggested without changing the format", () => {
+    const sometimes = buildInlineViewInstructions("sometimes", "description");
+    const often = buildInlineViewInstructions("often", "description");
+    expect(sometimes).toContain("Most answers should have no view");
+    expect(often).toContain("Include an inline view whenever");
+    expect(often).not.toContain("Most answers should have no view");
+  });
+
+  it("teaches the json-render spec and catalog", () => {
+    const instructions = buildInlineViewInstructions(
+      "sometimes",
+      "json-render",
+    );
+    expect(instructions).toContain('format="json-render"');
+    expect(instructions).toContain('"elements"');
+    expect(instructions).toContain("BarGraph");
+    expect(instructions).toContain("setState");
+    expect(instructions).not.toContain("Never put HTML, CSS, JavaScript");
+  });
+
+  it("teaches the HTML body and its theme contract", () => {
+    const instructions = buildInlineViewInstructions("often", "html");
+    expect(instructions).toContain('format="html"');
+    expect(instructions).toContain("var(--primary)");
+    expect(instructions).toContain("no external scripts");
+    expect(instructions).toContain("Include an inline view whenever");
   });
 });
 

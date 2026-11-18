@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MessageList from "../MessageList";
@@ -89,7 +89,7 @@ describe("MessageList", () => {
             'Before\n<inline title="Demo"><div>hello view</div></inline>\nAfter',
         },
       ],
-      settings: { inlineViewsEnabled: true },
+      settings: { inlineViewFrequency: "sometimes" },
     });
 
     // The body is markup, so it renders directly without a builder request.
@@ -103,6 +103,95 @@ describe("MessageList", () => {
     expect(row.textContent).toContain("After");
   });
 
+  it("renders a json-render spec with the safe component catalog", () => {
+    const spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Stack",
+          props: {},
+          children: ["heading", "chart"],
+        },
+        heading: { type: "Heading", props: { text: "Monthly rainfall" } },
+        chart: {
+          type: "BarGraph",
+          props: { data: [{ label: "Jan", value: 12 }] },
+        },
+      },
+    };
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: `<inline title="Rain" format="json-render">${JSON.stringify(spec)}</inline>`,
+        },
+      ],
+      settings: { inlineViewFrequency: "sometimes" },
+    });
+
+    expect(screen.getByText("Monthly rainfall")).toBeInTheDocument();
+    expect(screen.getByText("Jan")).toBeInTheDocument();
+    // A spec is rendered locally, never sent to the description builder.
+    expect(generateInlineView).not.toHaveBeenCalled();
+  });
+
+  it("fails a malformed json-render spec visibly instead of rendering it", () => {
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content:
+            '<inline title="Broken" format="json-render">{"root":"missing","elements":{}}</inline>',
+        },
+      ],
+      settings: { inlineViewFrequency: "sometimes" },
+    });
+
+    expect(screen.getByText(/couldn't render this view/i)).toBeInTheDocument();
+    expect(generateInlineView).not.toHaveBeenCalled();
+  });
+
+  it("runs a view-local setState action without reaching app state", () => {
+    const spec = {
+      root: "root",
+      elements: {
+        root: {
+          type: "Stack",
+          props: {},
+          children: ["label", "button"],
+        },
+        label: {
+          type: "Text",
+          props: { text: { $state: "/label" } },
+        },
+        button: {
+          type: "Button",
+          props: { label: "Change" },
+          on: {
+            press: {
+              action: "setState",
+              params: { statePath: "/label", value: "Clicked" },
+            },
+          },
+        },
+      },
+      state: { label: "Before" },
+    };
+    renderList({
+      messages: [
+        {
+          role: "assistant",
+          content: `<inline title="State" format="json-render">${JSON.stringify(spec)}</inline>`,
+        },
+      ],
+      settings: { inlineViewFrequency: "sometimes" },
+    });
+
+    expect(screen.getByText("Before")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change" }));
+    expect(screen.getByText("Clicked")).toBeInTheDocument();
+  });
+
   it("placeholders a brief and renders the builder model's document", async () => {
     renderList({
       messages: [
@@ -113,7 +202,7 @@ describe("MessageList", () => {
         },
       ],
       settings: {
-        inlineViewsEnabled: true,
+        inlineViewFrequency: "sometimes",
         inlineViewModel: "qwen/qwen3.6-flash",
       },
     });
@@ -144,14 +233,14 @@ describe("MessageList", () => {
 
     const first = renderList({
       messages: [message],
-      settings: { inlineViewsEnabled: true },
+      settings: { inlineViewFrequency: "sometimes" },
     });
     await screen.findByTitle("Demo");
     first.unmount();
 
     renderList({
       messages: [message],
-      settings: { inlineViewsEnabled: true },
+      settings: { inlineViewFrequency: "sometimes" },
     });
     expect(screen.getByTitle("Demo")).toBeInTheDocument();
     expect(generateInlineView).toHaveBeenCalledTimes(1);
@@ -173,7 +262,7 @@ describe("MessageList", () => {
     const { rerender } = renderList({
       messages: conversationA,
       activeConversation: "a",
-      settings: { inlineViewsEnabled: true },
+      settings: { inlineViewFrequency: "sometimes" },
     });
     await screen.findByTitle("Demo");
 
@@ -199,7 +288,7 @@ describe("MessageList", () => {
           content: '<inline title="Demo">A chart of monthly rainfall</inline>',
         },
       ],
-      settings: { inlineViewsEnabled: true },
+      settings: { inlineViewFrequency: "sometimes" },
     });
 
     expect(
@@ -220,7 +309,7 @@ describe("MessageList", () => {
           content: 'Before\n<inline title="Demo"><div>hello view</div></inline>',
         },
       ],
-      settings: { inlineViewsEnabled: false },
+      settings: { inlineViewFrequency: "off" },
     });
 
     expect(screen.queryByTitle("Demo")).not.toBeInTheDocument();

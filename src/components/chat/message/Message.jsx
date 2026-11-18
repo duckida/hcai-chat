@@ -2,6 +2,7 @@
 
 import { EyeOff, Globe } from "lucide-react";
 import { memo, useMemo } from "react";
+import { isInlineViewsEnabled } from "@/lib/inline-view-options";
 import { getMessageText, getUserText } from "@/lib/messages";
 import { useSettings } from "@/stores/settings";
 import ResponseMetrics from "../ResponseMetrics";
@@ -23,7 +24,7 @@ import useMessageText from "./useMessageText";
  */
 const selectDisplaySettings = (state) => ({
   artifactsEnabled: state.artifactsEnabled,
-  inlineViewsEnabled: state.inlineViewsEnabled,
+  inlineViewFrequency: state.inlineViewFrequency,
   inlineViewModel: state.inlineViewModel,
   openRouterProviders: state.openRouterProviders,
   showThinking: state.showThinking,
@@ -33,12 +34,13 @@ const selectDisplaySettings = (state) => ({
 const Message = memo(function Message({ message }) {
   const {
     artifactsEnabled,
-    inlineViewsEnabled,
+    inlineViewFrequency,
     inlineViewModel,
     openRouterProviders,
     showThinking,
     showMetrics,
   } = useSettings(selectDisplaySettings);
+  const inlineViewsEnabled = isInlineViewsEnabled(inlineViewFrequency);
   const isAssistant = message.role === "assistant";
   const content = message.content || "";
   const attachments = message._files;
@@ -121,6 +123,7 @@ const Message = memo(function Message({ message }) {
                   key={part.key}
                   prompt={part.prompt}
                   title={part.title}
+                  format={part.format}
                   model={inlineViewModel}
                   providerSlug={openRouterProviders?.[inlineViewModel] || null}
                 />
@@ -142,7 +145,7 @@ const Message = memo(function Message({ message }) {
                     : `${hiddenInlineViews} inline views hidden`}
                 </span>
                 <span className="text-muted-foreground/60">
-                  · enable Inline Views in Settings
+                  · turn on Inline Views in Settings
                 </span>
               </div>
             )}

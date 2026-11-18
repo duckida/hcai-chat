@@ -16,13 +16,15 @@ import {
   retryInlineView,
   subscribeInlineViews,
 } from "@/lib/inline-view-cache";
+import { parseInlineViewSpec } from "@/lib/inline-view-catalog";
 import { readInlineViewFontSources } from "@/lib/inline-view-font";
 import {
   buildInlineViewDocument,
   getInlineViewTitle,
   INLINE_VIEW_TOKENS,
-  isInlineViewMarkup,
+  resolveInlineViewFormat,
 } from "@/lib/inline-views";
+import JsonInlineView from "./JsonInlineView";
 
 const MIN_HEIGHT = 120;
 const MAX_HEIGHT = 720;
@@ -115,20 +117,34 @@ function ViewPlaceholder() {
 /**
  * A single `<inline>` block rendered in the message.
  *
- * The tag holds a brief, not markup: the chat model never pays for the
- * document, and the builder model — chosen in Settings > Models — turns the
- * brief into HTML. The result is cached by (model, brief) so re-renders and
- * reloads reuse it. The frame is sandboxed with scripts but without
- * same-origin access, exactly like the artifact preview: a generated view can
+ * Three bodies arrive here. A `description` is sent to the builder model —
+ * chosen in Settings > Models — and the resulting HTML is cached by
+ * (model, brief). A `json-render` body is a validated spec rendered with the
+ * app's own React components, so it needs no frame. An `html` body is markup
+ * and runs in the sandboxed frame, exactly like the artifact preview: it can
  * animate and respond, but it cannot reach this app's storage or DOM.
  */
-export default function InlineView({ prompt, title, model, providerSlug }) {
+export default function InlineView({
+  prompt,
+  title,
+  format = "description",
+  model,
+  providerSlug,
+}) {
   const theme = useInlineViewTheme();
   const frameRef = useRef(null);
   const [height, setHeight] = useState(null);
 
-  const markup = isInlineViewMarkup(prompt);
+  // An explicit format decides the path; without one, a body that is already
+  // markup or JSON is still rendered directly rather than sent to the builder
+  // as if it were prose.
+  const kind = resolveInlineViewFormat(prompt, format);
+
   const key = useMemo(() => inlineViewKey(model, prompt), [model, prompt]);
+  const spec = useMemo(
+    () => (kind === "json-render" ? parseInlineViewSpec(prompt) : null),
+    [kind, prompt],
+  );
   const entry = useSyncExternalStore(
     subscribeInlineViews,
     () => getInlineViewEntry(key),
@@ -136,12 +152,17 @@ export default function InlineView({ prompt, title, model, providerSlug }) {
   );
 
   useEffect(() => {
-    if (markup || !prompt) return;
+    if (kind !== "description" || !prompt) return;
     if (getInlineViewEntry(key)) return;
     requestInlineView({ key, prompt, model, providerSlug });
-  }, [key, markup, prompt, model, providerSlug]);
+  }, [key, kind, prompt, model, providerSlug]);
 
-  const html = markup ? prompt : entry?.status === "ready" ? entry.html : null;
+  const html =
+    kind === "html"
+      ? prompt
+      : kind === "description" && entry?.status === "ready"
+        ? entry.html
+        : null;
 
   const documentSource = useMemo(
     () =>
@@ -177,7 +198,26 @@ export default function InlineView({ prompt, title, model, providerSlug }) {
 
   const label = title || getInlineViewTitle(html || prompt);
 
-  if (!html && entry?.status === "error") {
+  if (kind === "json-render") {
+    if (!spec) {
+      return (
+        <ViewFrame>
+          <div className="p-4 text-[12px] font-medium text-muted-foreground">
+            Couldn&apos;t render this view.
+          </div>
+        </ViewFrame>
+      );
+    }
+    return (
+      <ViewFrame>
+        <div className="max-h-[720px] overflow-y-auto p-4">
+          <JsonInlineView spec={spec} />
+        </div>
+      </ViewFrame>
+    );
+  }
+
+  if (!html && kind === "description" && entry?.status === "error") {
     return (
       <ViewFrame>
         <div className="flex flex-wrap items-center gap-3 p-4">

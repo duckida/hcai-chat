@@ -558,6 +558,47 @@ describe("/api/chat POST", () => {
     expect(lastParams().messages[0].content).toContain("<inline title=");
   });
 
+  it("uses the requested frequency and output format", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        stream: false,
+        inlineViewFrequency: "often",
+        inlineViewFormat: "html",
+      }),
+    );
+
+    const system = lastParams().messages[0].content;
+    expect(system).toContain("Include an inline view whenever");
+    expect(system).toContain('format="html"');
+    expect(system).toContain("var(--primary)");
+  });
+
+  it("lets an explicit off override the legacy boolean", async () => {
+    harness.create.mockResolvedValue({
+      choices: [{ message: { content: "x" }, finish_reason: "stop" }],
+    });
+
+    await POST(
+      makeReq({
+        model: TEST_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        apiKey: "k",
+        stream: false,
+        inlineViews: true,
+        inlineViewFrequency: "off",
+      }),
+    );
+
+    expect(lastParams().messages[0].content).not.toContain("Inline Views");
+  });
+
   it("leaves inline view instructions out when the feature is off", async () => {
     harness.create.mockResolvedValue({
       choices: [{ message: { content: "x" }, finish_reason: "stop" }],
