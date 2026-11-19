@@ -52,7 +52,7 @@ describe("settings registry", () => {
     expect(getDefaultSetting("thinkingLevel")).toBe("medium");
     expect(getDefaultSetting("artifactsEnabled")).toBe(false);
     expect(getDefaultSetting("inlineViewFrequency")).toBe("sometimes");
-    expect(getDefaultSetting("inlineViewFormat")).toBe("json-render");
+    expect(getDefaultSetting("inlineViewFormat")).toBe("description");
     expect(getDefaultSetting("webSearchEnabled")).toBe(false);
     expect(getDefaultSetting("agentModeEnabled")).toBe(false);
     expect(getDefaultSetting("showThinking")).toBe(false);
@@ -178,6 +178,6 @@ describe("settings registry", () => {
     expect(readSetting("inlineViewFormat")).toBe("html");
 
     localStorage.setItem("inline_view_format", "teapot");
-    expect(readSetting("inlineViewFormat")).toBe("json-render");
+    expect(readSetting("inlineViewFormat")).toBe("description");
   });
 });

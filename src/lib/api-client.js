@@ -1,4 +1,8 @@
 import {
+  DEFAULT_INLINE_VIEW_FORMAT,
+  DEFAULT_INLINE_VIEW_FREQUENCY,
+} from "./inline-view-options";
+import {
   INLINE_VIEW_GENERATOR_PROMPT,
   normalizeGeneratedInlineView,
 } from "./inline-views";
@@ -778,8 +782,8 @@ export const streamChatCompletion = async ({
   onComplete,
   thinkingLevel = DEFAULT_THINKING_LEVEL,
   artifacts = false,
-  inlineViewFrequency = "sometimes",
-  inlineViewFormat = "json-render",
+  inlineViewFrequency = DEFAULT_INLINE_VIEW_FREQUENCY,
+  inlineViewFormat = DEFAULT_INLINE_VIEW_FORMAT,
   tools = null,
   toolChoice = "auto",
   onToolCall = null,

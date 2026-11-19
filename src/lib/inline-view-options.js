@@ -1,6 +1,6 @@
 /** Shared by settings, the chat client, and the server prompt builder. */
 export const DEFAULT_INLINE_VIEW_FREQUENCY = "sometimes";
-export const DEFAULT_INLINE_VIEW_FORMAT = "json-render";
+export const DEFAULT_INLINE_VIEW_FORMAT = "description";
 
 export const INLINE_VIEW_FREQUENCIES = ["off", "sometimes", "often"];
 export const INLINE_VIEW_FORMATS = ["description", "json-render", "html"];

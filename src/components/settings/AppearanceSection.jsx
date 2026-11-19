@@ -139,7 +139,7 @@ export default function AppearanceSection({
   onShowMetricsChange,
   inlineViewFrequency = "sometimes",
   onInlineViewFrequencyChange,
-  inlineViewFormat = "json-render",
+  inlineViewFormat = "description",
   onInlineViewFormatChange,
   animationsEnabled = true,
   onAnimationsEnabledChange,

@@ -210,7 +210,9 @@ any more — the old "Generated Files" strip (`SandboxFiles`) is gone on purpose
 `inlineViewFrequency` (`off` / `sometimes` / `often`) decides whether the
 system prompt asks for views at all; it deliberately keeps the legacy
 `inline_views_enabled` storage key so an existing opt-out stays off. The
-format setting (`inline_view_format`) decides what the model writes:
+defaults are **sometimes** and **description**; a stored value always wins, so
+an existing `json-render` or `html` choice is not migrated. The format setting
+(`inline_view_format`) decides what the model writes:
 
 - `description` keeps the builder-model path and the content-addressed HTML
   cache. The cache key is the **brief**, not `(model, brief)`: a view already
