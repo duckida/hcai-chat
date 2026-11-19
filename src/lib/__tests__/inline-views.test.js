@@ -9,6 +9,7 @@ import {
   INLINE_VIEW_INSTRUCTIONS,
   isInlineViewMarkup,
   normalizeGeneratedInlineView,
+  resolveInlineViewFormat,
 } from "../inline-views";
 
 describe("extractInlineViews", () => {
@@ -118,6 +119,32 @@ describe("getInlineViewTitle", () => {
   it("has a safe fallback", () => {
     expect(getInlineViewTitle("<div>no title</div>")).toBe("Inline view");
     expect(getInlineViewTitle("")).toBe("Inline view");
+  });
+});
+
+describe("resolveInlineViewFormat", () => {
+  it("routes a description to the builder even when a stale attribute says JSON or HTML", () => {
+    const brief = "A chart of monthly rainfall with a frequency slider";
+    expect(resolveInlineViewFormat(brief, "json-render")).toBe("description");
+    expect(resolveInlineViewFormat(brief, "html")).toBe("description");
+  });
+
+  it("lets the actual body override a stale format", () => {
+    expect(resolveInlineViewFormat('<div>chart</div>', "json-render")).toBe("html");
+    expect(resolveInlineViewFormat('{"root":"r","elements":{}}', "html")).toBe("json-render");
+  });
+
+  it("keeps HTML fragments that start with headings or controls on the iframe path", () => {
+    for (const html of ["<h1>Heading</h1>", "<button>Change</button>", "<input type='range'>", "<!-- chart --><svg></svg>"]) {
+      expect(resolveInlineViewFormat(html, "html")).toBe("html");
+      expect(resolveInlineViewFormat(html, "json-render")).toBe("html");
+    }
+  });
+
+  it("keeps malformed JSON on the validation path, never the builder", () => {
+    expect(resolveInlineViewFormat('{"root":', "description")).toBe("json-render");
+    expect(resolveInlineViewFormat("{", "json-render")).toBe("json-render");
+    expect(resolveInlineViewFormat("", "json-render")).toBe("json-render");
   });
 });
 
@@ -300,7 +327,12 @@ describe("buildInlineViewInstructions", () => {
     );
     expect(instructions).toContain('format="json-render"');
     expect(instructions).toContain('"elements"');
-    expect(instructions).toContain("BarGraph");
+    expect(instructions).toContain('"type":"BarChart"');
+    expect(instructions).toContain("Tabs");
+    expect(instructions).toContain("TabContent");
+    expect(instructions).toContain("InteractiveQuiz");
+    expect(instructions).toContain("PieChart");
+    expect(instructions).toContain("style or className");
     expect(instructions).toContain("setState");
     expect(instructions).not.toContain("Never put HTML, CSS, JavaScript");
   });

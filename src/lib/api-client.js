@@ -103,9 +103,10 @@ export const generateTitle = async (
  * on any failure — the caller shows a retry rather than an empty card — and
  * never throws, because it runs from a render effect.
  *
- * The request is a separate, non-streaming turn: the brief is the only thing
- * this model sees, and the document it returns goes into the view's iframe, not
- * into the conversation's messages.
+ * The brief is the only conversation this model sees. Streaming keeps the
+ * proxy connection alive during reasoning and reuses the chat client's bounded
+ * recovery, but no chunks reach the turn store or the conversation. Only a
+ * completed document can enter the cache.
  */
 export const generateInlineView = async (
   prompt,
@@ -116,24 +117,35 @@ export const generateInlineView = async (
   if (!apiKey || !prompt || !model) return null;
 
   try {
-    const response = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: INLINE_VIEW_GENERATOR_PROMPT },
-          { role: "user", content: prompt },
-        ],
-        apiKey,
-        stream: false,
-        ...(providerSlug ? { providerSlug } : {}),
-      }),
+    let text = "";
+    let completed = false;
+    let failed = false;
+    await streamChatCompletion({
+      model,
+      providerSlug,
+      messages: [
+        { role: "system", content: INLINE_VIEW_GENERATOR_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      // Use the builder model's own reasoning default, not an effort that a
+      // model selected independently of the chat model may not support.
+      thinkingLevel: "on",
+      inlineViewFrequency: "off",
+      inlineViewFormat: "html",
+      onChunk: (chunk, type) => {
+        if (type === "content") text += chunk;
+      },
+      onFallbackStart: () => {
+        text = "";
+      },
+      onComplete: () => {
+        completed = true;
+      },
+      onError: () => {
+        failed = true;
+      },
     });
-
-    if (!response.ok) return null;
-    const data = await response.json();
-    const text = data.text || data.choices?.[0]?.message?.content || "";
+    if (!completed || failed) return null;
     return normalizeGeneratedInlineView(text) || null;
   } catch (_e) {
     return null;

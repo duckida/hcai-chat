@@ -76,11 +76,15 @@ function parseFormatAttribute(attributes) {
  */
 export function resolveInlineViewFormat(body, explicitFormat) {
   const format = FORMAT_ALIASES[explicitFormat] || explicitFormat || null;
-  const looksJson = looksLikeJsonRenderSpec(body);
-  if (format === "html") return "html";
-  if (format === "json-render") return "json-render";
-  if (looksJson) return "json-render";
+  if (looksLikeJsonRenderSpec(body)) return "json-render";
   if (isInlineViewMarkup(body)) return "html";
+  // A model can carry the previous answer's format attribute into a new brief.
+  // Only an empty or broken JSON-shaped body needs that attribute as evidence;
+  // ordinary prose must still reach the description builder.
+  const source = String(body || "").trim();
+  if (format === "json-render" && (!source || /^(?:\{|\[)/.test(source))) {
+    return "json-render";
+  }
   return "description";
 }
 
@@ -423,7 +427,7 @@ const INLINE_VIEW_COMMON_RULES = `
 const INLINE_VIEW_DESCRIPTION_BODY = `
 The body is a short brief, not markup. A separate builder model turns the brief into the view, and the app shows a placeholder until it is ready.
 
-<inline title="Sine Wave">
+<inline title="Sine Wave" format="description">
 A canvas plot of a sine wave over one full period, with a frequency slider from 1 to 10 (default 3). Redraw on resize. Label the slider "Frequency" and show its current value beside it.
 </inline>
 
@@ -436,7 +440,7 @@ const INLINE_VIEW_JSON_RENDER_BODY = `
 The body is one complete json-render spec. The app renders it with a fixed, safe component catalog, so do not write HTML.
 
 <inline title="Monthly rainfall" format="json-render">
-{"root":"root","elements":{"root":{"type":"Stack","props":{},"children":["heading","chart"]},"heading":{"type":"Heading","props":{"text":"Monthly rainfall"}},"chart":{"type":"BarGraph","props":{"data":[{"label":"Jan","value":12},{"label":"Feb","value":18},{"label":"Mar","value":9}]}}}}
+{"root":"root","elements":{"root":{"type":"Stack","props":{},"children":["heading","chart"]},"heading":{"type":"Heading","props":{"text":"Monthly rainfall"}},"chart":{"type":"BarChart","props":{"data":[{"label":"Jan","value":12},{"label":"Feb","value":18},{"label":"Mar","value":9}]}}}}
 </inline>
 
 Spec shape:
@@ -448,7 +452,11 @@ ${INLINE_VIEW_COMPONENT_GUIDE.join("\n")}
 Rules:
 - \`root\` names the top element. Every key listed in \`children\` must exist in \`elements\`; omit \`children\` on components that take none.
 - \`props\` must match the component signature exactly. Use only the components above.
-- Bind form controls with {"$bindState":"/path"} and change state only with {"action":"setState","params":{"statePath":"/path","value":…}} on the component's event. State paths start with "/". There are no other actions and no network access.
+- The app owns the visual theme: cards, controls, charts and typography inherit its colors, font, rounded corners and dark mode. Do not add style or className props. Prefer Stack as the root, and use Cards only to group related sections.
+- Bind form controls with {"$bindState":"/path"} and change state only with {"action":"setState","params":{"statePath":"/path","value":…}} on the component's event. State paths start with "/". There are no other actions or automatic network requests.
+- Tabs uses a static \`tabs\` array of {label,value}; each direct child is a TabContent whose \`value\` matches exactly one tab. Do not hide TabContent with \`visible\`; the tab container handles visibility. Only the selected Tabs \`value\` can be bound to state. Accordion renders a collapsible section; Stack several together.
+- Quiz (also named InteractiveQuiz) handles answer selection, checking, retry and explanation locally. Give options distinct values and set \`answer\` to the correct option's value. No event or action is needed. Use it when the user is learning or asks for a knowledge check.
+- BarChart, LineChart and PieChart take labeled numeric data. PieChart values must be nonnegative; use its donut default for proportions. Metric \`trend\` includes value and direction, with optional sentiment and label. Use Link only for a real HTTP(S) URL; it opens a new tab when the user follows it.
 - \`Text\` accepts {"$template":"… \${/path} …"}, and any element accepts a \`visible\` condition such as {"$state":"/path"}.
 - Keep the view small and focused: one visual, about twelve elements at most. Use real values from the conversation, not placeholders.
 - Do not wrap the JSON in a code fence, HTML, or Markdown, and do not write anything else inside the tag.`;
@@ -561,8 +569,10 @@ export function normalizeGeneratedInlineView(text) {
 export function isInlineViewMarkup(text) {
   const body = String(text || "").trimStart();
   return (
-    /^<(?:!doctype|html|div|canvas|svg|style|script|section|main|body|table|figure|p)\b/i.test(
+    /^<(?:!doctype|html|head|body|div|span|canvas|svg|style|script|section|article|aside|main|nav|header|footer|table|figure|figcaption|p|h[1-6]|ul|ol|li|dl|form|fieldset|label|input|select|textarea|button|details|summary|img|a)\b/i.test(
       body,
-    ) || /<!doctype html/i.test(body)
+    ) ||
+    /^<!--/.test(body) ||
+    /<!doctype html/i.test(body)
   );
 }

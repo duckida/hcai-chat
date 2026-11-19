@@ -23,10 +23,41 @@ const text = z.string().max(4000);
 const shortText = z.string().max(160);
 const number = z.number().finite();
 const optionalText = shortText.optional();
-const gap = z.enum(["sm", "md", "lg"]).optional();
+const gap = z.enum(["none", "xs", "sm", "md", "lg", "xl"]).optional();
 const series = z
   .array(z.object({ label: shortText, value: number }).strict())
   .max(100);
+const choice = z
+  .object({ label: shortText.min(1), value: shortText.min(1) })
+  .strict();
+const chartProps = z
+  .object({ title: optionalText, description: text.optional(), data: series })
+  .strict();
+const quizProps = z
+  .object({
+    question: text.min(1),
+    options: z.array(choice).min(2).max(8),
+    answer: shortText.min(1),
+    explanation: text.optional(),
+  })
+  .strict();
+
+/** Even a state-bound href is checked again at render time. No app navigation. */
+export function isSafeInlineViewUrl(value) {
+  if (typeof value !== "string" || value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return (
+      ["https:", "http:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password
+    );
+  } catch {
+    return false;
+  }
+}
+
+const externalUrl = z.string().refine(isSafeInlineViewUrl);
 
 function isSafePath(path) {
   return (
@@ -72,6 +103,8 @@ export const INLINE_VIEW_COMPONENTS = {
       .object({
         direction: z.enum(["vertical", "horizontal"]).optional(),
         gap,
+        align: z.enum(["start", "center", "end", "stretch"]).optional(),
+        justify: z.enum(["start", "center", "end", "between"]).optional(),
       })
       .strict(),
     slots: ["default"],
@@ -79,31 +112,86 @@ export const INLINE_VIEW_COMPONENTS = {
   },
   Grid: {
     props: z
-      .object({ columns: z.number().int().min(1).max(4).optional(), gap })
+      .object({ columns: z.number().int().min(1).max(6).optional(), gap })
       .strict(),
     slots: ["default"],
     description: "Responsive grid, collapsing to one column on small screens.",
   },
   Card: {
     props: z
-      .object({ title: optionalText, description: text.optional() })
+      .object({
+        title: optionalText,
+        description: text.optional(),
+        variant: z.enum(["default", "muted", "accent"]).optional(),
+      })
       .strict(),
     slots: ["default"],
     description:
       "Inner panel for related content. Prefer Stack for the view root.",
   },
+  Tabs: {
+    props: z
+      .object({
+        label: optionalText,
+        tabs: z.array(choice).min(1).max(8),
+        value: optionalText,
+      })
+      .strict(),
+    slots: ["default"],
+    events: ["change"],
+    description:
+      "Tabbed content. Each direct child must be TabContent with a value matching a tab. Bind value with $bindState if needed.",
+  },
+  TabContent: {
+    props: z.object({ value: shortText.min(1) }).strict(),
+    slots: ["default"],
+    description:
+      "One tab's panel. Use only as a direct child of Tabs; value matches the tab value.",
+  },
+  Accordion: {
+    props: z
+      .object({
+        title: shortText.min(1),
+        description: text.optional(),
+        expanded: z.boolean().optional(),
+      })
+      .strict(),
+    slots: ["default"],
+    events: ["change"],
+    description:
+      "Collapsible content section. Stack several for an accordion. Bind expanded with $bindState if needed.",
+  },
   Heading: {
     props: z
-      .object({ text: shortText, level: z.enum(["h2", "h3", "h4"]).optional() })
+      .object({
+        text: shortText,
+        level: z.enum(["h1", "h2", "h3", "h4"]).optional(),
+      })
       .strict(),
     description:
       "Small section heading. Do not repeat the surrounding chat title.",
   },
   Text: {
     props: z
-      .object({ text, variant: z.enum(["body", "muted"]).optional() })
+      .object({
+        text,
+        variant: z.enum(["body", "muted", "caption", "lead"]).optional(),
+      })
       .strict(),
     description: "Plain text, never HTML. Supports $state and $template.",
+  },
+  Quiz: {
+    props: quizProps,
+    description:
+      "Interactive single-question quiz. answer is one option's value. User picks an answer, checks it, and sees the explanation; no actions needed.",
+  },
+  InteractiveQuiz: {
+    props: quizProps,
+    description: "Alias for Quiz; prefer Quiz for new views.",
+  },
+  Separator: {
+    props: z.object({ label: optionalText }).strict(),
+    description: "Horizontal separator, with an optional section label.",
   },
   Metric: {
     props: z
@@ -111,19 +199,58 @@ export const INLINE_VIEW_COMPONENTS = {
         label: shortText,
         value: z.union([text, number]),
         unit: optionalText,
+        description: text.optional(),
+        trend: z
+          .object({
+            value: z.union([shortText, number]),
+            direction: z.enum(["up", "down", "neutral"]),
+            sentiment: z.enum(["positive", "negative", "neutral"]).optional(),
+            label: optionalText,
+          })
+          .strict()
+          .optional(),
       })
       .strict(),
-    description: "A prominent value with its label and optional unit.",
+    description:
+      "Prominent labeled value, optional unit, description and trend. Sentiment decides whether an up/down trend is good or bad.",
+  },
+  BarChart: {
+    props: chartProps,
+    description:
+      "Compare labeled numeric values with zero-aligned bars, including negatives.",
+  },
+  LineChart: {
+    props: chartProps,
+    description:
+      "Plot labeled numeric values in order, with axes, points and an area fill.",
+  },
+  PieChart: {
+    props: z
+      .object({
+        title: optionalText,
+        description: text.optional(),
+        data: z
+          .array(
+            z
+              .object({ label: shortText, value: number.nonnegative() })
+              .strict(),
+          )
+          .min(1)
+          .max(12),
+        variant: z.enum(["pie", "donut"]).optional(),
+        centerLabel: optionalText,
+      })
+      .strict(),
+    description:
+      "Proportional data with a labeled legend. Nonnegative values only. Defaults to a donut; variant='pie' makes a solid pie.",
   },
   BarGraph: {
     props: z.object({ title: optionalText, data: series }).strict(),
-    description:
-      "Compare labeled numeric values in a bar chart, including negatives.",
+    description: "Legacy alias for BarChart. Prefer BarChart for new views.",
   },
   LineGraph: {
     props: z.object({ title: optionalText, data: series }).strict(),
-    description:
-      "Plot labeled numeric values in order as a responsive line chart.",
+    description: "Legacy alias for LineChart. Prefer LineChart for new views.",
   },
   Table: {
     props: z
@@ -135,6 +262,47 @@ export const INLINE_VIEW_COMPONENTS = {
       .strict(),
     description: "Compact data table. rows is a 2D array matching columns.",
   },
+  Badge: {
+    props: z
+      .object({
+        label: shortText,
+        variant: z
+          .enum([
+            "default",
+            "primary",
+            "success",
+            "warning",
+            "danger",
+            "info",
+            "outline",
+          ])
+          .optional(),
+      })
+      .strict(),
+    description: "Small status badge with a semantic color or an outline.",
+  },
+  Timeline: {
+    props: z
+      .object({
+        title: optionalText,
+        items: z
+          .array(
+            z
+              .object({
+                title: shortText,
+                description: text.optional(),
+                date: optionalText,
+                status: z.enum(["complete", "current", "upcoming"]).optional(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(30),
+      })
+      .strict(),
+    description:
+      "Vertical event or milestone timeline with dates and complete/current/upcoming status.",
+  },
   Progress: {
     props: z
       .object({
@@ -144,6 +312,40 @@ export const INLINE_VIEW_COMPONENTS = {
       })
       .strict(),
     description: "Labeled progress toward max (default 100).",
+  },
+  Callout: {
+    props: z
+      .object({
+        title: optionalText,
+        text: text.optional(),
+        variant: z.enum(["info", "tip", "warning", "important"]).optional(),
+      })
+      .strict(),
+    slots: ["default"],
+    description:
+      "Highlighted information, tip, warning or important note. Use text or children for its body.",
+  },
+  Link: {
+    props: z
+      .object({
+        label: shortText.min(1),
+        href: externalUrl,
+        description: text.optional(),
+      })
+      .strict(),
+    description:
+      "External HTTP(S) link opened in a new tab. No javascript:, relative URLs or app navigation.",
+  },
+  Skeleton: {
+    props: z
+      .object({
+        label: optionalText,
+        variant: z.enum(["text", "card", "circle"]).optional(),
+        lines: z.number().int().min(1).max(6).optional(),
+      })
+      .strict(),
+    description:
+      "Loading placeholder with text lines, a card or a circle. Use only when the content is genuinely loading.",
   },
   Slider: {
     props: z
@@ -196,7 +398,9 @@ export const INLINE_VIEW_COMPONENTS = {
     props: z
       .object({
         label: shortText,
-        variant: z.enum(["primary", "secondary"]).optional(),
+        variant: z
+          .enum(["primary", "secondary", "outline", "ghost"])
+          .optional(),
       })
       .strict(),
     events: ["press"],
@@ -211,25 +415,50 @@ export const INLINE_VIEW_COMPONENTS = {
  * describe a prop the validator rejects.
  */
 export const INLINE_VIEW_PROP_SIGNATURES = {
-  Stack: "{ direction?: 'vertical' | 'horizontal', gap?: 'sm' | 'md' | 'lg' }",
-  Grid: "{ columns?: 1-4, gap?: 'sm' | 'md' | 'lg' }",
-  Card: "{ title?: string, description?: string }",
-  Heading: "{ text: string, level?: 'h2' | 'h3' | 'h4' }",
-  Text: "{ text: string, variant?: 'body' | 'muted' }",
-  Metric: "{ label: string, value: string | number, unit?: string }",
+  Stack:
+    "{ direction?: 'vertical' | 'horizontal', gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl', align?: 'start' | 'center' | 'end' | 'stretch', justify?: 'start' | 'center' | 'end' | 'between' }",
+  Grid: "{ columns?: 1-6, gap?: 'none' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' }",
+  Card: "{ title?: string, description?: string, variant?: 'default' | 'muted' | 'accent' }",
+  Tabs: "{ label?: string, tabs: Array<{ label: string, value: string }>, value?: string }",
+  TabContent: "{ value: string }",
+  Accordion: "{ title: string, description?: string, expanded?: boolean }",
+  Heading: "{ text: string, level?: 'h1' | 'h2' | 'h3' | 'h4' }",
+  Text: "{ text: string, variant?: 'body' | 'muted' | 'caption' | 'lead' }",
+  Quiz: "{ question: string, options: Array<{ label: string, value: string }>, answer: string, explanation?: string }",
+  InteractiveQuiz:
+    "{ question: string, options: Array<{ label: string, value: string }>, answer: string, explanation?: string }",
+  Separator: "{ label?: string }",
+  Metric:
+    "{ label: string, value: string | number, unit?: string, description?: string, trend?: { value: string | number, direction: 'up' | 'down' | 'neutral', sentiment?: 'positive' | 'negative' | 'neutral', label?: string } }",
+  BarChart:
+    "{ title?: string, description?: string, data: Array<{ label: string, value: number }> }",
+  LineChart:
+    "{ title?: string, description?: string, data: Array<{ label: string, value: number }> }",
+  PieChart:
+    "{ title?: string, description?: string, data: Array<{ label: string, value: number }>, variant?: 'pie' | 'donut', centerLabel?: string }",
   BarGraph: "{ title?: string, data: Array<{ label: string, value: number }> }",
   LineGraph:
     "{ title?: string, data: Array<{ label: string, value: number }> }",
   Table:
     "{ columns: string[], rows: Array<Array<string | number>>, caption?: string }",
+  Badge:
+    "{ label: string, variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info' | 'outline' }",
+  Timeline:
+    "{ title?: string, items: Array<{ title: string, description?: string, date?: string, status?: 'complete' | 'current' | 'upcoming' }> }",
   Progress: "{ label: string, value: number, max?: number }",
+  Callout:
+    "{ title?: string, text?: string, variant?: 'info' | 'tip' | 'warning' | 'important' }",
+  Link: "{ label: string, href: string, description?: string }",
+  Skeleton:
+    "{ label?: string, variant?: 'text' | 'card' | 'circle', lines?: 1-6 }",
   Slider:
     "{ label: string, value?: number, min?: number, max?: number, step?: number }",
   Input: "{ label: string, value?: string, placeholder?: string }",
   Select:
     "{ label: string, value?: string, options: Array<{ label: string, value: string }> }",
   Checkbox: "{ label: string, checked?: boolean }",
-  Button: "{ label: string, variant?: 'primary' | 'secondary' }",
+  Button:
+    "{ label: string, variant?: 'primary' | 'secondary' | 'outline' | 'ghost' }",
 };
 
 /** One line per component, ready to drop into the system prompt. */
@@ -250,6 +479,13 @@ export const inlineViewCatalog = defineCatalog(schema, {
   actions: {},
 });
 
+// Tab identities describe the tree, not reactive data. Letting them change via
+// state would disconnect a tab's control from the panel it labels.
+const STATIC_PROPS = {
+  Tabs: ["tabs"],
+  TabContent: ["value"],
+};
+
 const propSchemas = Object.fromEntries(
   Object.entries(INLINE_VIEW_COMPONENTS).map(([name, component]) => [
     name,
@@ -258,13 +494,76 @@ const propSchemas = Object.fromEntries(
         Object.fromEntries(
           Object.entries(component.props.shape).map(([key, value]) => [
             key,
-            z.union([value, expression]),
+            STATIC_PROPS[name]?.includes(key)
+              ? value
+              : z.union([value, expression]),
           ]),
         ),
       )
       .strict(),
   ]),
 );
+
+function hasValidChoices(options) {
+  return new Set(options.map((option) => option.value)).size === options.length;
+}
+
+function validPropRelationships(type, props) {
+  if (
+    ["Quiz", "InteractiveQuiz"].includes(type) &&
+    Array.isArray(props.options)
+  ) {
+    if (!hasValidChoices(props.options)) return false;
+    if (
+      typeof props.answer === "string" &&
+      !props.options.some((option) => option.value === props.answer)
+    )
+      return false;
+  }
+  if (type === "Tabs") {
+    if (!hasValidChoices(props.tabs)) return false;
+    if (
+      typeof props.value === "string" &&
+      !props.tabs.some((tab) => tab.value === props.value)
+    )
+      return false;
+  }
+  if (
+    type === "Slider" &&
+    typeof props.min === "number" &&
+    typeof props.max === "number" &&
+    props.min >= props.max
+  )
+    return false;
+  if (
+    type === "Table" &&
+    Array.isArray(props.columns) &&
+    Array.isArray(props.rows)
+  ) {
+    return (
+      new Set(props.columns).size === props.columns.length &&
+      props.rows.every((row) => row.length === props.columns.length)
+    );
+  }
+  if (
+    type === "Select" &&
+    Array.isArray(props.options) &&
+    !hasValidChoices(props.options)
+  )
+    return false;
+  return true;
+}
+
+/** State expressions must not bypass the same closed prop schemas as literals. */
+export function validateInlineViewProps(type, props) {
+  if (!Object.hasOwn(INLINE_VIEW_COMPONENTS, type)) return null;
+  const definition = INLINE_VIEW_COMPONENTS[type];
+  if (!definition || hasUnsafeData(props)) return null;
+  const parsed = definition.props.safeParse(props);
+  return parsed.success && validPropRelationships(type, parsed.data)
+    ? parsed.data
+    : null;
+}
 
 const specSchema = z
   .object({
@@ -346,6 +645,7 @@ export function parseInlineViewSpec(source) {
       const props = propSchemas[element.type].safeParse(element.props);
       if (
         !props.success ||
+        !validPropRelationships(element.type, props.data) ||
         (!definition.slots && element.children.length > 0)
       ) {
         return null;
@@ -368,6 +668,28 @@ export function parseInlineViewSpec(source) {
       }
       const element = spec.elements[key];
       if (!element) return false;
+      if (element.type === "Tabs") {
+        const values = element.props.tabs.map((tab) => tab.value);
+        const panels = element.children.map((child) => spec.elements[child]);
+        if (
+          panels.length !== values.length ||
+          panels.some(
+            (panel) =>
+              panel?.type !== "TabContent" || panel.visible !== undefined,
+          )
+        )
+          return false;
+        const panelValues = panels.map((panel) => panel.props.value);
+        if (
+          new Set(panelValues).size !== values.length ||
+          values.some((value) => !panelValues.includes(value))
+        )
+          return false;
+      }
+      if (element.type === "TabContent") {
+        const parent = [...ancestors].at(-1);
+        if (spec.elements[parent]?.type !== "Tabs") return false;
+      }
       const next = new Set(ancestors).add(key);
       return element.children.every((child) => visit(child, next));
     };

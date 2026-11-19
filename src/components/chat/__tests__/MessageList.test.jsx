@@ -246,6 +246,16 @@ describe("MessageList", () => {
     expect(generateInlineView).toHaveBeenCalledTimes(1);
   });
 
+  it("builds a description carrying a stale JSON attribute even with JSON selected", async () => {
+    renderList({
+      messages: [{ role: "assistant", content: '<inline title="Brief" format="json-render">A chart of monthly rainfall</inline>' }],
+      settings: { inlineViewFrequency: "sometimes", inlineViewFormat: "json-render", inlineViewModel: "qwen/qwen3.6-flash" },
+    });
+    expect((await screen.findByTitle("Brief")).getAttribute("srcdoc")).toContain("built view");
+    expect(generateInlineView).toHaveBeenCalledWith("A chart of monthly rainfall", "qwen/qwen3.6-flash", null);
+    expect(screen.queryByText(/couldn't render this view/i)).not.toBeInTheDocument();
+  });
+
   it("keeps a view across a conversation switch", async () => {
     // The bug this pins: switching chats showed a placeholder (or nothing) for
     // a view the reader had already seen, while a refresh brought it back.

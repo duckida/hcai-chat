@@ -135,9 +135,8 @@ export default function InlineView({
   const frameRef = useRef(null);
   const [height, setHeight] = useState(null);
 
-  // An explicit format decides the path; without one, a body that is already
-  // markup or JSON is still rendered directly rather than sent to the builder
-  // as if it were prose.
+  // The body is authoritative: a stale format attribute must not stop a brief
+  // reaching the builder or send an already-built view there as prose.
   const kind = resolveInlineViewFormat(prompt, format);
 
   const key = useMemo(() => inlineViewKey(model, prompt), [model, prompt]);
@@ -210,7 +209,7 @@ export default function InlineView({
     }
     return (
       <ViewFrame>
-        <div className="max-h-[720px] overflow-y-auto p-4">
+        <div className="min-w-0 max-h-[720px] overflow-y-auto bg-card p-4 text-card-foreground sm:p-5">
           <JsonInlineView spec={spec} />
         </div>
       </ViewFrame>

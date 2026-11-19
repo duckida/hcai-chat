@@ -1353,13 +1353,11 @@ describe("generateInlineView", () => {
 
   it("sends only the builder prompt and the brief, and normalizes the reply", async () => {
     setStoredApiKey("k");
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          text: "Here it is:\n\n```html\n<div id='v'>chart</div>\n```",
-        }),
-    });
+    const fetchMock = vi.fn().mockImplementation(() => makeStreamResponse([
+      ': keepalive\n\n',
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "Here it is:\n\n```html\n<div id='v'>chart</div>\n```" } }] })}\n\n`,
+      'data: [DONE]\n\n',
+    ]));
     vi.stubGlobal("fetch", fetchMock);
 
     const html = await generateInlineView("A chart of rainfall", "m", "p");
@@ -1368,7 +1366,8 @@ describe("generateInlineView", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.model).toBe("m");
     expect(body.providerSlug).toBe("p");
-    expect(body.stream).toBe(false);
+    expect(body.stream).toBe(true);
+    expect(body.inlineViewFrequency).toBe("off");
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0].role).toBe("system");
     // The builder owns the theme contract: the tokens and helper classes must
@@ -1384,10 +1383,10 @@ describe("generateInlineView", () => {
     setStoredApiKey("k");
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ text: "I cannot do that." }),
-      }),
+      vi.fn().mockImplementation(() => makeStreamResponse([
+        'data: {"choices":[{"delta":{"content":"I cannot do that."}}]}\n\n',
+        'data: [DONE]\n\n',
+      ])),
     );
     expect(await generateInlineView("A chart", "m")).toBe(null);
 
@@ -1396,5 +1395,37 @@ describe("generateInlineView", () => {
 
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network")));
     expect(await generateInlineView("A chart", "m")).toBe(null);
+  });
+
+  it("continues a cut builder stream and caches only the completed HTML", async () => {
+    setStoredApiKey("k");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeStreamResponse([
+        `data: ${JSON.stringify({ choices: [{ delta: { content: '<div id="chart">' } }] })}\n\n`,
+      ]))
+      .mockResolvedValueOnce(makeStreamResponse([
+        'data: {"choices":[{"delta":{"content":"rainfall</div>"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await generateInlineView("A chart of rainfall", "qwen/qwen3.6-flash"))
+      .toBe('<div id="chart">rainfall</div>');
+    const continued = JSON.parse(fetchMock.mock.calls[1][1].body);
+    expect(continued.stream).toBe(true);
+    expect(continued.inlineViewFrequency).toBe("off");
+    expect(continued.messages[2]).toMatchObject({
+      role: "assistant", content: '<div id="chart">',
+    });
+  });
+
+  it("does not return usable-looking HTML when every continuation is cut", async () => {
+    setStoredApiKey("k");
+    const fetchMock = vi.fn().mockImplementation(() => makeStreamResponse([
+      'data: {"choices":[{"delta":{"content":"<div>partial</div>"}}]}\n\n',
+    ]));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await generateInlineView("A chart", "qwen/qwen3.6-flash")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });

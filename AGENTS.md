@@ -213,12 +213,20 @@ system prompt asks for views at all; it deliberately keeps the legacy
 format setting (`inline_view_format`) decides what the model writes:
 
 - `description` keeps the builder-model path and the content-addressed HTML
-  cache.
+  cache. The builder now uses the resilient SSE client (no turn-store writes),
+  and only a completed document is cached; a silent non-streaming request used
+  to time out during a reasoning model's generation.
 - `json-render` is a **complete** json-render spec inside the tag, parsed and
   validated by `inline-view-catalog.js` and rendered by `JsonInlineView.jsx`
   with a closed catalog. Only `setState` is allowed, state paths are JSON
   pointers, and the tree is depth/count bounded; an invalid spec renders
-  nothing rather than reaching app state.
+  an error card rather than reaching app state. Resolved state-bound props are
+  validated again before rendering. The catalog includes tabs/panels,
+  disclosures, quizzes, charts, badges, timelines, callouts and safe HTTP(S)
+  links; `BarGraph`/`LineGraph` remain aliases for saved messages. Tabs' panel
+  identities are static and validated together with their parent. Layout uses
+  the inline view's container width, not the viewport (an open side panel makes
+  a desktop thread narrow too).
 - `html` is the markup itself in the sandboxed iframe.
 
 `resolveInlineViewFormat()` classifies the **body**, not the current setting,
