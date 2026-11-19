@@ -44,7 +44,7 @@ export default function SettingsModal({
   onShowMetricsChange,
   inlineViewFrequency = "sometimes",
   onInlineViewFrequencyChange,
-  inlineViewFormat = "json-render",
+  inlineViewFormat = "description",
   onInlineViewFormatChange,
   animationsEnabled = true,
   onAnimationsEnabledChange,
@@ -85,28 +85,33 @@ export default function SettingsModal({
     onClose?.();
   };
 
+  // A settings dialog owns its size. Shrink-wrapping it around the active
+  // section made the centered panel jump whenever a choice changed the
+  // content's height — a description wrapping to two lines, the format control
+  // appearing, a provider row being added. The frame stays put and only the
+  // section inside it scrolls.
   return (
     <Dialog
       open={isOpen}
       onOpenChange={(open) => !open && onClose?.()}
-      className="w-[calc(100vw-2rem)] max-w-none sm:max-w-2xl bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden"
+      className="h-[min(90dvh,44rem)] w-[calc(100vw-2rem)] max-w-none bg-background border-border rounded-3xl shadow-2xl p-0 overflow-hidden sm:max-w-2xl"
     >
       <DialogDescription className="sr-only">
         Configure your keys, models, sandbox, and appearance.
       </DialogDescription>
-      <div className="flex max-h-[90vh] min-h-0 min-w-0 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 flex-col">
         <div className="px-6 pb-4 pt-6 sm:px-8">
           <DialogTitle className="text-xl font-[900] tracking-tight text-foreground">
             Settings
           </DialogTitle>
         </div>
         <SectionTabs activeId={activeSection} onSelect={setActiveSection} />
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable]">
           <div
             id="settings-panel"
             role="tabpanel"
             aria-labelledby={`settings-tab-${activeSection}`}
-            className="p-6 sm:p-8"
+            className="flex min-h-full flex-col p-6 sm:p-8"
           >
             {activeSection === "keys" && (
               <KeysSection
@@ -163,20 +168,25 @@ export default function SettingsModal({
               />
             )}
 
-            <div className="mt-8 pt-6 border-t border-border flex flex-col sm:flex-row gap-2">
-              <Button
-                onClick={handleSave}
-                className="w-full sm:flex-1 bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
-              >
-                Save and Connect
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={onClose}
-                className="w-full sm:w-auto sm:px-6 text-muted-foreground hover:text-foreground h-12 rounded-xl text-[13px] font-semibold"
-              >
-                Cancel
-              </Button>
+            {/* `mt-auto` keeps the actions at the bottom of the panel for a
+                short section without changing the gap once content is tall
+                enough to scroll. */}
+            <div className="mt-auto pt-8">
+              <div className="flex flex-col gap-2 border-t border-border pt-6 sm:flex-row">
+                <Button
+                  onClick={handleSave}
+                  className="w-full sm:flex-1 bg-primary hover:bg-primary/90 text-primary-foreground h-12 rounded-xl text-[14px] font-bold shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+                >
+                  Save and Connect
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={onClose}
+                  className="w-full sm:w-auto sm:px-6 text-muted-foreground hover:text-foreground h-12 rounded-xl text-[13px] font-semibold"
+                >
+                  Cancel
+                </Button>
+              </div>
             </div>
           </div>
         </div>
