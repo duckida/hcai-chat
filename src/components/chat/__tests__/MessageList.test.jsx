@@ -246,6 +246,40 @@ describe("MessageList", () => {
     expect(generateInlineView).toHaveBeenCalledTimes(1);
   });
 
+  it("does not regenerate a view when the builder model changes", async () => {
+    const message = {
+      role: "assistant",
+      content: '<inline title="Demo">A chart of monthly rainfall</inline>',
+    };
+
+    const first = renderList({
+      messages: [message],
+      settings: {
+        inlineViewFrequency: "sometimes",
+        inlineViewModel: "qwen/qwen3.6-flash",
+      },
+    });
+    await screen.findByTitle("Demo");
+    first.unmount();
+
+    // The model setting only decides who builds a missing view. A finished
+    // one belongs to the message, not to whichever model is selected today.
+    renderList({
+      messages: [message],
+      settings: {
+        inlineViewFrequency: "sometimes",
+        inlineViewModel: "other/model",
+      },
+    });
+    expect(screen.getByTitle("Demo")).toBeInTheDocument();
+    expect(generateInlineView).toHaveBeenCalledTimes(1);
+    expect(generateInlineView).toHaveBeenCalledWith(
+      "A chart of monthly rainfall",
+      "qwen/qwen3.6-flash",
+      null,
+    );
+  });
+
   it("builds a description carrying a stale JSON attribute even with JSON selected", async () => {
     renderList({
       messages: [{ role: "assistant", content: '<inline title="Brief" format="json-render">A chart of monthly rainfall</inline>' }],

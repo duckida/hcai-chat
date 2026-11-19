@@ -213,9 +213,12 @@ system prompt asks for views at all; it deliberately keeps the legacy
 format setting (`inline_view_format`) decides what the model writes:
 
 - `description` keeps the builder-model path and the content-addressed HTML
-  cache. The builder now uses the resilient SSE client (no turn-store writes),
-  and only a completed document is cached; a silent non-streaming request used
-  to time out during a reasoning model's generation.
+  cache. The cache key is the **brief**, not `(model, brief)`: a view already
+  in the history is served from the cache when the builder model changes,
+  never regenerated under the newly selected model. The builder uses the
+  resilient SSE client (no turn-store writes), and only a completed document is
+  cached; a silent non-streaming request used to time out during a reasoning
+  model's generation.
 - `json-render` is a **complete** json-render spec inside the tag, parsed and
   validated by `inline-view-catalog.js` and rendered by `JsonInlineView.jsx`
   with a closed catalog. Only `setState` is allowed, state paths are JSON

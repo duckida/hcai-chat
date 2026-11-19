@@ -83,7 +83,7 @@ describe("description view generation", () => {
     expect(params.messages[0].content).not.toContain("## Inline Views");
     expect(params.messages[1]).toEqual({ role: "user", content: "A chart of monthly rainfall" });
 
-    const key = inlineViewKey("qwen/qwen3.6-flash", "A chart of monthly rainfall");
+    const key = inlineViewKey("A chart of monthly rainfall");
     expect(getInlineViewEntry(key)).toEqual({ status: "ready", html });
     expect(JSON.parse(localStorage.getItem("hcai_inline_view_cache"))[key]).toBe(html);
     view.unmount();

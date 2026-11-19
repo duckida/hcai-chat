@@ -10,8 +10,10 @@ import {
 } from "react";
 import { Button } from "@/components/primitives/button";
 import {
+  adoptInlineView,
   getInlineViewEntry,
   inlineViewKey,
+  legacyInlineViewKey,
   requestInlineView,
   retryInlineView,
   subscribeInlineViews,
@@ -118,8 +120,9 @@ function ViewPlaceholder() {
  * A single `<inline>` block rendered in the message.
  *
  * Three bodies arrive here. A `description` is sent to the builder model —
- * chosen in Settings > Models — and the resulting HTML is cached by
- * (model, brief). A `json-render` body is a validated spec rendered with the
+ * chosen in Settings > Models — and the resulting HTML is cached by the brief,
+ * so changing that model never rewrites a view already in the history. A
+ * `json-render` body is a validated spec rendered with the
  * app's own React components, so it needs no frame. An `html` body is markup
  * and runs in the sandboxed frame, exactly like the artifact preview: it can
  * animate and respond, but it cannot reach this app's storage or DOM.
@@ -139,22 +142,33 @@ export default function InlineView({
   // reaching the builder or send an already-built view there as prose.
   const kind = resolveInlineViewFormat(prompt, format);
 
-  const key = useMemo(() => inlineViewKey(model, prompt), [model, prompt]);
+  // The brief alone identifies the document. The builder model is only used to
+  // create one that does not exist yet, so switching models leaves every view
+  // already in the history exactly as it was generated.
+  const key = useMemo(() => inlineViewKey(prompt), [prompt]);
+  // Documents built before the model left the key are still in storage under
+  // the old (model, brief) pair. The current model's pair is the only one that
+  // can be computed; when it matches, that document is adopted below.
+  const legacyKey = useMemo(
+    () => legacyInlineViewKey(model, prompt),
+    [model, prompt],
+  );
   const spec = useMemo(
     () => (kind === "json-render" ? parseInlineViewSpec(prompt) : null),
     [kind, prompt],
   );
   const entry = useSyncExternalStore(
     subscribeInlineViews,
-    () => getInlineViewEntry(key),
+    () => getInlineViewEntry(key, legacyKey),
     () => null,
   );
 
   useEffect(() => {
     if (kind !== "description" || !prompt) return;
+    adoptInlineView(key, legacyKey);
     if (getInlineViewEntry(key)) return;
     requestInlineView({ key, prompt, model, providerSlug });
-  }, [key, kind, prompt, model, providerSlug]);
+  }, [key, legacyKey, kind, prompt, model, providerSlug]);
 
   const html =
     kind === "html"
